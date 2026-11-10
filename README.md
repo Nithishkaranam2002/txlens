@@ -98,3 +98,16 @@ From [evals/reports/data_quality.md](evals/reports/data_quality.md), produced by
 How it works: [pipelines/README.md](pipelines/README.md) and
 [ADR 0006](docs/adr/0006-medallion-pipeline.md). Running it on Databricks:
 [docs/DATABRICKS.md](docs/DATABRICKS.md).
+
+## Runs on Databricks
+
+The same pipeline code also runs on Databricks Free Edition (serverless). It writes Unity Catalog
+tables and produces **the same row counts as the local run**. The same reconciliation script
+reports **11 of 11 checks passed**; the twelfth local check, Postgres vs gold, does not apply
+there because Databricks has no Postgres load. Setup guide: [docs/DATABRICKS.md](docs/DATABRICKS.md).
+
+| Bronze, silver and gold tables in Unity Catalog | Pipeline run: row counts per layer |
+|---|---|
+| ![Databricks catalog](docs/images/databricks-catalog.png) | ![Databricks pipeline run](docs/images/databricks-run.png) |
+
+![Databricks data-quality report: 11 of 11 checks passed](docs/images/databricks-report.png)
