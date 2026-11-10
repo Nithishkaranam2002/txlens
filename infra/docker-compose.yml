@@ -27,12 +27,13 @@ services:
       - start-dev
       - --ip=0.0.0.0
       - --ui-ip=0.0.0.0
-      - --db-filename=/data/temporal.db
+      - --db-filename=/home/temporal/temporal.db
     ports:
       - "7233:7233"
       - "8233:8233"
     volumes:
-      - temporal-data:/data
+      # Mounted on the image's home dir so the volume is owned by the non-root `temporal` user.
+      - temporal-data:/home/temporal
 
   # Langfuse v2 only needs Postgres (v3 also needs ClickHouse, Redis and S3).
   langfuse:
