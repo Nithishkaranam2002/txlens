@@ -1,0 +1,13 @@
+[project]
+name = "txlens-omop"
+version = "0.1.0"
+description = "OMOP CDM v5.4 DDL, vocabulary loading and code checks"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/txlens_omop"]

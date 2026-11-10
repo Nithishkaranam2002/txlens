@@ -1,0 +1,2 @@
+# Pinned upstream OHDSI DDL: keep bytes exact (checked against SHA256SUMS).
+omop/src/txlens_omop/sql/** -text

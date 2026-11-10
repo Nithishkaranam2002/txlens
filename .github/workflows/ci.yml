@@ -27,7 +27,7 @@ jobs:
         run: |
           uv run ruff check .
           uv run ruff format --check .
-          uv run mypy backend data_generator pipelines evals
+          uv run mypy backend data_generator pipelines evals omop
       - name: Test
         run: uv run pytest
 

@@ -1,6 +1,6 @@
 # TxLens developer commands. Run `make help` to list them.
 COMPOSE := docker compose -f infra/docker-compose.yml --env-file .env
-PY_SRC := backend data_generator pipelines evals
+PY_SRC := backend data_generator pipelines evals omop
 SPARK_RUN := $(COMPOSE) --profile spark run --rm spark
 SEED ?= 42
 N_PATIENTS ?= 2000

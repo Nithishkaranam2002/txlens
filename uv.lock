@@ -7,6 +7,7 @@ members = [
     "txlens-backend",
     "txlens-datagen",
     "txlens-evals",
+    "txlens-omop",
     "txlens-pipelines",
 ]
 constraints = [{ name = "importlib-metadata", specifier = "<10" }]
@@ -19,6 +20,7 @@ dev = [
     { name = "txlens-backend", editable = "backend" },
     { name = "txlens-datagen", editable = "data_generator" },
     { name = "txlens-evals", editable = "evals" },
+    { name = "txlens-omop", editable = "omop" },
     { name = "txlens-pipelines", editable = "pipelines" },
 ]
 
@@ -407,6 +409,11 @@ requires-dist = [
 name = "txlens-evals"
 version = "0.1.0"
 source = { editable = "evals" }
+
+[[package]]
+name = "txlens-omop"
+version = "0.1.0"
+source = { editable = "omop" }
 
 [[package]]
 name = "txlens-pipelines"
