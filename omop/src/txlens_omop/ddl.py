@@ -43,6 +43,9 @@ VOCAB_TABLES = (
     "concept_class",
     "relationship",
 )
+# Created by a later migration (0005), so 0002/0003 keep rendering exactly what they did.
+MAPPING_TABLES = ("source_to_concept_map",)
+BASE_TABLES = CLINICAL_TABLES + VOCAB_TABLES
 FILES = {
     "tables": "OMOPCDM_postgresql_5.4_ddl.sql",
     "primary_keys": "OMOPCDM_postgresql_5.4_primary_keys.sql",
@@ -106,7 +109,7 @@ def schema_for(table: str) -> str | None:
     """Target schema for a table, or None if we do not create it."""
     if table in CLINICAL_TABLES:
         return CDM_SCHEMA
-    if table in VOCAB_TABLES:
+    if table in VOCAB_TABLES or table in MAPPING_TABLES:
         return VOCAB_SCHEMA
     return None
 
@@ -129,10 +132,10 @@ def qualify(statement: str) -> str:
     return TABLE_REF.sub(target, statement)
 
 
-def is_ours(statement: str) -> bool:
-    """True if the statement's main table is one we create."""
+def is_ours(statement: str, wanted: tuple[str, ...] = BASE_TABLES) -> bool:
+    """True if the statement's main table is one of `wanted`."""
     tables = referenced_tables(statement)
-    return bool(tables) and schema_for(tables[0]) is not None
+    return bool(tables) and tables[0] in wanted
 
 
 def is_kept_foreign_key(statement: str) -> bool:
@@ -159,7 +162,7 @@ def tables(version: str = CDM_VERSION) -> dict[str, Table]:
     result = {}
     for stmt in statements(read_sql("tables", version)):
         match = CREATE_TABLE.match(stmt)
-        if match is None or schema_for(match.group(1).lower()) is None:
+        if match is None or match.group(1).lower() not in BASE_TABLES + MAPPING_TABLES:
             continue
         name = match.group(1).lower()
         columns = tuple(parse_column(c) for c in match.group(2).split(",") if c.strip())
@@ -181,9 +184,9 @@ def foreign_keys(version: str = CDM_VERSION) -> list[ForeignKey]:
     return result
 
 
-def render_tables(version: str = CDM_VERSION) -> list[str]:
-    """CREATE TABLE statements for our tables, schema-qualified."""
-    return [qualify(s) for s in statements(read_sql("tables", version)) if is_ours(s)]
+def render_tables(version: str = CDM_VERSION, wanted: tuple[str, ...] = BASE_TABLES) -> list[str]:
+    """CREATE TABLE statements for `wanted` tables, schema-qualified."""
+    return [qualify(s) for s in statements(read_sql("tables", version)) if is_ours(s, wanted)]
 
 
 def render_primary_keys(version: str = CDM_VERSION) -> list[str]:
@@ -198,12 +201,12 @@ def render_foreign_keys(version: str = CDM_VERSION) -> list[str]:
     ]
 
 
-def render_indices(version: str = CDM_VERSION) -> list[str]:
-    """Upstream indexes for our tables; CLUSTER statements are dropped."""
+def render_indices(version: str = CDM_VERSION, wanted: tuple[str, ...] = BASE_TABLES) -> list[str]:
+    """Upstream indexes for `wanted` tables; CLUSTER statements are dropped."""
     return [
         qualify(s)
         for s in statements(read_sql("indices", version))
-        if s.upper().startswith("CREATE INDEX") and is_ours(s)
+        if s.upper().startswith("CREATE INDEX") and is_ours(s, wanted)
     ]
 
 

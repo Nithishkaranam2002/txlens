@@ -24,6 +24,7 @@ from txlens_omop.athena import (
     links_kept,
     wanted_vocabularies,
 )
+from txlens_omop.mappings import LOCAL_CONCEPT_FILE, STCM_FILE, mappings_dir
 
 log = logging.getLogger(__name__)
 Connection = psycopg.Connection[tuple[object, ...]]
@@ -133,6 +134,18 @@ def check_vocabularies(wanted: frozenset[str], report: LoadReport) -> None:
         log.warning(message)
 
 
+def load_local_mappings(cur: Cursor, report: LoadReport) -> None:
+    """Add our reviewed local concepts and source_to_concept_map rows (see mappings.py)."""
+    folder = AthenaSource(mappings_dir())
+    with folder.open(LOCAL_CONCEPT_FILE) as handle:
+        header = handle.readline().decode("utf-8").rstrip("\r\n").split("\t")
+        report.rows["local_concept"] = copy_lines(cur, copy_statement("concept", header), handle)
+    with folder.open(STCM_FILE) as handle:
+        header = handle.readline().decode("utf-8").rstrip("\r\n").split("\t")
+        statement = copy_statement("source_to_concept_map", header)
+        report.rows["source_to_concept_map"] = copy_lines(cur, statement, handle)
+
+
 def load_vocabulary(
     conn: Connection,
     source: AthenaSource,
@@ -143,7 +156,8 @@ def load_vocabulary(
     report = LoadReport()
     with conn.transaction(), conn.cursor() as cur:
         tables = sql.SQL(", ").join(
-            sql.SQL("vocab.{}").format(sql.Identifier(t)) for t in TABLE_FILES
+            sql.SQL("vocab.{}").format(sql.Identifier(t))
+            for t in (*TABLE_FILES, *ddl.MAPPING_TABLES)
         )
         cur.execute(sql.SQL("TRUNCATE {}").format(tables))
         index_definitions = drop_secondary_indexes(cur)
@@ -165,6 +179,7 @@ def load_vocabulary(
             log.info(
                 "%s: %s rows in %.0fs", table, f"{report.rows[table]:,}", time.monotonic() - started
             )
+        load_local_mappings(cur, report)
         for definition in index_definitions:
             cur.execute(definition)
         log.info("Rebuilt %d indexes", len(index_definitions))

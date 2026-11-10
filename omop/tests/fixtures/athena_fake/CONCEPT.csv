@@ -18,3 +18,4 @@ concept_id	concept_name	domain_id	vocabulary_id	concept_class_id	standard_concep
 2100000040		Procedure	CPT4	CPT4	S	TEST-CPT-0001	19700101	20991231	
 2100000050	TEST ONLY - NDC package (vocabulary not loaded)	Drug	NDC	11-digit NDC		TEST-NDC-1	19700101	20991231	
 2100000060	TEST ONLY - Female	Gender	Gender	Gender	S	TEST-F	19700101	20991231	
+2100000033	TEST ONLY - Brandolimus	Drug	RxNorm	Brand Name		TEST-RX-BN1	19700101	20991231	

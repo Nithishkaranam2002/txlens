@@ -35,6 +35,25 @@ PLANNED_ICD10CM = {
 }
 
 
+# Codes the pipeline writes itself (not present in the raw feeds).
+PIPELINE_CODES = {
+    ("LOINC", "103142-6"): ("dd-cfDNA donor fraction", "Measurement"),
+    ("SNOMED", "1293269004"): ("kidney graft biopsy", "Procedure"),
+    ("SNOMED", "387829002"): ("heart graft (endomyocardial) biopsy", "Procedure"),
+    ("UCUM", "mg/dL"): ("creatinine unit", "Unit"),
+    ("UCUM", "mL/min/(173.10*-2.m2)"): ("eGFR unit (mL/min/1.73 m2)", "Unit"),
+    ("UCUM", "ng/mL"): ("tacrolimus trough unit", "Unit"),
+    ("UCUM", "%"): ("dd-cfDNA unit", "Unit"),
+}
+# Facts with no standard concept: reviewed, mapped to 0 in OMOP and listed in the gaps report.
+KNOWN_GAPS = {
+    "dsa_mfi": "No standard LOINC holds a numeric donor-specific antibody MFI (LOINC has only "
+    "[Identifier] and [Presence] DSA codes). Mapped to TxLens local concept 2000000001; "
+    "measurement_concept_id = 0.",
+    "MFI": "Mean fluorescence intensity is not a UCUM unit; unit_concept_id = 0.",
+}
+
+
 def generator_codes() -> list[CodeUse]:
     """Codes written by data_generator (LOINC labs, RxNorm drugs, SNOMED conditions/procedures)."""
     codes = [
@@ -58,9 +77,17 @@ def planned_codes() -> list[CodeUse]:
     ]
 
 
+def pipeline_codes() -> list[CodeUse]:
+    """Standard codes the pipeline writes (biopsies, dd-cfDNA, units)."""
+    return [
+        CodeUse(vocabulary, code, label, domain, "codes.py PIPELINE_CODES")
+        for (vocabulary, code), (label, domain) in PIPELINE_CODES.items()
+    ]
+
+
 def all_codes() -> list[CodeUse]:
-    """Generator codes plus planned source codes."""
-    return generator_codes() + planned_codes()
+    """Generator codes, planned source codes and pipeline codes."""
+    return generator_codes() + planned_codes() + pipeline_codes()
 
 
 def uncoded_drugs() -> list[str]:

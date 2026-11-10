@@ -18,6 +18,7 @@ What the fixture covers:
 | Unmapped source code (its only mapping is deprecated) | 12 |
 | LOINC code in the wrong domain (Observation) | 22 |
 | RxNorm ingredient with clinical-drug descendants | 30 > 31, 32 |
+| RxNorm Brand Name that is "Brand name of" an ingredient; ingredient synonym | 33 -> 30 |
 | CPT4 concept with an empty name (excluded vocabulary) | 40 |
 | NDC concept (vocabulary not loaded) | 50 |
 | No UCUM concepts (missing-vocabulary warning) | - |

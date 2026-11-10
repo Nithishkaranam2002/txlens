@@ -1,3 +1,4 @@
 concept_id	concept_synonym_name	language_concept_id
 2100000002	TEST ONLY - Rejection of renal transplant	2100000099
 2100000040	TEST ONLY - Synonym of an excluded CPT4 concept	2100000099
+2100000030	TEST ONLY - FK-test	2100000099

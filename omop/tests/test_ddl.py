@@ -10,10 +10,10 @@ def test_pinned_files_are_unchanged(name: str) -> None:
 
 def test_all_our_tables_are_found_in_the_right_schema() -> None:
     tables = ddl.tables()
-    assert set(tables) == set(ddl.CLINICAL_TABLES) | set(ddl.VOCAB_TABLES)
+    assert set(tables) == set(ddl.BASE_TABLES) | set(ddl.MAPPING_TABLES)
     for name in ddl.CLINICAL_TABLES:
         assert tables[name].schema == "cdm"
-    for name in ddl.VOCAB_TABLES:
+    for name in ddl.VOCAB_TABLES + ddl.MAPPING_TABLES:
         assert tables[name].schema == "vocab"
 
 
@@ -81,3 +81,15 @@ def test_indices_cover_person_concept_and_vocabulary_lookups() -> None:
 def test_statement_about_unknown_table_is_rejected() -> None:
     with pytest.raises(ValueError, match="visit_detail"):
         ddl.qualify("SELECT 1 FROM @cdmDatabaseSchema.visit_detail")
+
+
+def test_mapping_table_renders_only_when_asked() -> None:
+    assert not any("source_to_concept_map" in s for s in ddl.render_tables())
+    creates = ddl.render_tables(wanted=ddl.MAPPING_TABLES)
+    assert creates == [
+        s for s in creates if s.startswith("CREATE TABLE vocab.source_to_concept_map")
+    ]
+    assert len(creates) == 1
+    indexes = ddl.render_indices(wanted=ddl.MAPPING_TABLES)
+    assert len(indexes) == 4
+    assert all("vocab.source_to_concept_map" in s for s in indexes)

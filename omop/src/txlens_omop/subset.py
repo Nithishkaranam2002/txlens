@@ -1,14 +1,17 @@
 """Extract a small vocabulary subset from an Athena download, for fast local dev.
 
-Kept concepts: the seed codes, the standard concepts they "Map to", all ancestors and
-descendants of those (so hierarchy searches still work), and every concept of the small
-support vocabularies (units, types, visits, demographics, metadata). The output has the same
-file format as Athena, so the normal loader reads it.
+Kept concepts: the seed codes, the standard concepts they "Map to", the RxNorm Brand Names of
+seed ingredients (for brand -> ingredient normalization), all ancestors and descendants of
+those (so hierarchy searches still work), and every concept of the small support vocabularies
+(units, types, visits, demographics, metadata). The output has the same file format as Athena,
+so the normal loader reads it. Our reviewed mapping files are copied alongside, so a Spark
+job reading only this folder sees the same mappings as the database.
 
 The output folder (`omop/vocab_subset/`) is git-ignored: it is still licensed content.
 """
 
 import logging
+import shutil
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,9 +24,11 @@ from txlens_omop.athena import (
     AthenaSource,
     links_kept,
 )
+from txlens_omop.mappings import LOCAL_CONCEPT_FILE, STCM_FILE, mappings_dir
 
 log = logging.getLogger(__name__)
 MAPS_TO = b"Maps to"
+BRAND_NAME_OF = b"Brand name of"
 CONCEPT_CODE_COLUMN = 6
 
 
@@ -68,6 +73,17 @@ def mapped_targets(source: AthenaSource, ids: set[bytes]) -> set[bytes]:
     return targets
 
 
+def brand_names(source: AthenaSource, ingredient_ids: set[bytes]) -> set[bytes]:
+    """Brand Name concepts that are "Brand name of" one of `ingredient_ids`."""
+    brands: set[bytes] = set()
+    with source.rows("concept_relationship") as (_, lines):
+        for line in lines:
+            first, second, relationship, _ = line.split(b"\t", 3)
+            if relationship == BRAND_NAME_OF and second in ingredient_ids:
+                brands.add(first)
+    return brands
+
+
 def hierarchy(source: AthenaSource, ids: set[bytes]) -> set[bytes]:
     """All ancestors and descendants of `ids`."""
     related: set[bytes] = set()
@@ -105,7 +121,7 @@ def extract_subset(
     report.seeds_found = len(found)
     report.seeds_missing = sorted((v.decode(), c.decode()) for v, c in wanted - found)
     core = seed_ids | mapped_targets(source, seed_ids)
-    kept = core | hierarchy(source, core) | support_ids
+    kept = core | brand_names(source, core) | hierarchy(source, core) | support_ids
     report.concepts = len(kept)
     log.info("Subset: %d seeds found, %d concepts kept", report.seeds_found, report.concepts)
 
@@ -117,6 +133,8 @@ def extract_subset(
     )
     for table, columns in CONCEPT_ID_COLUMNS.items():
         report.rows[table] = write_table(source, table, out_dir, linked_to(columns, kept))
+    for name in (LOCAL_CONCEPT_FILE, STCM_FILE):
+        shutil.copyfile(mappings_dir() / name, out_dir / name)
     return report
 
 

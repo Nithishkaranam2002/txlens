@@ -5,12 +5,19 @@ For each code: does it exist, is its domain the one we expect, and is it standar
 code can exist and still mean something else; that part needs a human eye.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import psycopg
 
 from txlens_omop.codes import CodeUse
-from txlens_omop.vocab import Concept, find_concept, get_concept, maps_to
+from txlens_omop.mappings import (
+    LOCAL_CONCEPT_MIN,
+    LOCAL_VOCABULARY,
+    SOURCE_VOCABULARIES,
+    MappingRow,
+)
+from txlens_omop.vocab import Concept, find_concept, get_concept, ingredients_for_name, maps_to
 
 Connection = psycopg.Connection[tuple[object, ...]]
 OK = "OK"
@@ -55,6 +62,50 @@ def check_codes(conn: Connection, uses: list[CodeUse]) -> list[CodeCheck]:
     return [check_code(conn, use) for use in uses]
 
 
+@dataclass(frozen=True)
+class MappingCheck:
+    """Result for one reviewed source_to_concept_map row."""
+
+    row: MappingRow
+    target: Concept | None
+    problems: tuple[str, ...]
+
+
+def check_mapping(conn: Connection, row: MappingRow) -> MappingCheck:
+    """The target exists, is valid, has the right vocabulary and domain, and is standard
+    (or is one of our non-standard local concepts)."""
+    target = get_concept(conn, row.target_concept_id)
+    if target is None:
+        return MappingCheck(row, None, ("TARGET NOT FOUND",))
+    problems = []
+    if target.invalid_reason is not None:
+        problems.append(f"TARGET DEPRECATED ({target.invalid_reason})")
+    if target.vocabulary_id != row.target_vocabulary_id:
+        problems.append(
+            f"VOCABULARY IS {target.vocabulary_id}, ROW SAYS {row.target_vocabulary_id}"
+        )
+    expected = SOURCE_VOCABULARIES.get(row.source_vocabulary_id)
+    if target.domain_id != expected:
+        problems.append(f"WRONG DOMAIN ({target.domain_id}, expected {expected})")
+    is_local = target.vocabulary_id == LOCAL_VOCABULARY and target.concept_id >= LOCAL_CONCEPT_MIN
+    if not target.is_standard and not is_local:
+        problems.append("TARGET NOT STANDARD")
+    return MappingCheck(row, target, tuple(problems))
+
+
+def check_drug_names(
+    conn: Connection, names: Mapping[str, tuple[str, ...]], rxnorm: Mapping[str, str]
+) -> list[tuple[str, str, str]]:
+    """(drug, surface name, problem) for every surface name not resolving to its ingredient."""
+    problems = []
+    for drug, surface_names in names.items():
+        for name in surface_names:
+            found = [c.concept_code for c in ingredients_for_name(conn, name)]
+            if found != [rxnorm[drug]]:
+                problems.append((drug, name, f"resolves to {found or 'nothing'}"))
+    return problems
+
+
 def suggest_ingredients(conn: Connection, name: str, limit: int = 3) -> list[Concept]:
     """Standard RxNorm ingredients whose name contains `name` (for drugs we left uncoded)."""
     rows = conn.execute(
@@ -83,4 +134,19 @@ def format_report(results: list[CodeCheck]) -> str:
         lines.append(f"    used in: {r.use.used_in}")
     failed = sum(1 for r in results if r.problems)
     lines.append(f"\n{len(results) - failed} OK, {failed} with problems, {len(results)} checked.")
+    return "\n".join(lines)
+
+
+def format_mapping_report(results: list[MappingCheck]) -> str:
+    """One line per reviewed mapping row, then a summary."""
+    lines = []
+    for r in results:
+        status = "; ".join(r.problems) or OK
+        name = r.target.concept_name if r.target else "-"
+        lines.append(
+            f"[{status}] {r.row.source_vocabulary_id} '{r.row.source_code}' -> "
+            f"{r.row.target_vocabulary_id} {r.row.target_concept_id} {name}"
+        )
+    failed = sum(1 for r in results if r.problems)
+    lines.append(f"\n{len(results) - failed} OK, {failed} with problems, {len(results)} mappings.")
     return "\n".join(lines)

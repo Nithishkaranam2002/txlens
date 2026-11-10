@@ -30,7 +30,7 @@ def test_rows_stream_from_folder_and_zip(kind: str, fake_dir: Path, fake_zip: Pa
     assert header[:3] == ["concept_id", "concept_name", "domain_id"]
     assert rows[0].startswith(f"{B + 1}\t".encode())
     assert all(row.endswith(b"\n") for row in rows)
-    assert len(rows) == 19
+    assert len(rows) == 20
 
 
 def test_find_picks_the_zip_or_the_folder(fake_dir: Path, fake_zip: Path) -> None:

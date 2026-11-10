@@ -12,10 +12,23 @@ from db_testutils import create_database, drop_database, migrate
 
 from txlens_backend.db_setup import libpq_url
 from txlens_omop.athena import AthenaSource
-from txlens_omop.check import check_codes, format_report, suggest_ingredients
+from txlens_omop.check import (
+    check_codes,
+    check_drug_names,
+    check_mapping,
+    format_report,
+    suggest_ingredients,
+)
 from txlens_omop.codes import CodeUse
 from txlens_omop.loader import MissingVocabularyError, load_vocabulary, vocab_table_sizes
-from txlens_omop.vocab import descendants, find_concept, standard_concepts
+from txlens_omop.mappings import MappingRow, read_mappings
+from txlens_omop.vocab import (
+    descendants,
+    find_concept,
+    get_concept,
+    ingredients_for_name,
+    standard_concepts,
+)
 
 pytestmark = pytest.mark.db
 FAKE_ATHENA = Path(__file__).parents[2] / "omop" / "tests" / "fixtures" / "athena_fake"
@@ -61,15 +74,17 @@ def test_load_filters_vocabularies_and_warns_about_ucum(vocab_db: str, fake_zip:
     with psycopg.connect(vocab_db) as conn:
         report = load_vocabulary(conn, AthenaSource(fake_zip))
     assert report.concepts_by_vocabulary == {
-        "SNOMED": 8, "ICD10CM": 3, "LOINC": 2, "RxNorm": 3, "Gender": 1,
+        "SNOMED": 8, "ICD10CM": 3, "LOINC": 2, "RxNorm": 4, "Gender": 1,
     }  # fmt: skip
     assert "CPT4" not in report.concepts_by_vocabulary
     assert "NDC" not in report.concepts_by_vocabulary
     assert any("UCUM" in w and "unit_concept_id = 0" in w for w in report.warnings)
     # NDC "Maps to" rows are dropped with the NDC concept; ancestors of CPT4 too.
-    assert report.rows["concept_relationship"] == 24
+    assert report.rows["concept_relationship"] == 26
     assert report.rows["concept_ancestor"] == 21
-    assert report.rows["concept_synonym"] == 1
+    assert report.rows["concept_synonym"] == 2
+    assert report.rows["local_concept"] == 1
+    assert report.rows["source_to_concept_map"] == len(read_mappings())
 
 
 def test_loaded_rows_have_parsed_dates_and_nulls(loaded: Conn) -> None:
@@ -84,7 +99,9 @@ def test_loaded_rows_have_parsed_dates_and_nulls(loaded: Conn) -> None:
 def test_reload_replaces_rather_than_duplicates(loaded: Conn, fake_zip: Path) -> None:
     before = count(loaded, "SELECT count(*) FROM vocab.concept")
     load_vocabulary(loaded, AthenaSource(fake_zip))
-    assert count(loaded, "SELECT count(*) FROM vocab.concept") == before == 17
+    assert count(loaded, "SELECT count(*) FROM vocab.concept") == before == 19
+    stcm = count(loaded, "SELECT count(*) FROM vocab.source_to_concept_map")
+    assert stcm == len(read_mappings())
 
 
 def test_indexes_are_rebuilt_after_load(loaded: Conn) -> None:
@@ -165,3 +182,53 @@ def test_code_check_flags_each_kind_of_problem(loaded: Conn) -> None:
 
 def test_ingredient_suggestions_for_uncoded_drugs(loaded: Conn) -> None:
     assert [c.concept_code for c in suggest_ingredients(loaded, "tacrolimus")] == ["TEST-RX-42316"]
+
+
+def test_local_concept_is_loaded_as_non_standard(loaded: Conn) -> None:
+    concept = get_concept(loaded, 2_000_000_001)
+    assert concept is not None
+    assert (concept.vocabulary_id, concept.domain_id) == ("TxLens", "Measurement")
+    assert not concept.is_standard
+
+
+def ingredient_codes(conn: Conn, name: str) -> list[str]:
+    return [c.concept_code for c in ingredients_for_name(conn, name)]
+
+
+def test_drug_name_by_exact_name_synonym_and_brand(loaded: Conn) -> None:
+    assert ingredient_codes(loaded, "TEST ONLY - Tacrolimus") == ["TEST-RX-42316"]
+    assert ingredient_codes(loaded, "  test only - fk-TEST ") == ["TEST-RX-42316"]  # synonym
+    assert ingredient_codes(loaded, "TEST ONLY - BRANDOLIMUS") == ["TEST-RX-42316"]  # brand
+    assert ingredient_codes(loaded, "TEST ONLY - Tacro") == []  # no substring matching
+
+
+def test_reviewed_mapping_wins_over_name_match(loaded: Conn) -> None:
+    with loaded.transaction(force_rollback=True):
+        loaded.execute(
+            "INSERT INTO vocab.source_to_concept_map VALUES "
+            "('test only - tacrolimus', 0, 'TXLENS_DRUG', 'test', %s, 'RxNorm', "
+            "'2026-01-01', '2099-12-31', NULL)",
+            (B + 31,),
+        )
+        assert ingredient_codes(loaded, "TEST ONLY - Tacrolimus") == ["TEST-RX-1001"]
+
+
+def test_drug_name_check_reports_names_that_do_not_resolve(loaded: Conn) -> None:
+    names = {"tacrolimus": ("TEST ONLY - Brandolimus", "tacro")}
+    problems = check_drug_names(loaded, names, {"tacrolimus": "TEST-RX-42316"})
+    assert problems == [("tacrolimus", "tacro", "resolves to nothing")]
+
+
+def test_mapping_check_flags_each_problem(loaded: Conn) -> None:
+    def row(vocabulary: str, target: int, target_vocabulary: str) -> MappingRow:
+        return MappingRow("x", vocabulary, "test", target, target_vocabulary)
+
+    good = check_mapping(loaded, row("TXLENS_LAB_NAME", B + 20, "LOINC"))
+    local = check_mapping(loaded, row("TXLENS_LAB_NAME", 2_000_000_001, "TxLens"))
+    missing = check_mapping(loaded, row("TXLENS_LAB_NAME", 42, "LOINC"))
+    wrong = check_mapping(loaded, row("TXLENS_DRUG", B + 10, "SNOMED"))
+    assert good.problems == () and local.problems == ()
+    assert missing.problems == ("TARGET NOT FOUND",)
+    assert "VOCABULARY IS ICD10CM, ROW SAYS SNOMED" in wrong.problems
+    assert "WRONG DOMAIN (Condition, expected Drug)" in wrong.problems
+    assert "TARGET NOT STANDARD" in wrong.problems

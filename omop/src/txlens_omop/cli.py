@@ -12,10 +12,20 @@ import psycopg
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from txlens_datagen.meds import RXNORM
+from txlens_datagen.notes import DRUG_NAMES
 from txlens_omop.athena import AthenaSource
-from txlens_omop.check import check_codes, format_report, suggest_ingredients
-from txlens_omop.codes import all_codes, uncoded_drugs
+from txlens_omop.check import (
+    check_codes,
+    check_drug_names,
+    check_mapping,
+    format_mapping_report,
+    format_report,
+    suggest_ingredients,
+)
+from txlens_omop.codes import KNOWN_GAPS, all_codes, uncoded_drugs
 from txlens_omop.loader import load_vocabulary, vocab_table_sizes
+from txlens_omop.mappings import read_mappings
 from txlens_omop.subset import extract_subset
 
 
@@ -76,10 +86,22 @@ def run_load(source: AthenaSource, database_url: str) -> None:
 
 
 def run_check(database_url: str) -> int:
-    """Print the code report and RxNorm suggestions; 1 if any code has a problem."""
+    """Print the code, mapping and drug-name reports; 1 if anything has a problem."""
     with psycopg.connect(libpq_url(database_url)) as conn:
         results = check_codes(conn, all_codes())
         print(format_report(results))
+        print("\nReviewed source_to_concept_map rows:")
+        mappings = [check_mapping(conn, row) for row in read_mappings()]
+        print(format_mapping_report(mappings))
+        print("\nDrug names as written in our data -> RxNorm ingredient:")
+        drug_problems = check_drug_names(conn, DRUG_NAMES, RXNORM)
+        for drug, name, problem in drug_problems:
+            print(f"  [PROBLEM] {name!r} ({drug}): {problem}")
+        names = sum(len(n) for n in DRUG_NAMES.values())
+        print(f"  {names - len(drug_problems)} of {names} names resolve to the right ingredient.")
+        print("\nKnown gaps (reviewed; concept_id 0 in OMOP):")
+        for fact, reason in KNOWN_GAPS.items():
+            print(f"  [GAP] {fact}: {reason}")
         uncoded = uncoded_drugs()
         print(
             "\nSuggestions for drugs we write without an RxNorm code:"
@@ -91,7 +113,8 @@ def run_check(database_url: str) -> int:
                 ", ".join(f"{c.concept_code} ({c.concept_name})" for c in found) or "none found"
             )
             print(f"  {drug}: {options}")
-    return 1 if any(r.problems for r in results) else 0
+    failed = any(r.problems for r in results) or any(m.problems for m in mappings)
+    return 1 if failed or drug_problems else 0
 
 
 def run_subset(source: AthenaSource, out: Path) -> None:
