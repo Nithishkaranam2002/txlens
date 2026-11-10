@@ -27,7 +27,7 @@ def test_lab_rows_keep_raw_values_and_exact_row_numbers(
     runtime: LocalRuntime, config: PipelineConfig
 ) -> None:
     added = run_bronze(runtime, config)
-    assert added == {"lab_rows": 12, "fhir_resources": 6, "note_files": 3, "pdf_index": 3}
+    assert added == {"lab_rows": 16, "fhir_resources": 22, "note_files": 4, "pdf_index": 3}
     rows = {(r.tenant_id, r.source_row): r for r in runtime.read("bronze", "lab_rows").collect()}
     second = rows[("center_a", 2)]
     assert second.source_file == "labs/center_a_labs.csv"
@@ -49,10 +49,10 @@ def test_rerun_adds_nothing_and_changed_file_adds_a_new_version(
     feed.write_bytes(
         feed.read_bytes() + b"730000063,EGFR,eGFR,60,mL/min/1.73m2,6/9/2022 7:31 AM\r\n"
     )
-    assert run_bronze(runtime, config)["lab_rows"] == 5
+    assert run_bronze(runtime, config)["lab_rows"] == 7
     versions = runtime.read("bronze", "lab_rows").where("tenant_id = 'center_c'")
     assert versions.select("file_sha256").distinct().count() == 2
-    assert versions.count() == 9  # the old version's rows are never changed or removed
+    assert versions.count() == 13  # the old version's rows are never changed or removed
 
 
 def test_fhir_resources_are_one_row_per_entry(
@@ -60,11 +60,13 @@ def test_fhir_resources_are_one_row_per_entry(
 ) -> None:
     run_bronze(runtime, config.only(["center_b"]))
     rows = runtime.read("bronze", "fhir_resources").orderBy("source_row").collect()
-    assert [(r.source_row, r.resource_type, r.resource_id) for r in rows] == [
-        (1, "Patient", "p-center_b"),
-        (2, "Procedure", "p-center_b-tx"),
+    assert [(r.source_row, r.resource_type, r.resource_id) for r in rows[:2]] == [
+        (1, "Patient", "pb"),
+        (2, "Procedure", "pb-tx"),
     ]
+    assert len(rows) == 10
     assert rows[0].tenant_id == "center_b"
+    assert rows[0].source_file == "fhir/center_b/center_b.json"
     assert '"value":"MRN-B-1"' in rows[0].resource_json  # same content, compact JSON
 
 

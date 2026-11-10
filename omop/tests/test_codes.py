@@ -84,3 +84,11 @@ def test_mapping_rows_use_known_source_vocabularies_and_normalized_codes() -> No
 
 def test_every_generated_drug_has_an_rxnorm_code() -> None:
     assert uncoded_drugs() == []
+
+
+
+def test_every_uncoded_transplant_text_is_mapped() -> None:
+    mapped = {m.source_code for m in read_mappings() if m.source_vocabulary_id == "TXLENS_PROCEDURE"}
+    for organ, donors in (("kidney", ("living", "deceased")), ("heart", ("deceased",))):
+        for donor in donors:
+            assert f"{organ} transplant - {donor} donor" in mapped

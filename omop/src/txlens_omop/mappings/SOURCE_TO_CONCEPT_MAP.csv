@@ -52,3 +52,6 @@ ratg	0	TXLENS_DRUG	clinical abbreviation 'ratg'	19136207	RxNorm	20261110	2099123
 tac	0	TXLENS_DRUG	clinical abbreviation 'tac'	950637	RxNorm	20261110	20991231	
 tacro	0	TXLENS_DRUG	clinical abbreviation 'tacro'	950637	RxNorm	20261110	20991231	
 valgan	0	TXLENS_DRUG	clinical abbreviation 'valgan'	1703063	RxNorm	20261110	20991231	
+heart transplant - deceased donor	0	TXLENS_PROCEDURE	Heart transplant - deceased donor	4137127	SNOMED	20261110	20991231	
+kidney transplant - deceased donor	0	TXLENS_PROCEDURE	Kidney transplant - deceased donor	4322471	SNOMED	20261110	20991231	
+kidney transplant - living donor	0	TXLENS_PROCEDURE	Kidney transplant - living donor	4322471	SNOMED	20261110	20991231	

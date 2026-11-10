@@ -5,9 +5,10 @@ from collections.abc import Callable
 from txlens_pipelines.bronze.run import run_bronze
 from txlens_pipelines.config import PipelineConfig
 from txlens_pipelines.runtime import Runtime
+from txlens_pipelines.silver.run import run_silver
 
 Layer = Callable[[Runtime, PipelineConfig], dict[str, int]]
-LAYER_FUNCTIONS: dict[str, Layer] = {"bronze": run_bronze}
+LAYER_FUNCTIONS: dict[str, Layer] = {"bronze": run_bronze, "silver": run_silver}
 
 
 def run(runtime: Runtime, config: PipelineConfig, layers: list[str]) -> dict[str, dict[str, int]]:

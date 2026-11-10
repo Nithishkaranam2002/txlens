@@ -3,8 +3,8 @@
 Two files, in Athena's tab-separated format, ship with this package (they are our own content,
 not licensed vocabulary):
 
-- `SOURCE_TO_CONCEPT_MAP.csv`: lab local codes and test-name variants -> LOINC, and clinical
-  drug abbreviations -> RxNorm ingredient. Each row was checked by a person; `make vocab-check`
+- `SOURCE_TO_CONCEPT_MAP.csv`: lab local codes and test-name variants -> LOINC, clinical
+  drug abbreviations -> RxNorm ingredient, and uncoded transplant procedure texts -> SNOMED. Each row was checked by a person; `make vocab-check`
   re-checks every target against the loaded vocabulary.
 - `LOCAL_CONCEPT.csv`: TxLens local concepts (id >= 2,000,000,000, non-standard) for things no
   standard vocabulary has, such as a numeric donor-specific antibody MFI.
@@ -27,6 +27,7 @@ SOURCE_VOCABULARIES = {
     "TXLENS_LAB_NAME": "Measurement",
     "TXLENS_LAB_CODE": "Measurement",
     "TXLENS_DRUG": "Drug",
+    "TXLENS_PROCEDURE": "Procedure",
 }
 
 
