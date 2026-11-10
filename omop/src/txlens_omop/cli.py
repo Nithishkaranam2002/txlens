@@ -80,8 +80,12 @@ def run_check(database_url: str) -> int:
     with psycopg.connect(libpq_url(database_url)) as conn:
         results = check_codes(conn, all_codes())
         print(format_report(results))
-        print("\nSuggestions for drugs we write without an RxNorm code:")
-        for drug in uncoded_drugs():
+        uncoded = uncoded_drugs()
+        print(
+            "\nSuggestions for drugs we write without an RxNorm code:"
+            + ("" if uncoded else " none")
+        )
+        for drug in uncoded:
             found = suggest_ingredients(conn, drug)
             options = (
                 ", ".join(f"{c.concept_code} ({c.concept_name})" for c in found) or "none found"

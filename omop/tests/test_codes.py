@@ -26,5 +26,5 @@ def test_planned_icd10cm_codes_are_included() -> None:
     assert len(all_codes()) == len(generator_codes()) + len(planned_codes())
 
 
-def test_uncoded_drugs_are_the_ones_without_rxnorm() -> None:
-    assert uncoded_drugs() == ["antithymocyte globulin", "immune globulin", "valganciclovir"]
+def test_every_generated_drug_has_an_rxnorm_code() -> None:
+    assert uncoded_drugs() == []

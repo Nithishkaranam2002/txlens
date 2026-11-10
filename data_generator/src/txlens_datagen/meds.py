@@ -7,13 +7,17 @@ from txlens_datagen.course import Course
 from txlens_datagen.models import MedOrder, Patient
 from txlens_datagen.rand import Rng, pick, pick_weighted
 
-# RxNorm ingredient codes for the core drugs. Other drugs are left uncoded on purpose:
-# they get mapped (or sent to review) in the OMOP step.
+# RxNorm ingredient codes, checked against Athena v20260829 with `make vocab-check`.
+# Coded sources (FHIR from centers A and C) send them; center B and the notes stay text-only,
+# so drug-name normalization still has work to do.
 RXNORM = {
     "tacrolimus": "42316",
     "mycophenolate mofetil": "68149",
     "prednisone": "8640",
     "methylprednisolone": "6902",
+    "antithymocyte globulin": "1011",  # brands Thymoglobulin, ATGAM
+    "immune globulin": "5666",  # immunoglobulin G (IVIG brands Gammagard, Privigen, ...)
+    "valganciclovir": "275891",  # brand Valcyte
 }
 TACRO_STEP_DAYS = (0, 30, 90, 180, 365)
 PREDNISONE_TAPER = ((0, 20.0), (14, 15.0), (30, 10.0), (60, 7.5), (90, 5.0))

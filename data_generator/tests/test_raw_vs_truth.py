@@ -121,3 +121,16 @@ def test_fhir_medications_match_ground_truth(generated: Path, truth: dict[str, l
 def test_each_patient_has_one_bundle(generated: Path, truth: dict[str, list[Row]]) -> None:
     bundles = {p.stem for p in (generated / "raw" / "fhir").rglob("*.json")}
     assert bundles == {p["patient_id"] for p in truth["patients"]}
+
+
+def test_only_coded_centers_send_rxnorm_codes(generated: Path) -> None:
+    coded_by_center: dict[str, set[str]] = {}
+    for path in (generated / "raw" / "fhir").rglob("*.json"):
+        center = path.parent.name
+        for entry in json.loads(path.read_text(encoding="utf-8"))["entry"]:
+            resource = entry["resource"]
+            if resource["resourceType"] == "MedicationRequest":
+                for coding in resource["medicationCodeableConcept"].get("coding", []):
+                    coded_by_center.setdefault(center, set()).add(coding["code"])
+    assert "center_b" not in coded_by_center
+    assert {"42316", "68149", "8640"} <= coded_by_center["center_a"]
