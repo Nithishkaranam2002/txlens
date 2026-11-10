@@ -6,7 +6,7 @@ SEED ?= 42
 VOCAB_SOURCE ?= omop/athena
 N_PATIENTS ?= 2000
 
-.PHONY: help setup up up-full down lint test db-migrate db-setup vocab-load vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean test-pipelines spark-build
+.PHONY: help setup up up-full down lint test db-migrate db-setup vocab-load vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -63,6 +63,9 @@ spark-build: ## Build the Spark runner image (Python 3.12 + Java 17 + PySpark + 
 
 pipeline: ## Run bronze -> silver -> gold -> Postgres load in the Spark container (LAYERS=...)
 	$(SPARK_RUN) python -m txlens_pipelines $(if $(LAYERS),--layers $(LAYERS))
+
+pipeline-report: ## Reconcile gold/Postgres with data/ground_truth -> evals/reports/data_quality.md
+	$(SPARK_RUN) python -m txlens_evals.pipeline_reconciliation
 
 pipeline-clean: ## Delete the local Delta lake (bronze/silver/gold); Postgres is untouched
 	rm -rf lake

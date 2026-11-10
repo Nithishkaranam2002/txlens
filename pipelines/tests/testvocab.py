@@ -24,13 +24,32 @@ CONCEPTS = [
     (19003999, "Drug", "RxNorm", "Ingredient", "S", "68149", "mycophenolate mofetil"),
     (19012565, "Drug", "RxNorm", "Ingredient", "S", "265323", "mycophenolate"),
     (1551099, "Drug", "RxNorm", "Ingredient", "S", "8640", "prednisone"),
-    (19038654, "Drug", "RxNorm", "Brand Name", "", "TEST-BN-PROGRAF", "prograf"),
+    (1506270, "Drug", "RxNorm", "Ingredient", "S", "6902", "methylprednisolone"),
+    (
+        19136207,
+        "Drug",
+        "RxNorm",
+        "Ingredient",
+        "S",
+        "1011",
+        "lymphocyte immune globulin, anti-thymocyte globulin",
+    ),
+    (19117912, "Drug", "RxNorm", "Ingredient", "S", "5666", "immunoglobulin G"),
+    (1703063, "Drug", "RxNorm", "Ingredient", "S", "275891", "valganciclovir"),
+    (19038654, "Drug", "RxNorm", "Brand Name", "", "TEST-BN-1", "Prograf"),
+    (19023134, "Drug", "RxNorm", "Brand Name", "", "TEST-BN-2", "Cellcept"),
+    (19048391, "Drug", "RxNorm", "Brand Name", "", "TEST-BN-3", "Solu-Medrol"),
+    (19087946, "Drug", "RxNorm", "Brand Name", "", "TEST-BN-4", "Thymoglobulin"),
+    (19011227, "Drug", "RxNorm", "Brand Name", "", "TEST-BN-5", "Valcyte"),
     (4322471, "Procedure", "SNOMED", "Procedure", "S", "70536003", "kidney transplant"),
     (4137127, "Procedure", "SNOMED", "Procedure", "S", "32413006", "heart transplant"),
     (1244937, "Procedure", "SNOMED", "Procedure", "S", "1293269004", "kidney graft biopsy"),
     (4308808, "Procedure", "SNOMED", "Procedure", "S", "387829002", "endomyocardial biopsy"),
     (193782, "Condition", "SNOMED", "Disorder", "S", "46177005", "esrd"),
     (201826, "Condition", "SNOMED", "Disorder", "S", "44054006", "type 2 diabetes"),
+    (316866, "Condition", "SNOMED", "Disorder", "S", "38341003", "hypertension"),
+    (316139, "Condition", "SNOMED", "Disorder", "S", "84114007", "heart failure"),
+    (4121617, "Condition", "SNOMED", "Disorder", "S", "233934000", "cardiac transplant failure"),
     (4127554, "Condition", "SNOMED", "Disorder", "S", "236583003", "failed renal transplant"),
     (2100000900, "Condition", "SNOMED", "Disorder", "", "TEST-OLD-ESRD", "outdated esrd code"),
     (4132161, "Route", "SNOMED", "Qualifier Value", "S", "26643006", "oral"),
@@ -40,8 +59,14 @@ CONCEPTS = [
     (8507, "Gender", "Gender", "Gender", "S", "M", "male"),
     (8532, "Gender", "Gender", "Gender", "S", "F", "female"),
 ]
-# The real Prograf brand name is the label "prograf" (matched case-insensitively).
-RELATIONSHIPS = [(19038654, 950637, "Brand name of"), (950637, 19038654, "Has brand name")]
+# Brand Name -> ingredient (RxNorm "Brand name of").
+RELATIONSHIPS = [
+    (19038654, 950637, "Brand name of"),
+    (19023134, 19003999, "Brand name of"),
+    (19048391, 1506270, "Brand name of"),
+    (19087946, 19136207, "Brand name of"),
+    (19011227, 1703063, "Brand name of"),
+]
 SYNONYMS = [(950637, "TEST ONLY - FK-506 synonym")]
 VALID = "19700101\t20991231"
 HEADER = (

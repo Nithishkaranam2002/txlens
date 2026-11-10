@@ -86,3 +86,10 @@ def test_changed_lab_header_is_a_contract_violation(runtime: LocalRuntime) -> No
     )
     with pytest.raises(ContractViolationError, match="header"):
         check_header(split_lines(files), DIALECTS["a"], "x.csv")
+
+
+def test_a_source_with_no_files_is_skipped(runtime: LocalRuntime, config: PipelineConfig) -> None:
+    import shutil
+
+    shutil.rmtree(Path(runtime.raw_root) / "pathology" / "center_c")
+    assert run_bronze(runtime, config)["pdf_index"] == 2
