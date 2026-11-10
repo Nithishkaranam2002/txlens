@@ -3,8 +3,9 @@
 .env.*
 !.env.example
 
-# Personal planning notes (kept locally, not in the repo)
+# Personal notes (kept locally, not in the repo)
 BUILD_PLAN.md
+CLAUDE.local.md
 
 # Python
 .venv/
