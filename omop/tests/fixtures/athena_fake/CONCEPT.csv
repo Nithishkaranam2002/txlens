@@ -1,0 +1,20 @@
+concept_id	concept_name	domain_id	vocabulary_id	concept_class_id	standard_concept	concept_code	valid_start_date	valid_end_date	invalid_reason
+2100000001	TEST ONLY - Transplant rejection	Condition	SNOMED	Disorder	S	TEST-SCT-100	19700101	20991231	
+2100000002	TEST ONLY - Kidney transplant rejection	Condition	SNOMED	Disorder	S	TEST-SCT-101	19700101	20991231	
+2100000003	TEST ONLY - Acute T cell-mediated rejection of kidney transplant	Condition	SNOMED	Disorder	S	TEST-SCT-102	19700101	20991231	
+2100000004	TEST ONLY - Antibody-mediated rejection of kidney transplant	Condition	SNOMED	Disorder	S	TEST-SCT-103	19700101	20991231	
+2100000005	TEST ONLY - Heart transplant rejection	Condition	SNOMED	Disorder	S	TEST-SCT-104	19700101	20991231	
+2100000006	TEST ONLY - Type 2 diabetes mellitus	Condition	SNOMED	Disorder	S	TEST-SCT-200	19700101	20991231	
+2100000007	TEST ONLY - Transplantation of kidney	Procedure	SNOMED	Procedure	S	TEST-SCT-300	19700101	20991231	
+2100000008	TEST ONLY - Kidney transplant rejection (outdated code)	Condition	SNOMED	Disorder		TEST-SCT-999	19700101	20991231	U
+2100000010	TEST ONLY - Kidney transplant rejection (ICD-10-CM source code)	Condition	ICD10CM	ICD10 code		TEST-T86.11	19700101	20991231	
+2100000011	TEST ONLY - Type 2 diabetes (ICD-10-CM source code)	Condition	ICD10CM	ICD10 code		TEST-E11.9	19700101	20991231	
+2100000012	TEST ONLY - Unmapped ICD-10-CM code	Condition	ICD10CM	ICD10 code		TEST-Z99.99	19700101	20991231	
+2100000020	TEST ONLY - Creatinine in serum	Measurement	LOINC	Lab Test	S	TEST-LN-2160	19700101	20991231	
+2100000022	TEST ONLY - LOINC code in the Observation domain	Observation	LOINC	Clinical Observation	S	TEST-LN-OBS	19700101	20991231	
+2100000030	TEST ONLY - Tacrolimus	Drug	RxNorm	Ingredient	S	TEST-RX-42316	19700101	20991231	
+2100000031	TEST ONLY - Tacrolimus 1 MG Oral Capsule	Drug	RxNorm	Clinical Drug	S	TEST-RX-1001	19700101	20991231	
+2100000032	TEST ONLY - Tacrolimus 5 MG Oral Capsule	Drug	RxNorm	Clinical Drug	S	TEST-RX-1005	19700101	20991231	
+2100000040		Procedure	CPT4	CPT4	S	TEST-CPT-0001	19700101	20991231	
+2100000050	TEST ONLY - NDC package (vocabulary not loaded)	Drug	NDC	11-digit NDC		TEST-NDC-1	19700101	20991231	
+2100000060	TEST ONLY - Female	Gender	Gender	Gender	S	TEST-F	19700101	20991231	

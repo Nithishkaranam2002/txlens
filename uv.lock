@@ -531,6 +531,16 @@ source = { editable = "evals" }
 name = "txlens-omop"
 version = "0.1.0"
 source = { editable = "omop" }
+dependencies = [
+    { name = "psycopg", extra = ["binary"] },
+    { name = "txlens-datagen" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
+    { name = "txlens-datagen", editable = "data_generator" },
+]
 
 [[package]]
 name = "txlens-pipelines"

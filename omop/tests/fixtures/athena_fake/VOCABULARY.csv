@@ -1,0 +1,9 @@
+vocabulary_id	vocabulary_name	vocabulary_reference	vocabulary_version	vocabulary_concept_id
+SNOMED	TEST ONLY - SNOMED	test fixture		0
+LOINC	TEST ONLY - LOINC	test fixture		0
+RxNorm	TEST ONLY - RxNorm	test fixture		0
+ICD10CM	TEST ONLY - ICD10CM	test fixture		0
+CPT4	TEST ONLY - CPT4	test fixture		0
+NDC	TEST ONLY - NDC	test fixture		0
+Gender	TEST ONLY - Gender	test fixture		0
+UCUM	TEST ONLY - UCUM	test fixture		0

@@ -26,6 +26,10 @@ out/
 next-env.d.ts
 coverage/
 
+# OMOP vocabularies (Athena / SNOMED / RxNorm licences: never commit or redistribute)
+omop/athena/
+omop/vocab_subset/
+
 # Generated data and Spark/Delta output
 data/
 data_scale/

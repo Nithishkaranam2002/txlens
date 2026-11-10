@@ -9,3 +9,5 @@
 .ruff_cache
 data
 data_scale/
+omop/athena
+omop/vocab_subset

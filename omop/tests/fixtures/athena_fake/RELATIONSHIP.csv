@@ -1,0 +1,5 @@
+relationship_id	relationship_name	is_hierarchical	defines_ancestry	reverse_relationship_id	relationship_concept_id
+Maps to	TEST ONLY - Maps to	0	0	Mapped from	0
+Mapped from	TEST ONLY - Mapped from	0	0	Maps to	0
+Is a	TEST ONLY - Is a	1	1	Subsumes	0
+Subsumes	TEST ONLY - Subsumes	1	1	Is a	0
