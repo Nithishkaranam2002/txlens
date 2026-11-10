@@ -15,6 +15,10 @@ make test-pipelines              # Spark tests in the container
 make pipeline-clean              # delete the local lake/ (Postgres untouched)
 ```
 
+Tests marked `slow` (end-to-end runs on generated data) take several minutes. CI runs them in a
+separate `pipelines-e2e` job on pushes to main and on manual runs. Pull requests run only
+`pytest -m "not slow"`.
+
 | Layer | Tables | What happens |
 |---|---|---|
 | bronze | `lab_rows`, `fhir_resources`, `note_files`, `pdf_index` | Raw rows as-is, with `source_file`, `source_row`, `file_sha256`, `ingested_at`, `tenant_id`, `batch_id`. Insert-only. |

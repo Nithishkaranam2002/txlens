@@ -21,22 +21,6 @@ pytestmark = pytest.mark.spark
 CR = 88.4
 
 
-@pytest.fixture(scope="module")
-def built(spark: SparkSession, tmp_path_factory: pytest.TempPathFactory) -> LocalRuntime:
-    """Bronze and silver built once for this module (quarantine limit off: tiny data)."""
-    root = tmp_path_factory.mktemp("silver")
-    runtime = LocalRuntime(
-        spark,
-        str(write_raw(root / "raw")),
-        str(write_vocab(root / "vocab")),
-        str(root / "lake"),
-    )
-    config = PipelineConfig(runtime.raw_root, runtime.vocab_root, max_quarantine_rate=1.0)
-    run_bronze(runtime, config)
-    run_silver(runtime, config)
-    return runtime
-
-
 def rows(runtime: LocalRuntime, table: str) -> list[Row]:
     found: list[Row] = runtime.read("silver", table).collect()
     return found

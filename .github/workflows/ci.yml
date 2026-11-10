@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -11,6 +12,7 @@ permissions:
 jobs:
   python:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       # Same image as the local stack. Throwaway CI-only credentials, not a secret.
       postgres:
@@ -40,6 +42,11 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      # Delta Lake jars that Spark downloads through Ivy on first start (versions pinned by uv.lock).
+      - uses: actions/cache@v6
+        with:
+          path: ~/.ivy2
+          key: ivy-${{ runner.os }}-${{ hashFiles('uv.lock') }}
       - name: Install dependencies (including PySpark)
         run: uv sync --frozen --all-packages --all-extras
       - name: Lint
@@ -48,11 +55,37 @@ jobs:
           uv run ruff format --check .
           # One mypy run per package: each tests/ folder has its own conftest.py.
           for pkg in backend data_generator pipelines evals omop; do uv run mypy "$pkg" || exit 1; done
-      - name: Test
-        run: uv run pytest
+      - name: Test (without the slow Spark runs)
+        run: uv run pytest -m "not slow"
+
+  # End-to-end Spark runs on generated data (about 25 minutes). Only on main and by hand, so
+  # pull requests get quick feedback from the job above.
+  pipelines-e2e:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version: "0.7.22"
+          enable-cache: true
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/cache@v6
+        with:
+          path: ~/.ivy2
+          key: ivy-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+      - name: Install dependencies (including PySpark)
+        run: uv sync --frozen --all-packages --all-extras
+      - name: Slow Spark tests
+        run: uv run pytest -m slow
 
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: frontend

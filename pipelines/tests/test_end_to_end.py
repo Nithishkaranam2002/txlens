@@ -18,7 +18,7 @@ from txlens_pipelines.config import PipelineConfig
 from txlens_pipelines.pipeline import run
 from txlens_pipelines.runtime import LocalRuntime
 
-pytestmark = pytest.mark.spark
+pytestmark = [pytest.mark.spark, pytest.mark.slow]
 LAYERS = ["bronze", "silver", "gold"]
 
 

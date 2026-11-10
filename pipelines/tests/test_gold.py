@@ -8,8 +8,6 @@ import pytest
 pytest.importorskip("pyspark", reason="PySpark runs in the Spark container or CI")
 
 from pyspark.sql import Row, SparkSession
-from rawfiles import write_raw
-from testvocab import write_vocab
 
 from txlens_pipelines.config import PipelineConfig
 from txlens_pipelines.gold.conform import check_omop_contract, conform
@@ -20,17 +18,6 @@ from txlens_pipelines.runtime import LocalRuntime
 
 pytestmark = pytest.mark.spark
 LAYERS = ["bronze", "silver", "gold"]
-
-
-@pytest.fixture(scope="module")
-def built(spark: SparkSession, tmp_path_factory: pytest.TempPathFactory) -> LocalRuntime:
-    root = tmp_path_factory.mktemp("gold")
-    runtime = LocalRuntime(
-        spark, str(write_raw(root / "raw")), str(write_vocab(root / "vocab")), str(root / "lake")
-    )
-    config = PipelineConfig(runtime.raw_root, runtime.vocab_root, max_quarantine_rate=1.0)
-    run(runtime, config, LAYERS)
-    return runtime
 
 
 def gold(runtime: LocalRuntime, table: str) -> list[Row]:
@@ -145,6 +132,7 @@ def test_mapping_gaps_list_every_unmapped_source_value(built: LocalRuntime) -> N
     }
 
 
+@pytest.mark.slow  # the end-to-end test also checks re-runs
 def test_rerun_is_idempotent(built: LocalRuntime) -> None:
     before = {t: sorted(map(tuple, gold(built, t))) for t in ("person", "measurement")}
     config = PipelineConfig(built.raw_root, built.vocab_root, max_quarantine_rate=1.0)

@@ -4,8 +4,10 @@ from delta import configure_spark_with_delta_pip
 from pyspark.sql import SparkSession
 
 
-def build_spark_session(app_name: str = "txlens") -> SparkSession:
-    """Return a local SparkSession that can read and write Delta tables."""
+def build_spark_session(
+    app_name: str = "txlens", conf: dict[str, str] | None = None
+) -> SparkSession:
+    """Return a local SparkSession that can read and write Delta tables; `conf` overrides."""
     builder = (
         SparkSession.builder.appName(app_name)
         .master("local[*]")
@@ -19,6 +21,8 @@ def build_spark_session(app_name: str = "txlens") -> SparkSession:
         .config("spark.ui.showConsoleProgress", "false")
         .config("spark.driver.memory", "4g")
     )
+    for key, value in (conf or {}).items():
+        builder = builder.config(key, value)
     session: SparkSession = configure_spark_with_delta_pip(builder).getOrCreate()
     session.sparkContext.setLogLevel("WARN")
     return session

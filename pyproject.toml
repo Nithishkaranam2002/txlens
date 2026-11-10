@@ -76,4 +76,5 @@ pythonpath = ["data_generator/tests", "backend/tests", "pipelines/tests"]
 markers = [
     "spark: needs PySpark + Java (runs in the Spark container or CI)",
     "db: needs PostgreSQL (local `make up`, or the CI service)",
+    "slow: minutes-long Spark runs; CI runs them in their own job (`pytest -m slow`)",
 ]
