@@ -1,11 +1,12 @@
 """FHIR-like JSON bundles (one per patient): Patient, Procedure, Condition, Encounter,
-MedicationRequest.
+MedicationRequest. Deaths are Patient.deceasedDateTime; graft loss is a dated Condition.
 
 The three centers fill these differently: center A codes everything, center B uses free text
 and its own conventions, center C is in between. That is the mess the pipeline must handle.
 """
 
 import json
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,8 @@ SNOMED_CODES = {
     "hypertension": ("38341003", "Hypertensive disorder"),
     "esrd": ("46177005", "End-stage renal disease"),
     "heart_failure": ("84114007", "Heart failure"),
+    "kidney_graft_failure": ("236583003", "Failed renal transplant"),
+    "heart_graft_failure": ("233934000", "Cardiac transplant failure"),
 }
 ENCOUNTER_CLASS = {"clinic": "AMB", "biopsy": "AMB", "admission": "IMP"}
 
@@ -41,22 +44,27 @@ def is_coded(center: Center, rng: Rng) -> bool:
     return center.code == "a" or (center.code == "c" and chance(rng, 0.5))
 
 
+def fhir_date(day: date, center: Center) -> str:
+    """A date as the center writes it: center B always adds a midnight time part."""
+    return f"{day.isoformat()}T00:00:00" if center.code == "b" else day.isoformat()
+
+
 def patient_resource(record: PatientRecord, center: Center) -> Json:
-    """Demographics. Center B writes gender as M/F and birth dates with a time part."""
+    """Demographics and death. Center B writes gender as M/F and dates with a time part."""
     p = record.patient
     gender = p.sex if center.code == "b" else {"F": "female", "M": "male"}[p.sex]
-    birth = (
-        f"{p.birth_date.isoformat()}T00:00:00" if center.code == "b" else p.birth_date.isoformat()
-    )
-    return {
+    resource: Json = {
         "resourceType": "Patient",
         "id": p.patient_id,
         "identifier": [{"system": f"urn:txlens:{center.tenant_id}:mrn", "value": p.mrn}],
         "name": [{"family": p.last_name, "given": [p.first_name]}],
         "gender": gender,
-        "birthDate": birth,
+        "birthDate": fhir_date(p.birth_date, center),
         "managingOrganization": {"display": center.name},
     }
+    if record.outcome.death_date is not None:
+        resource["deceasedDateTime"] = fhir_date(record.outcome.death_date, center)
+    return resource
 
 
 def procedure_resource(record: PatientRecord, center: Center, rng: Rng) -> Json:
@@ -94,6 +102,21 @@ def condition_resources(record: PatientRecord, center: Center, rng: Rng) -> list
         }
         for n, (concept, text) in enumerate(items, start=1)
     ]
+
+
+def graft_loss_resource(record: PatientRecord, center: Center, rng: Rng) -> Json | None:
+    """Graft failure as a dated Condition, or None when the graft survived follow-up."""
+    p, outcome = record.patient, record.outcome
+    if outcome.graft_loss_date is None:
+        return None
+    text = f"{p.organ.capitalize()} graft failure - {outcome.graft_loss_cause}"
+    return {
+        "resourceType": "Condition",
+        "id": f"{p.patient_id}-graft-loss",
+        "subject": {"reference": f"Patient/{p.patient_id}"},
+        "code": codeable(f"{p.organ}_graft_failure", text, is_coded(center, rng)),
+        "onsetDateTime": fhir_date(outcome.graft_loss_date, center),
+    }
 
 
 def encounter_resource(record: PatientRecord, enc: Encounter) -> Json:
@@ -154,6 +177,9 @@ def make_bundle(record: PatientRecord, center: Center, rng: Rng) -> Json:
         *(encounter_resource(record, enc) for enc in record.encounters),
         *(medication_resource(record, order, center, rng) for order in record.meds),
     ]
+    graft_loss = graft_loss_resource(record, center, rng)
+    if graft_loss is not None:
+        resources.append(graft_loss)
     return {
         "resourceType": "Bundle",
         "type": "collection",

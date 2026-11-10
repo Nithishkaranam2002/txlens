@@ -39,7 +39,7 @@ TOLERANCE = {"creatinine": 0.006, "dd_cfdna": 1e-9}
 @pytest.fixture(scope="module")
 def truth(generated: Path) -> dict[str, list[Row]]:
     gt = generated / "ground_truth"
-    names = ["labs", "lab_feed_issues", "patients", "medications", "notes", "biopsies"]
+    names = ["labs", "lab_feed_issues", "patients", "medications", "notes", "biopsies", "outcomes"]
     return {name: read_csv(gt / f"{name}.csv") for name in names}
 
 
@@ -134,3 +134,21 @@ def test_only_coded_centers_send_rxnorm_codes(generated: Path) -> None:
                     coded_by_center.setdefault(center, set()).add(coding["code"])
     assert "center_b" not in coded_by_center
     assert {"42316", "68149", "8640"} <= coded_by_center["center_a"]
+
+
+def test_fhir_deaths_and_graft_losses_match_outcomes(
+    generated: Path, truth: dict[str, list[Row]]
+) -> None:
+    deaths, losses = {}, {}
+    for path in (generated / "raw" / "fhir").rglob("*.json"):
+        for entry in json.loads(path.read_text(encoding="utf-8"))["entry"]:
+            resource = entry["resource"]
+            if "deceasedDateTime" in resource:
+                deaths[resource["id"]] = resource["deceasedDateTime"][:10]
+            if resource["id"].endswith("-graft-loss"):
+                losses[resource["subject"]["reference"][8:]] = resource["onsetDateTime"][:10]
+    outcomes = truth["outcomes"]
+    assert deaths == {o["patient_id"]: o["death_date"] for o in outcomes if o["death_date"]}
+    assert losses == {
+        o["patient_id"]: o["graft_loss_date"] for o in outcomes if o["graft_loss_date"]
+    }
