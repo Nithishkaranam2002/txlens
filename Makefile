@@ -6,7 +6,7 @@ SEED ?= 42
 VOCAB_SOURCE ?= omop/athena
 N_PATIENTS ?= 2000
 
-.PHONY: help setup up up-full down lint test db-migrate db-setup vocab-load vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
+.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api prune-login-attempts vocab-load vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -42,6 +42,15 @@ db-migrate: ## Apply database migrations (OMOP schemas, tenant RLS, indexes)
 
 db-setup: db-migrate ## Migrate, then create the app login role from APP_DATABASE_URL
 	uv run txlens-db-setup
+
+seed-users: ## Create/update one demo user per role per center (passwords from .env)
+	uv run txlens-seed-users
+
+api: ## Run the API with auto-reload (docs: http://localhost:8000/docs)
+	uv run uvicorn txlens_backend.api.app:create_app --factory --reload --port 8000
+
+prune-login-attempts: ## Delete login attempts older than 30 days (logins also do this)
+	uv run txlens-prune-login-attempts
 
 vocab-load: ## Load OMOP vocabularies from omop/athena (or VOCAB_SOURCE=omop/vocab_subset)
 	uv run txlens-vocab load --source $(VOCAB_SOURCE)
