@@ -43,6 +43,7 @@ mypy_path = [
     "data_generator/src",
     "pipelines/src",
     "evals/src",
+    "data_generator/tests",
 ]
 explicit_package_bases = true
 
@@ -54,4 +55,6 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers --import-mode=importlib"
 testpaths = ["backend/tests", "data_generator/tests", "evals/tests", "pipelines/tests"]
+# Shared test helpers (uniquely named so they cannot clash with other packages).
+pythonpath = ["data_generator/tests"]
 markers = ["spark: needs PySpark + Java (runs in the Spark container or CI)"]

@@ -3,7 +3,10 @@ name = "txlens-datagen"
 version = "0.1.0"
 description = "Synthetic transplant patient data generator"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "numpy>=2.5.4",
+    "pillow>=13.0.0",
+]
 
 [project.scripts]
 txlens-generate = "txlens_datagen.cli:main"
