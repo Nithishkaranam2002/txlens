@@ -44,6 +44,10 @@ PIPELINE_CODES = {
     ("UCUM", "mL/min/(173.10*-2.m2)"): ("eGFR unit (mL/min/1.73 m2)", "Unit"),
     ("UCUM", "ng/mL"): ("tacrolimus trough unit", "Unit"),
     ("UCUM", "%"): ("dd-cfDNA unit", "Unit"),
+    ("SNOMED", "26643006"): ("oral route", "Route"),
+    ("SNOMED", "47625008"): ("intravenous route", "Route"),
+    ("LOINC", "11506-3"): ("progress note (note class)", "Note"),
+    ("SNOMED", "297487008"): ("English language (note language)", "Language"),
 }
 # Facts with no standard concept: reviewed, mapped to 0 in OMOP and listed in the gaps report.
 KNOWN_GAPS = {

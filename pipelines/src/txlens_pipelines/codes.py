@@ -41,3 +41,20 @@ LAB_RULES = (
 
 # Graft biopsy procedure by transplanted organ.
 BIOPSY_CODES = {"kidney": ("SNOMED", "1293269004"), "heart": ("SNOMED", "387829002")}
+# Routes as written in orders (lower case) -> SNOMED route.
+ROUTE_CODES = {"oral": ("SNOMED", "26643006"), "iv": ("SNOMED", "47625008")}
+NOTE_CLASS = ("LOINC", "11506-3")  # progress note
+NOTE_LANGUAGE = ("SNOMED", "297487008")  # English
+
+# OMOP-generated concepts (Type Concept, Gender, Visit, Metadata, CDM vocabularies): their ids
+# are fixed by OHDSI and are part of the vocabulary's support tables.
+TYPE_EHR = 32817
+TYPE_PRESCRIPTION = 32838
+TYPE_LAB = 32856
+TYPE_PROBLEM_LIST = 32840
+TYPE_NOTE = 32831
+GENDER = {"male": 8507, "female": 8532}
+VISIT = {"AMB": 9202, "IMP": 9201}  # outpatient, inpatient
+OPERATORS = {"<": 4171756, "<=": 4171754, ">": 4172704, ">=": 4171755}
+ENCODING_UTF8 = 32678
+CDM_V543 = 902983

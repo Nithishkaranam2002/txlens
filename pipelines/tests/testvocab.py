@@ -33,6 +33,10 @@ CONCEPTS = [
     (201826, "Condition", "SNOMED", "Disorder", "S", "44054006", "type 2 diabetes"),
     (4127554, "Condition", "SNOMED", "Disorder", "S", "236583003", "failed renal transplant"),
     (2100000900, "Condition", "SNOMED", "Disorder", "", "TEST-OLD-ESRD", "outdated esrd code"),
+    (4132161, "Route", "SNOMED", "Qualifier Value", "S", "26643006", "oral"),
+    (4171047, "Route", "SNOMED", "Qualifier Value", "S", "47625008", "intravenous"),
+    (3000735, "Note", "LOINC", "Doc Kind", "S", "11506-3", "progress note"),
+    (4180186, "Language", "SNOMED", "Qualifier Value", "S", "297487008", "english"),
     (8507, "Gender", "Gender", "Gender", "S", "M", "male"),
     (8532, "Gender", "Gender", "Gender", "S", "F", "female"),
 ]
@@ -64,6 +68,10 @@ def write_vocab(folder: Path) -> Path:
         "invalid_reason\n"
         + "".join(f"{a}\t{b}\t{r}\t19700101\t20991231\t\n" for a, b, r in RELATIONSHIPS)
         + "2100000900\t193782\tMaps to\t19700101\t20991231\t\n"
+    )
+    (folder / "VOCABULARY.csv").write_text(
+        "vocabulary_id\tvocabulary_name\tvocabulary_reference\tvocabulary_version\t"
+        "vocabulary_concept_id\nNone\tOMOP Standardized Vocabularies\tTEST\tv5.0 TEST\t44819096\n"
     )
     (folder / "CONCEPT_SYNONYM.csv").write_text(
         "concept_id\tconcept_synonym_name\tlanguage_concept_id\n"

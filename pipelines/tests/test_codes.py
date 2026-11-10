@@ -32,3 +32,13 @@ def test_every_unit_the_feeds_write_has_a_conversion() -> None:
     rules = {r.lab: set(r.factors) for r in LAB_RULES}
     assert rules == units
     assert {lab for d in DIALECTS.values() for lab in d.test_names} == set(rules)
+
+
+def test_omop_column_copy_matches_the_pinned_ddl() -> None:
+    from txlens_omop import ddl
+    from txlens_pipelines.omop_schema import OMOP_TABLES, PRIMARY_KEYS
+
+    for table, columns in OMOP_TABLES.items():
+        spec = ddl.tables()[table]
+        assert columns == tuple((c.name, c.data_type, c.nullable) for c in spec.columns)
+        assert PRIMARY_KEYS[table] == spec.primary_key
