@@ -19,10 +19,11 @@ from txlens_datagen.rand import Rng, chance, pick
 UMOL_PER_MG_DL = 88.4
 
 # LOINC codes for center A's coded rows. Labs without a code here are always uncoded.
+# Checked against Athena v20260829 with `make vocab-check`.
 LOINC: dict[LabName, str] = {
-    "creatinine": "2160-0",
-    "egfr": "98979-8",
-    "tacrolimus_trough": "11253-2",
+    "creatinine": "2160-0",  # Creatinine [Mass/volume] in Serum or Plasma
+    "egfr": "98979-8",  # GFR/1.73 sq M ... by Creatinine-based formula (CKD-EPI 2021)
+    "tacrolimus_trough": "77348-1",  # Tacrolimus [Mass/volume] in Blood --trough
 }
 
 Cells = list[str]
