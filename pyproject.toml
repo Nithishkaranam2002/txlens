@@ -34,6 +34,11 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "RUF"]
 
+[tool.ruff.lint.per-file-ignores]
+# `functions as F` is the standard PySpark idiom.
+"pipelines/**" = ["N812"]
+"evals/**" = ["N812"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["txlens_backend", "txlens_datagen", "txlens_pipelines", "txlens_evals", "txlens_omop"]
 
@@ -51,9 +56,10 @@ mypy_path = [
 ]
 explicit_package_bases = true
 
-# PySpark is only installed inside the Spark container and in CI.
+# PySpark (and pandera, which the pipelines use with it) is only installed inside the Spark
+# container and in CI.
 [[tool.mypy.overrides]]
-module = ["pyspark.*", "delta.*"]
+module = ["pyspark.*", "delta.*", "pandera.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

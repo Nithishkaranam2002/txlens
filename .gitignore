@@ -42,3 +42,6 @@ mlruns/
 .DS_Store
 .idea/
 .vscode/
+
+# Local Delta lake written by the pipelines
+lake/

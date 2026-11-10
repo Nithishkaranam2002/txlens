@@ -7,7 +7,19 @@ dependencies = []
 
 [project.optional-dependencies]
 # Heavy (~350 MB) and needs Java: installed only in the Spark container and CI.
-spark = ["pyspark>=3.5.5,<3.6", "delta-spark>=3.3,<3.4"]
+# Databricks provides pyspark and Delta itself; it installs only pandera (see databricks.yml).
+# pandera's PySpark module imports pyspark.pandas, which needs pandas, pyarrow and (on Python
+# 3.12, where distutils was removed) the distutils shim that setuptools provides.
+spark = [
+    "pyspark>=3.5.5,<3.6",
+    "delta-spark>=3.3,<3.4",
+    "pandera>=0.26",
+    "pandas>=2.2,<3",
+    "pyarrow>=17",
+    "setuptools>=75",
+]
+# Loading gold into Postgres (local only).
+postgres = ["psycopg[binary]>=3.2"]
 
 [build-system]
 requires = ["hatchling"]

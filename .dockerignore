@@ -11,3 +11,4 @@ data
 data_scale/
 omop/athena
 omop/vocab_subset
+lake

@@ -14,9 +14,11 @@ COPY backend/pyproject.toml backend/
 COPY data_generator/pyproject.toml data_generator/
 COPY pipelines/pyproject.toml pipelines/
 COPY evals/pyproject.toml evals/
+COPY omop/pyproject.toml omop/
 
-# Install only the pipelines' third-party dependencies (locked versions) plus pytest.
-RUN uv export --frozen --package txlens-pipelines --extra spark --no-emit-workspace \
+# Install every workspace package's third-party dependencies (locked versions) plus pytest:
+# the pipeline tests generate small datasets and check gold against the pinned OMOP DDL.
+RUN uv export --frozen --all-packages --all-extras --no-emit-workspace \
         --no-dev --no-hashes -o requirements.txt \
     && uv pip install --system --no-cache -r requirements.txt "pytest>=8.4" \
     && rm -rf /build
@@ -29,6 +31,6 @@ RUN PYTHONPATH=/tmp/pipelines-src python -c \
 
 # Source code is mounted at /app by docker compose, so code edits need no rebuild.
 WORKDIR /app
-ENV PYTHONPATH=/app/pipelines/src \
+ENV PYTHONPATH=/app/pipelines/src:/app/omop/src:/app/data_generator/src:/app/evals/src:/app/data_generator/tests:/app/backend/src:/app/backend/tests \
     PYTHONDONTWRITEBYTECODE=1 \
     PYSPARK_PYTHON=python

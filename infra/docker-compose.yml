@@ -61,6 +61,14 @@ services:
     volumes:
       - ..:/app
     working_dir: /app
+    # .env holds APP_DATABASE_URL (localhost); inside the compose network Postgres is
+    # "postgres:5432", so the pipeline's Postgres loader swaps host and port.
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      TXLENS_DB_HOST: postgres
+      TXLENS_DB_PORT: "5432"
 
 volumes:
   postgres-data:
