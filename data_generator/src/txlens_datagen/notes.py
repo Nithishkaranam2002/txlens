@@ -57,6 +57,7 @@ CONDITION_NAMES = {
     "edema": ("edema", "LE edema"),
     "dyspnea": ("SOB", "dyspnea"),
     "graft_tenderness": ("graft tenderness",),
+    "palpitations": ("palpitations",),
 }
 REJECTION_CONCEPT = {
     "borderline": "borderline_rejection",
@@ -74,7 +75,10 @@ REJECTION_NAMES = {
     ("heart", "ABMR"): ("AMR", "antibody-mediated rejection"),
     ("heart", "mixed"): ("mixed ACR/AMR", "mixed rejection"),
 }
-SYMPTOMS = ("fever", "dysuria", "edema", "dyspnea", "graft_tenderness")
+SYMPTOMS = {
+    "kidney": ("fever", "dysuria", "edema", "graft_tenderness"),
+    "heart": ("fever", "dyspnea", "edema", "palpitations"),
+}
 
 
 def condition(
@@ -174,7 +178,7 @@ def hpi(b: NoteBuilder, record: PatientRecord, on: date, rng: Rng) -> None:
             f"Bx {fmt_date(rng, episode.biopsy_date)} showed {{rej}}, treated. ",
             rej=rejection_mention(rng, record, episode, temporality="historical"),
         )
-    symptoms = [s for s in SYMPTOMS if chance(rng, 0.35)] or ["fever"]
+    symptoms = [s for s in SYMPTOMS[p.organ] if chance(rng, 0.35)] or ["fever"]
     b.add("Denies ")
     for i, symptom in enumerate(symptoms):
         b.add(", " if i else "")
