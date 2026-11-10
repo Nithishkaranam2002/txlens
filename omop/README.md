@@ -10,6 +10,7 @@ The `txlens-omop` package holds:
 | `subset.py` | Extract a small vocabulary subset around the codes we use |
 | `vocab.py` | Lookups: code → concept → standard concept, and descendants |
 | `codes.py`, `check.py` | Inventory of every code we use, and the check against the vocabulary |
+| `mappings.py`, `mappings/` | Reviewed `source_to_concept_map` rows (lab names and local codes, drug abbreviations, uncoded transplant texts) and the TxLens local concept for DSA MFI; loaded with the vocabulary and copied into the subset |
 | `tests/fixtures/athena_fake/` | **TEST ONLY** fake vocabulary (fake codes, ids ≥ 2,100,000,000) |
 
 Design decisions: `docs/adr/0004-multi-tenancy-rls.md` and `docs/adr/0005-omop-ddl-and-vocabulary.md`.

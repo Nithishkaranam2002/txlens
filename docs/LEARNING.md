@@ -234,3 +234,110 @@ experiencer flags).
    copy of everything; the ADR lists when the other options would win.
 5. **What happens with a code you don't recognise?** `concept_id = 0`, the original code is
    kept in the `*_source_value` column, and the record goes to the human review queue.
+
+## Phase 1, Step 1.4 — Medallion pipelines (bronze → silver → gold → Postgres)
+
+### What was built
+- **A PySpark + Delta Lake pipeline** (`make pipeline`). It turns the three centers' messy
+  files into OMOP tables and loads them into Postgres:
+  - 249,517 raw lab rows become 240,945 clean results
+  - 22,234 medication orders, 65 deaths and 12,505 notes
+  - all of it as OMOP rows
+- **Bronze** keeps every raw row exactly as received, with where it came from (file, row
+  number, file fingerprint, time, tenant, run id). It is insert-only: running again adds nothing.
+- **Silver** cleans the data:
+  - reads each center's date format
+  - removes exact duplicate lines
+  - converts creatinine µmol/L to mg/dL
+  - handles `<0.05`, `>90`, `0,0019` and `0.23%`
+  - maps lab names and drug names to standard codes
+
+  Bad rows go to a **quarantine** table with a reason.
+- **Gold** builds the OMOP tables:
+  - **Stable ids:** from an id map, so a re-run never changes them.
+  - **Lineage:** a lineage table points every OMOP row back to its raw row.
+  - **Mapping gaps:** a mapping-gaps table is the review queue for codes we could not map.
+- **Postgres load** runs as the limited app login with the tenant set, so Row-Level Security
+  stays on. Each load is written to `audit_log`.
+- **Reconciliation report** (`make pipeline-report`) proves the result against the generator's
+  ground truth. 12 of 12 checks pass; see `evals/reports/data_quality.md`.
+- **Databricks**: the same code runs on Databricks Free Edition. See `docs/DATABRICKS.md`.
+
+### The medallion idea in plain English
+- **Bronze = the photocopy.** Never change what the hospital sent. If we find a bug later, we
+  re-run from bronze instead of asking the hospital to send everything again.
+- **Silver = the cleaned version.** One tidy table per thing (patients, labs, medications). Same
+  units, real dates, known codes. Anything we cannot fix goes to quarantine with a reason code
+  (`bad_date`, `missing_value`, `unknown_unit`, `unmapped_code`, ...). It is never silently
+  dropped and never silently loaded.
+- **Gold = the product.** The standard OMOP tables that analysts, the API and the AI copilot
+  use.
+- **Two kinds of failure:**
+  - **A bad row** (one typo): the row is quarantined and the run continues.
+  - **A broken table:** the run stops before writing anything. A broken table means wrong
+    columns, duplicate ids, or more than 5% of rows quarantined.
+- **Idempotent** means running the pipeline twice gives the same result as running it once. No
+  duplicate rows, and the same ids.
+
+### How the tricky parts work
+- **Drug names**: "Prograf", "tacro", "FK506" and "tacrolimus" are all tacrolimus. We try, in
+  order:
+  1. the RxNorm code the center sent
+  2. a *reviewed* mapping table (OMOP's `source_to_concept_map`)
+  3. an exact ingredient name
+  4. a brand name, followed through RxNorm's "Brand name of" link to its ingredient
+
+  We never match pieces of words. The reviewed table comes first because "mycophenolate"
+  exactly matches a *different* RxNorm ingredient than the mycophenolate mofetil the data means.
+- **Stable ids**: OMOP ids are 32-bit numbers, so hashing would collide. Instead, `gold.id_map`
+  remembers the id given to each key (for example center + MRN) and gives new keys the next
+  free number in the center's range.
+- **RLS and COPY**: Postgres refuses `COPY` into a table with Row-Level Security. So we COPY
+  into a temporary table and then `INSERT ... SELECT`, which RLS checks.
+- **DSA MFI** has no standard LOINC code. It gets a local OMOP concept (id above 2 billion) and
+  standard concept 0, and it is listed in the gaps report.
+
+### Why these tools
+- **PySpark + Delta Lake**: the same code scales from a laptop to a cluster. Delta adds safe
+  overwrites of one tenant (`replaceWhere`), MERGE for insert-only bronze, and table history.
+- **pandera**: declares what a clean table must look like (columns, types, allowed values) and
+  checks it on Spark DataFrames.
+- **OMOP `source_to_concept_map`**: the standard place for local mappings, so other OMOP tools
+  understand them, and `make vocab-check` validates every row.
+- **Databricks Free Edition**: shows the pipeline runs on a real lakehouse platform (Unity
+  Catalog tables and volumes, serverless jobs) at no cost.
+
+### Trade-offs
+- Silver and gold are rebuilt per tenant on every run. That is simple and correct, but in
+  production you would process only new data with incremental Delta MERGE. The insert-only
+  bronze and the id map are already built for that.
+- Conditions are mapped only when the center sent a code (49.6% coverage). Center B's text-only
+  conditions wait for the note NLP step.
+- Problem-list conditions have no date in the feeds, so we date them at the transplant. This is
+  a documented assumption.
+- An exact-duplicate filter cannot tell a re-sent row from two genuinely identical results. The
+  report counts that case separately (1 row).
+
+### Likely interview questions
+1. **Why bronze, silver and gold instead of one job?** Bronze lets you replay everything after a
+   bug fix without asking the hospital again. Silver shows exactly what was cleaned and why.
+   Gold is a stable product for users. Each layer can be checked on its own.
+2. **How do you make the pipeline idempotent?**
+   - Bronze skips files it already has.
+   - Silver and gold replace one tenant's rows at a time.
+   - Ids come from a persistent id map.
+   - Postgres is replaced per tenant in one transaction.
+
+   Running it twice gives identical tables, and we test that.
+3. **What do you do with bad data?** Bad rows go to quarantine with a reason and the run
+   continues. If a whole table looks broken (schema change, duplicate ids, more than 5% bad rows),
+   the run stops before loading anything. The report checks that exactly the injected bad rows
+   were quarantined.
+4. **How do you map "Prograf" to tacrolimus without fuzzy matching?** Prograf is an RxNorm Brand
+   Name with a "Brand name of" relationship to the ingredient tacrolimus. Abbreviations like
+   "tacro" go in a reviewed `source_to_concept_map`. Anything else gets concept 0 and goes to
+   the review queue.
+5. **How do you prove the pipeline is correct?** The synthetic generator records the true value
+   of every lab and which rows it broke on purpose. The reconciliation script matches all
+   240,945 lab results row by row in standard units, plus patients, deaths, medications,
+   duplicates, quarantine and Postgres counts. All 12 checks pass.

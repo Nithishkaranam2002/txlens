@@ -13,8 +13,8 @@ TxLens is a multi-tenant clinical data and AI platform for organ transplant prog
 
 > **All data is synthetic**, created by `data_generator/`. No real patient data is used.
 
-**Status:** skeleton, synthetic data generator and OMOP database (Steps 1.1–1.3). Features arrive
-step by step.
+**Status:** skeleton, synthetic data generator, OMOP database and the medallion pipeline
+(Steps 1.1–1.4). Features arrive step by step.
 
 ## Tech stack
 
@@ -64,8 +64,11 @@ make generate-data        # 2,000 synthetic patients -> data/raw + data/ground_t
 make generate-data-scale  # 20,000 patients, no PDFs/notes -> data_scale/ (Spark volume tests)
 
 make spark-build    # once: build the Spark image (~1 GB)
-make pipeline       # run pipelines inside the Spark container
+make vocab-subset   # small vocabulary the pipeline reads (also used on Databricks)
+make pipeline       # bronze -> silver -> gold -> Postgres, in the Spark container
+make pipeline-report  # reconcile with the ground truth -> evals/reports/data_quality.md
 make test-pipelines # run Spark tests inside the container
+make databricks-data  # zip for Databricks Free Edition (see docs/DATABRICKS.md)
 
 pnpm --dir frontend dev   # frontend at http://localhost:3000
 make down           # stop containers (data is kept)
@@ -75,3 +78,23 @@ Run `make help` to see every command.
 
 The OMOP vocabulary is licensed and never committed: download it yourself from Athena as
 described in [omop/README.md](omop/README.md). Tests use a fake TEST ONLY fixture instead.
+
+## Data pipeline results
+
+From [evals/reports/data_quality.md](evals/reports/data_quality.md), produced by
+`make pipeline-report` on the default dataset (2,000 patients, 3 centers):
+
+- **Reconciliation with the ground truth: 12 of 12 checks pass.** These include every one of
+  240,945 clean lab results matching row by row in standard units, all 65 deaths, and Postgres
+  row counts equal to gold for every tenant and table.
+- **Medications normalized to the right RxNorm ingredient: 100.0%** (22,234 orders, including
+  brand names and abbreviations such as Prograf, tacro, FK506 and MMF).
+- **Bad rows quarantined: 3,686**, exactly the rows with an injected bad date or missing value.
+  **Duplicates removed: 4,886** (all 4,885 injected, plus 1 explained identical pair).
+- **Mapping coverage:** drugs, routes and procedures 100.0%; measurements 96.4% (DSA MFI has no
+  standard LOINC); conditions 49.6% (center B sends conditions as uncoded text; note NLP comes
+  later).
+
+How it works: [pipelines/README.md](pipelines/README.md) and
+[ADR 0006](docs/adr/0006-medallion-pipeline.md). Running it on Databricks:
+[docs/DATABRICKS.md](docs/DATABRICKS.md).
