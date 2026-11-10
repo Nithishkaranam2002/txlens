@@ -1,0 +1,66 @@
+# Local stack. Start with `make up` (core) or `make up-full` (core + Langfuse).
+name: txlens
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg16-bookworm
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init-langfuse-db.sh:/docker-entrypoint-initdb.d/init-langfuse-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Temporal dev server: SQLite-backed, with the Temporal Web UI built in (port 8233).
+  temporal:
+    image: temporalio/temporal:1.10.0
+    command:
+      - server
+      - start-dev
+      - --ip=0.0.0.0
+      - --ui-ip=0.0.0.0
+      - --db-filename=/data/temporal.db
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+    volumes:
+      - temporal-data:/data
+
+  # Langfuse v2 only needs Postgres (v3 also needs ClickHouse, Redis and S3).
+  langfuse:
+    image: langfuse/langfuse:2.95.11
+    profiles: ["observability"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/langfuse
+      NEXTAUTH_URL: http://localhost:3001
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
+      SALT: ${LANGFUSE_SALT}
+      TELEMETRY_ENABLED: "false"
+    ports:
+      - "3001:3000"
+
+  # One-off Spark runner, used by `make pipeline` and `make test-pipelines`.
+  spark:
+    build:
+      context: ..
+      dockerfile: infra/spark.Dockerfile
+    image: txlens-spark:local
+    profiles: ["spark"]
+    volumes:
+      - ..:/app
+    working_dir: /app
+
+volumes:
+  postgres-data:
+  temporal-data:

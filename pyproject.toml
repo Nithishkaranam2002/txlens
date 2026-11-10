@@ -1,0 +1,57 @@
+# Workspace root: holds shared tool settings and dev tools.
+# Each folder listed in `members` is its own Python package.
+[tool.uv.workspace]
+members = ["backend", "data_generator", "pipelines", "evals"]
+
+[tool.uv.sources]
+txlens-backend = { workspace = true }
+txlens-datagen = { workspace = true }
+txlens-pipelines = { workspace = true }
+txlens-evals = { workspace = true }
+
+[tool.uv]
+# importlib-metadata 10.2 (released 2026-11-09) added an unverified new dependency
+# ("lazy-importer": no author, no source link). Stay on the established 9.x line.
+constraint-dependencies = ["importlib-metadata<10"]
+
+[dependency-groups]
+dev = [
+    "txlens-backend",
+    "txlens-datagen",
+    "txlens-pipelines",
+    "txlens-evals",
+    "ruff>=0.12",
+    "mypy>=1.17",
+    "pytest>=8.4",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "RUF"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["txlens_backend", "txlens_datagen", "txlens_pipelines", "txlens_evals"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = [
+    "backend/src",
+    "data_generator/src",
+    "pipelines/src",
+    "evals/src",
+]
+explicit_package_bases = true
+
+# PySpark is only installed inside the Spark container and in CI.
+[[tool.mypy.overrides]]
+module = ["pyspark.*", "delta.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers --import-mode=importlib"
+testpaths = ["backend/tests", "data_generator/tests", "evals/tests", "pipelines/tests"]
+markers = ["spark: needs PySpark + Java (runs in the Spark container or CI)"]
