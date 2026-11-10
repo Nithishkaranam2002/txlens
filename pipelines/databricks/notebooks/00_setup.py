@@ -6,6 +6,10 @@
 
 # COMMAND ----------
 
+# MAGIC %pip install "pandera>=0.26,<1" --quiet
+
+# COMMAND ----------
+
 # MAGIC %run ./_repo_path
 
 # COMMAND ----------

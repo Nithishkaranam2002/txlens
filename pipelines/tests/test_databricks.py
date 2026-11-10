@@ -41,3 +41,12 @@ def test_notebooks_are_databricks_source_files_and_valid_python(notebook: Path) 
     text = notebook.read_text()
     assert text.startswith("# Databricks notebook source\n")
     ast.parse(text)
+
+
+@pytest.mark.parametrize("notebook", sorted(NOTEBOOKS.glob("0*.py")), ids=lambda p: p.name)
+def test_notebooks_install_pandera_before_importing_the_pipeline(notebook: Path) -> None:
+    text = notebook.read_text()
+    if "txlens_pipelines" not in text:
+        return
+    pip = text.find('# MAGIC %pip install "pandera')
+    assert 0 <= pip < text.find("# MAGIC %run ./_repo_path"), notebook.name

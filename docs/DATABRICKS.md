@@ -67,7 +67,8 @@ To get newer code later, open the Git folder and click the branch name > **Pull*
 1. Open `txlens/pipelines/databricks/notebooks/00_setup`.
 2. At the top, check the widget **Catalog** says `workspace`. That is the Free Edition default
    catalog.
-3. Click **Run all**. The first run **stops with an error on purpose**:
+3. Click **Run all**. The first cell installs `pandera` (Python restarts, which is normal). The
+   first run **stops with an error on purpose**:
    `... txlens_databricks_data.zip not found: upload the zip to the volume`.
    It has already created the schema `workspace.txlens` and the volume `workspace.txlens.data`.
 
