@@ -5,16 +5,27 @@ Uses the owner database URL (DATABASE_URL): the app role can only read vocabular
 
 import argparse
 import logging
-import os
 import time
 from pathlib import Path
 
 import psycopg
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from txlens_omop.athena import AthenaSource
-from txlens_omop.codes import all_codes
+from txlens_omop.check import check_codes, format_report, suggest_ingredients
+from txlens_omop.codes import all_codes, uncoded_drugs
 from txlens_omop.loader import load_vocabulary, vocab_table_sizes
 from txlens_omop.subset import extract_subset
+
+
+class VocabSettings(BaseSettings):
+    """DATABASE_URL from the environment or `.env`, read exactly as the backend reads it."""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    database_url: SecretStr = SecretStr("")
+
 
 DEFAULT_SOURCE = Path("omop/athena")
 DEFAULT_SUBSET = Path("omop/vocab_subset")
@@ -31,7 +42,9 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     commands = parser.add_subparsers(dest="command", required=True)
     load = commands.add_parser("load", help="bulk-load vocabularies into the vocab schema")
     load.add_argument("--source", type=Path, default=DEFAULT_SOURCE, help="zip, or folder of CSVs")
-    load.add_argument("--database-url", default=os.environ.get("DATABASE_URL", ""))
+    load.add_argument("--database-url", help="default: DATABASE_URL from the environment or .env")
+    check = commands.add_parser("check", help="check every code we use against the vocabulary")
+    check.add_argument("--database-url", help="default: DATABASE_URL from the environment or .env")
     subset = commands.add_parser("subset", help="extract a small subset around our codes")
     subset.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     subset.add_argument("--out", type=Path, default=DEFAULT_SUBSET)
@@ -45,8 +58,6 @@ def resolve_source(path: Path) -> AthenaSource:
 
 def run_load(source: AthenaSource, database_url: str) -> None:
     """Load and print row counts, warnings and table sizes."""
-    if not database_url:
-        raise SystemExit("Set DATABASE_URL (owner role) or pass --database-url.")
     started = time.monotonic()
     with psycopg.connect(libpq_url(database_url)) as conn:
         report = load_vocabulary(conn, source)
@@ -64,6 +75,21 @@ def run_load(source: AthenaSource, database_url: str) -> None:
         print(f"WARNING: {warning}")
 
 
+def run_check(database_url: str) -> int:
+    """Print the code report and RxNorm suggestions; 1 if any code has a problem."""
+    with psycopg.connect(libpq_url(database_url)) as conn:
+        results = check_codes(conn, all_codes())
+        print(format_report(results))
+        print("\nSuggestions for drugs we write without an RxNorm code:")
+        for drug in uncoded_drugs():
+            found = suggest_ingredients(conn, drug)
+            options = (
+                ", ".join(f"{c.concept_code} ({c.concept_name})" for c in found) or "none found"
+            )
+            print(f"  {drug}: {options}")
+    return 1 if any(r.problems for r in results) else 0
+
+
 def run_subset(source: AthenaSource, out: Path) -> None:
     """Extract the subset and print what it contains."""
     seeds = [(c.vocabulary_id, c.code) for c in all_codes()]
@@ -79,12 +105,22 @@ def main(argv: list[str] | None = None) -> int:
     """Entry point."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
     args = parse_args(argv)
+    if args.command == "check":
+        return run_check(database_url(args.database_url))
     source = resolve_source(args.source)
     if args.command == "load":
-        run_load(source, args.database_url)
+        run_load(source, database_url(args.database_url))
     else:
         run_subset(source, args.out)
     return 0
+
+
+def database_url(given: str | None) -> str:
+    """--database-url, else DATABASE_URL from the environment or .env."""
+    url = given or VocabSettings().database_url.get_secret_value()
+    if not url:
+        raise SystemExit("Set DATABASE_URL (owner role) or pass --database-url.")
+    return url
 
 
 if __name__ == "__main__":

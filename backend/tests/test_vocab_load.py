@@ -12,6 +12,8 @@ from db_testutils import create_database, drop_database, migrate
 
 from txlens_backend.db_setup import libpq_url
 from txlens_omop.athena import AthenaSource
+from txlens_omop.check import check_codes, format_report, suggest_ingredients
+from txlens_omop.codes import CodeUse
 from txlens_omop.loader import MissingVocabularyError, load_vocabulary, vocab_table_sizes
 from txlens_omop.vocab import descendants, find_concept, standard_concepts
 
@@ -132,3 +134,34 @@ def test_ancestor_search_finds_all_rejection_subtypes(loaded: Conn) -> None:
     below = {c.concept_id for c in descendants(loaded, B + 1, include_self=False)}
     assert B + 1 not in below
     assert {c.concept_id for c in descendants(loaded, B + 6)} == {B + 6}
+
+
+def use(vocabulary: str, code: str, domain: str) -> CodeUse:
+    return CodeUse(vocabulary, code, "test label", domain, "test")
+
+
+def test_code_check_flags_each_kind_of_problem(loaded: Conn) -> None:
+    results = check_codes(
+        loaded,
+        [
+            use("LOINC", "TEST-LN-2160", "Measurement"),
+            use("ICD10CM", "TEST-T86.11", "Condition"),
+            use("LOINC", "TEST-LN-OBS", "Measurement"),
+            use("RxNorm", "NOPE", "Drug"),
+            use("ICD10CM", "TEST-Z99.99", "Condition"),
+            use("SNOMED", "TEST-SCT-999", "Condition"),
+        ],
+    )
+    statuses = [r.status for r in results]
+    assert statuses[:2] == ["OK", "OK"]
+    assert statuses[2].startswith("WRONG DOMAIN (Observation")
+    assert statuses[3] == "NOT FOUND"
+    assert "NO STANDARD MAPPING" in statuses[4]
+    assert statuses[5] == "DEPRECATED (U)"
+    report = format_report(results)
+    assert "maps to: SNOMED TEST-SCT-101" in report
+    assert "2 OK, 4 with problems, 6 checked." in report
+
+
+def test_ingredient_suggestions_for_uncoded_drugs(loaded: Conn) -> None:
+    assert [c.concept_code for c in suggest_ingredients(loaded, "tacrolimus")] == ["TEST-RX-42316"]

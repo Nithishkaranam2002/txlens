@@ -533,12 +533,14 @@ version = "0.1.0"
 source = { editable = "omop" }
 dependencies = [
     { name = "psycopg", extra = ["binary"] },
+    { name = "pydantic-settings" },
     { name = "txlens-datagen" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
+    { name = "pydantic-settings", specifier = ">=2.10" },
     { name = "txlens-datagen", editable = "data_generator" },
 ]
 

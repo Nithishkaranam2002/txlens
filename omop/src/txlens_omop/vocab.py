@@ -49,6 +49,13 @@ def find_concept(conn: Connection, vocabulary_id: str, code: str) -> Concept | N
         return cur.fetchone()
 
 
+def get_concept(conn: Connection, concept_id: int) -> Concept | None:
+    """The concept with this id, or None."""
+    with conn.cursor(row_factory=class_row(Concept)) as cur:
+        cur.execute(f"SELECT {COLUMNS} FROM vocab.concept c WHERE c.concept_id = %s", (concept_id,))
+        return cur.fetchone()
+
+
 def maps_to(conn: Connection, concept_id: int) -> list[Concept]:
     """Valid standard concepts that a concept "Maps to"."""
     with conn.cursor(row_factory=class_row(Concept)) as cur:

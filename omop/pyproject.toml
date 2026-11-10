@@ -5,6 +5,7 @@ description = "OMOP CDM v5.4 DDL, vocabulary loading and code checks"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "psycopg[binary]>=3.2",
+    "pydantic-settings>=2.10",
     "txlens-datagen",
 ]
 

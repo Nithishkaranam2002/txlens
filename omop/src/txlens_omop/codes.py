@@ -8,6 +8,7 @@ conditions; the pipeline maps them to SNOMED through "Maps to".
 from dataclasses import dataclass
 
 from txlens_datagen.meds import RXNORM
+from txlens_datagen.notes import DRUG_NAMES
 from txlens_datagen.writers.fhir import SNOMED_CODES
 from txlens_datagen.writers.lab_feeds import LOINC
 
@@ -60,3 +61,8 @@ def planned_codes() -> list[CodeUse]:
 def all_codes() -> list[CodeUse]:
     """Generator codes plus planned source codes."""
     return generator_codes() + planned_codes()
+
+
+def uncoded_drugs() -> list[str]:
+    """Drugs the generator writes without an RxNorm code (left for mapping or review)."""
+    return sorted(set(DRUG_NAMES) - set(RXNORM))

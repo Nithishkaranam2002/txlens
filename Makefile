@@ -6,7 +6,7 @@ SEED ?= 42
 VOCAB_SOURCE ?= omop/athena
 N_PATIENTS ?= 2000
 
-.PHONY: help setup up up-full down lint test db-migrate db-setup vocab-load vocab-subset generate-data generate-data-scale pipeline test-pipelines spark-build
+.PHONY: help setup up up-full down lint test db-migrate db-setup vocab-load vocab-subset vocab-check generate-data generate-data-scale pipeline test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -44,10 +44,13 @@ db-setup: db-migrate ## Migrate, then create the app login role from APP_DATABAS
 	uv run txlens-db-setup
 
 vocab-load: ## Load OMOP vocabularies from omop/athena (or VOCAB_SOURCE=omop/vocab_subset)
-	uv run --env-file .env txlens-vocab load --source $(VOCAB_SOURCE)
+	uv run txlens-vocab load --source $(VOCAB_SOURCE)
 
 vocab-subset: ## Extract a small local vocabulary subset into omop/vocab_subset/
-	uv run --env-file .env txlens-vocab subset --source omop/athena --out omop/vocab_subset
+	uv run txlens-vocab subset --source omop/athena --out omop/vocab_subset
+
+vocab-check: ## Check every code we use against the loaded vocabulary
+	uv run txlens-vocab check
 
 generate-data: ## Generate synthetic data into data/ (override: SEED=7 N_PATIENTS=500)
 	uv run txlens-generate --seed $(SEED) --n-patients $(N_PATIENTS) --out data
