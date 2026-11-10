@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import Column, DataFrame, SparkSession
 from pyspark.sql import functions as F
 
 # Read tolerance per lab in standard units: center B writes creatinine as whole umol/L, so
@@ -70,7 +70,7 @@ def read_truth(spark: SparkSession, folder: str, name: str) -> DataFrame:
     return spark.read.option("header", True).csv(f"{folder}/{name}.csv")
 
 
-def file_name(column: str) -> F.Column:
+def file_name(column: str) -> Column:
     """'labs/center_a_labs.csv' -> 'center_a_labs.csv'."""
     return F.element_at(F.split(F.col(column), "/"), -1)
 

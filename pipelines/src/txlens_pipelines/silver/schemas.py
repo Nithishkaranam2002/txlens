@@ -14,7 +14,7 @@ from pyspark.sql.types import (
 )
 
 
-class Lineage(pa.DataFrameModel):  # type: ignore[misc]
+class Lineage(pa.DataFrameModel):  # type: ignore[type-arg]
     """Columns every silver table has."""
 
     tenant_id: StringType = pa.Field(nullable=False)

@@ -3,7 +3,7 @@
 Center B writes gender as M/F and dates with a time part; both are normalized here.
 """
 
-from pyspark.sql import DataFrame
+from pyspark.sql import Column, DataFrame
 from pyspark.sql import functions as F
 
 from txlens_pipelines.quality import Rule, apply_rules
@@ -17,7 +17,7 @@ SCHEMA = (
 SEX = {"female": "female", "f": "female", "male": "male", "m": "male"}
 
 
-def sex(gender: F.Column) -> F.Column:
+def sex(gender: Column) -> Column:
     """'M', 'male', 'F', 'female' (any case) -> 'male' / 'female'; anything else -> NULL."""
     mapping = F.create_map(*[F.lit(x) for pair in SEX.items() for x in pair])
     return mapping[F.lower(F.trim(gender))]

@@ -7,7 +7,7 @@ source_to_concept_map); convert units; find the patient by MRN. Rows that fail g
 quarantine with a reason.
 """
 
-from pyspark.sql import DataFrame, Window
+from pyspark.sql import Column, DataFrame, Window
 from pyspark.sql import functions as F
 
 from txlens_pipelines.codes import LAB_RULES
@@ -53,10 +53,10 @@ def drop_duplicates(lines: DataFrame) -> tuple[DataFrame, DataFrame]:
 def read_columns(lines: DataFrame) -> DataFrame:
     """Each dialect's columns under common names, plus its timestamp parsed."""
 
-    def pick(name: str | None) -> F.Column:
+    def pick(name: str | None) -> Column:
         return F.col("fields").getItem(name) if name else F.lit(None).cast("string")
 
-    def field(position: int) -> F.Column:
+    def field(position: int) -> Column:
         return F.coalesce(
             *[F.when(F.col("dialect") == d, pick(c[position])) for d, c in COLUMNS.items()]
         )
@@ -98,7 +98,7 @@ def clean_value(df: DataFrame) -> DataFrame:
     )
 
 
-def normalize_unit(unit: F.Column) -> F.Column:
+def normalize_unit(unit: Column) -> Column:
     """'µmol/L' -> 'umol/l', 'mL/min/1.73m²' -> 'ml/min/1.73m2' (micro sign, Greek mu, ²)."""
     return F.lower(F.translate(F.trim(unit), "µμ²", "uu2"))
 

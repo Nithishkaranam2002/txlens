@@ -4,7 +4,7 @@ Procedures are the transplant (a FHIR Procedure) and every graft biopsy (a biops
 the organ is the one the patient received).
 """
 
-from pyspark.sql import DataFrame
+from pyspark.sql import Column, DataFrame
 from pyspark.sql import functions as F
 
 from txlens_pipelines.quality import Rule, apply_rules
@@ -64,7 +64,7 @@ def build_encounters(bronze_fhir: DataFrame, patients: DataFrame) -> tuple[DataF
     return good.drop("patient_known", "start_source"), bad
 
 
-def organ_of(code: F.Column, text: F.Column) -> F.Column:
+def organ_of(code: Column, text: Column) -> Column:
     """The transplanted organ from the SNOMED code, else from the leading word of the text."""
     by_code = F.create_map(*[F.lit(x) for pair in ORGAN_BY_CODE.items() for x in pair])[code]
     by_text = F.regexp_extract(F.lower(F.trim(text)), r"^(kidney|heart)\b", 1)

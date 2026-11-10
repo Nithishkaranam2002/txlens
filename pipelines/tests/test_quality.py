@@ -65,7 +65,7 @@ def test_primary_key_must_be_unique_and_not_null(spark: SparkSession) -> None:
         check_primary_key(spark.createDataFrame([(1,), (None,)], "id int"), "t", ["id"])
 
 
-class Example(pa.DataFrameModel):  # type: ignore[misc]
+class Example(pa.DataFrameModel):  # type: ignore[type-arg]
     id: IntegerType = pa.Field(nullable=False)
     name: StringType = pa.Field()
 

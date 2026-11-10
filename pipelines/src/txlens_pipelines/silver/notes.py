@@ -5,7 +5,7 @@ expressions read it; the body is left for the NLP step. The visit is the patient
 on the date of service, when there is one.
 """
 
-from pyspark.sql import DataFrame
+from pyspark.sql import Column, DataFrame
 from pyspark.sql import functions as F
 
 from txlens_pipelines.quality import Rule, apply_rules
@@ -17,13 +17,13 @@ SERVICE_DATE = r"Date of service:\s*(\S+)"
 NOTE_TYPES = {"TRANSPLANT CLINIC NOTE": "clinic", "BIOPSY RESULT NOTE": "biopsy_result"}
 
 
-def extract(text: F.Column, pattern: str) -> F.Column:
+def extract(text: Column, pattern: str) -> Column:
     """First match group, or NULL."""
     found = F.regexp_extract(text, pattern, 1)
     return F.when(found != "", found)
 
 
-def note_type(title: F.Column) -> F.Column:
+def note_type(title: Column) -> Column:
     """'clinic' or 'biopsy_result' from the title line; NULL if unknown."""
     result = F.lit(None).cast("string")
     for suffix, kind in NOTE_TYPES.items():

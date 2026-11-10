@@ -33,7 +33,9 @@ class Runtime(ABC):
     def __init__(self, spark: SparkSession, raw_root: str, vocab_root: str) -> None:
         self.spark = spark
         # Strict date parsing everywhere: an impossible date is NULL, never "corrected".
-        spark.conf.set("spark.sql.legacy.timeParserPolicy", "CORRECTED")
+        # (Already the default on Spark 4 / Databricks serverless.)
+        if spark.conf.get("spark.sql.legacy.timeParserPolicy", "CORRECTED") != "CORRECTED":
+            spark.conf.set("spark.sql.legacy.timeParserPolicy", "CORRECTED")
         self.raw_root = raw_root.rstrip("/")
         self.vocab_root = vocab_root.rstrip("/")
 

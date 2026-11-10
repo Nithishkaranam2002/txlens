@@ -4,7 +4,7 @@ Center A sends structured dosage, center B only text such as "prograf 3mg oral b
 C both. Structured fields win; the text is parsed with one fixed pattern otherwise.
 """
 
-from pyspark.sql import DataFrame
+from pyspark.sql import Column, DataFrame
 from pyspark.sql import functions as F
 
 from txlens_pipelines.quality import Rule, apply_rules
@@ -37,7 +37,7 @@ SCHEMA = (
 SIG = r"^(.*?)\s+(\d+(?:\.\d+)?)\s*([a-z/%]+)\s+(\S+)\s+(.+)$"
 
 
-def sig_part(text: F.Column, group: int) -> F.Column:
+def sig_part(text: Column, group: int) -> Column:
     """One part of a free-text dosage, or NULL when the text does not follow the pattern."""
     part = F.regexp_extract(F.lower(F.trim(text)), SIG, group)
     return F.when(part != "", part)

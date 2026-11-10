@@ -6,7 +6,7 @@ SEED ?= 42
 VOCAB_SOURCE ?= omop/athena
 N_PATIENTS ?= 2000
 
-.PHONY: help setup up up-full down lint test db-migrate db-setup vocab-load vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report test-pipelines spark-build
+.PHONY: help setup up up-full down lint test db-migrate db-setup vocab-load vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -66,6 +66,12 @@ pipeline: ## Run bronze -> silver -> gold -> Postgres load in the Spark containe
 
 pipeline-report: ## Reconcile gold/Postgres with data/ground_truth -> evals/reports/data_quality.md
 	$(SPARK_RUN) python -m txlens_evals.pipeline_reconciliation
+
+databricks-data: ## Zip data/raw, data/ground_truth and the vocab subset for a Databricks upload
+	rm -f dist/txlens_databricks_data.zip && mkdir -p dist
+	cd data && zip -qr ../dist/txlens_databricks_data.zip raw ground_truth
+	cd omop && zip -qr ../dist/txlens_databricks_data.zip vocab_subset
+	@ls -lh dist/txlens_databricks_data.zip
 
 pipeline-clean: ## Delete the local Delta lake (bronze/silver/gold); Postgres is untouched
 	rm -rf lake

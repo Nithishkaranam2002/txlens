@@ -1,0 +1,23 @@
+# TxLens medallion job for Databricks Free Edition (serverless).
+# Create it in the UI: Jobs & Pipelines > Create > Job > (three-dot menu) Edit as YAML,
+# paste this file, and replace <YOUR_GIT_FOLDER> with your Git folder path, for example
+# /Workspace/Users/you@example.com/txlens. Step-by-step: docs/DATABRICKS.md.
+resources:
+  jobs:
+    txlens_medallion:
+      name: txlens-medallion
+      max_concurrent_runs: 1
+      parameters:
+        - name: catalog
+          default: workspace
+      tasks:
+        - task_key: bronze_silver_gold
+          notebook_task:
+            notebook_path: <YOUR_GIT_FOLDER>/pipelines/databricks/notebooks/01_run_pipeline
+            base_parameters:
+              layers: bronze,silver,gold
+        - task_key: report
+          depends_on:
+            - task_key: bronze_silver_gold
+          notebook_task:
+            notebook_path: <YOUR_GIT_FOLDER>/pipelines/databricks/notebooks/02_report

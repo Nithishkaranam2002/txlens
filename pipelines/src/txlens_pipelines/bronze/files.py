@@ -3,7 +3,7 @@
 import re
 
 from pyspark.errors import AnalysisException
-from pyspark.sql import DataFrame
+from pyspark.sql import Column, DataFrame
 from pyspark.sql import functions as F
 
 from txlens_pipelines.runtime import Runtime
@@ -13,7 +13,7 @@ LINEAGE = ["tenant_id", "source_file", "source_row", "file_sha256", "ingested_at
 FILE_KEYS = ["tenant_id", "source_file", "file_sha256", "source_row"]
 
 
-def relative_path(raw_root: str) -> F.Column:
+def relative_path(raw_root: str) -> Column:
     """The file path below the raw root ('labs/center_a_labs.csv'), however Spark prints it."""
     root = raw_root.rstrip("/").split(":", 1)[-1].lstrip("/")
     return F.regexp_extract(F.col("path"), rf"{re.escape(root)}/(.*)$", 1)
@@ -49,7 +49,7 @@ def read_files(runtime: Runtime, patterns: list[str], batch_id: str) -> DataFram
     )
 
 
-def tenant_from_folder(position: int = 1) -> F.Column:
+def tenant_from_folder(position: int = 1) -> Column:
     """Tenant id from the folder in a relative path ('fhir/center_a/x.json' -> 'center_a')."""
     return F.split(F.col("source_file"), "/").getItem(position)
 

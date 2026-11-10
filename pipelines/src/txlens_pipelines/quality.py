@@ -8,8 +8,8 @@
 """
 
 from dataclasses import dataclass
+from typing import Any
 
-import pandera.pyspark as pa
 from pyspark.sql import Column, DataFrame
 from pyspark.sql import functions as F
 
@@ -90,10 +90,13 @@ def check_primary_key(df: DataFrame, table: str, columns: list[str]) -> None:
         raise ContractViolationError(f"{table}: duplicate primary keys, e.g. {duplicates}")
 
 
-def validate_schema(df: DataFrame, schema: type[pa.DataFrameModel], table: str) -> DataFrame:
+# A pandera.pyspark DataFrameModel subclass. Typed as Any: pandera's generic DataFrame types
+# do not line up with PySpark's DataFrame.
+SchemaModel = Any
+
+
+def validate_schema(df: DataFrame, schema: SchemaModel, table: str) -> None:
     """Run a pandera model; schema-level errors (columns, types, checks) fail the run."""
-    validated = schema.validate(df)
-    errors = dict(validated.pandera.errors)
+    errors = dict(schema.validate(df).pandera.errors)
     if errors:
         raise ContractViolationError(f"{table}: pandera contract failed: {errors}")
-    return validated

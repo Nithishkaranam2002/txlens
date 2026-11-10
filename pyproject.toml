@@ -38,6 +38,9 @@ select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "RUF"]
 # `functions as F` is the standard PySpark idiom.
 "pipelines/**" = ["N812"]
 "evals/**" = ["N812"]
+# Databricks notebooks: `spark`, `dbutils` and `displayHTML` are globals there, and imports
+# follow the %pip / %run cells.
+"pipelines/databricks/notebooks/*" = ["E402", "F821"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["txlens_backend", "txlens_datagen", "txlens_pipelines", "txlens_evals", "txlens_omop"]
@@ -45,6 +48,8 @@ known-first-party = ["txlens_backend", "txlens_datagen", "txlens_pipelines", "tx
 [tool.mypy]
 python_version = "3.12"
 strict = true
+# Databricks notebooks use its globals (spark, dbutils); a test checks they parse.
+exclude = ["pipelines/databricks/notebooks/"]
 mypy_path = [
     "backend/src",
     "data_generator/src",

@@ -7,12 +7,12 @@ the other entities need them to find their patient and visit.
 
 from dataclasses import dataclass, field
 
-import pandera.pyspark as pa
 from pyspark.sql import DataFrame
 
 from txlens_pipelines.config import PipelineConfig
 from txlens_pipelines.quality import (
     QUARANTINE,
+    SchemaModel,
     check_primary_key,
     check_quarantine_rate,
     to_quarantine,
@@ -42,7 +42,7 @@ class SilverWriter:
         table: str,
         good: DataFrame,
         bad: DataFrame | None,
-        schema: type[pa.DataFrameModel],
+        schema: SchemaModel,
         key: list[str],
     ) -> DataFrame:
         """Check the contract, write the table, and return it as stored."""

@@ -7,7 +7,7 @@ a violation is a broken contract and stops the run.
 
 import re
 
-from pyspark.sql import DataFrame
+from pyspark.sql import Column, DataFrame
 from pyspark.sql import functions as F
 
 from txlens_pipelines.omop_schema import OMOP_TABLES, PRIMARY_KEYS
@@ -17,7 +17,7 @@ SPARK_TYPES = {"integer": "int", "date": "date", "timestamp": "timestamp", "nume
 VARCHAR = re.compile(r"varchar\((\d+)\)")
 
 
-def typed(df: DataFrame, name: str, data_type: str) -> F.Column:
+def typed(df: DataFrame, name: str, data_type: str) -> Column:
     """One OMOP column, cast to its type (NULL if the transform did not produce it)."""
     value = F.col(name) if name in df.columns else F.lit(None)
     length = VARCHAR.fullmatch(data_type)

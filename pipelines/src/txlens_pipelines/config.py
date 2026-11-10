@@ -28,7 +28,6 @@ TENANTS = (
     Tenant("center_b", 2, "Quillfield Medical Center", "center_b_labs.csv", "b"),
     Tenant("center_c", 3, "Vesperhill Kidney and Heart Institute", "center_c_labs.csv", "c"),
 )
-LAYERS = ("bronze", "silver", "gold", "load", "report")
 
 
 def new_batch_id() -> str:
