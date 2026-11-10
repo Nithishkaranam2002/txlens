@@ -1,6 +1,7 @@
 import pytest
+from pydantic import SecretStr
 
-from txlens_backend.config import get_settings
+from txlens_backend.config import InsecureSettingError, get_settings, require_secret
 
 
 def test_settings_read_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -21,3 +22,13 @@ def test_database_passwords_are_hidden_when_printed(monkeypatch: pytest.MonkeyPa
     text = repr(get_settings())
     assert "pw-owner" not in text
     assert "pw-api" not in text
+
+
+@pytest.mark.parametrize("value", ["", "too-short", "placeholder-generate-with-openssl-rand-64"])
+def test_weak_secrets_are_refused(value: str) -> None:
+    with pytest.raises(InsecureSettingError, match="JWT_SECRET"):
+        require_secret("jwt_secret", SecretStr(value))
+
+
+def test_strong_secret_is_returned() -> None:
+    assert require_secret("jwt_secret", SecretStr("x" * 32)) == "x" * 32

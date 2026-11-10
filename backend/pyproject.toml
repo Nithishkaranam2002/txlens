@@ -5,15 +5,21 @@ description = "TxLens FastAPI backend"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "alembic>=1.14",
+    "argon2-cffi>=23.1",
+    "fastapi>=0.115",
     "psycopg[binary]>=3.2",
     "pydantic-settings>=2.10",
+    "pyjwt>=2.10",
     "sqlalchemy>=2.0",
     "txlens-datagen",
     "txlens-omop",
+    "uvicorn[standard]>=0.32",
 ]
 
 [project.scripts]
 txlens-db-setup = "txlens_backend.db_setup:main"
+txlens-seed-users = "txlens_backend.seed_users:main"
+txlens-prune-login-attempts = "txlens_backend.maintenance:main"
 
 [build-system]
 requires = ["hatchling"]

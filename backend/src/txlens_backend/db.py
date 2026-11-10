@@ -33,3 +33,17 @@ def tenant_transaction(engine: Engine, tenant_id: str) -> Iterator[Connection]:
     with engine.begin() as conn:
         set_tenant(conn, tenant_id)
         yield conn
+
+
+class UnsafeRoleError(RuntimeError):
+    """The API's database login could bypass Row-Level Security."""
+
+
+def check_role_is_rls_bound(engine: Engine) -> None:
+    """Refuse to serve requests as a superuser or a BYPASSRLS role: RLS must always apply."""
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user")
+        ).one_or_none()
+    if row is None or row.rolsuper or row.rolbypassrls:
+        raise UnsafeRoleError("APP_DATABASE_URL must be the app login (no superuser, no BYPASSRLS)")
