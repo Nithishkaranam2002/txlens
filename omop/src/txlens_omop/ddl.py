@@ -86,14 +86,14 @@ class ForeignKey:
     ref_column: str
 
 
-def sql_dir() -> Path:
-    """Folder holding the pinned upstream SQL files."""
-    return Path(str(files("txlens_omop") / "sql" / CDM_VERSION))
+def sql_dir(version: str = CDM_VERSION) -> Path:
+    """Folder holding the pinned upstream SQL files for one CDM release."""
+    return Path(str(files("txlens_omop") / "sql" / version))
 
 
-def read_sql(kind: str) -> str:
+def read_sql(kind: str, version: str = CDM_VERSION) -> str:
     """Contents of one pinned upstream file."""
-    return (sql_dir() / FILES[kind]).read_text(encoding="utf-8")
+    return (sql_dir(version) / FILES[kind]).read_text(encoding="utf-8")
 
 
 def statements(sql: str) -> list[str]:
@@ -142,22 +142,22 @@ def is_kept_foreign_key(statement: str) -> bool:
 
 
 def parse_column(line: str) -> Column:
-    """Parse `name type NULL|NOT NULL`."""
+    """Parse `name type NULL|NOT NULL` (reserved names such as "offset" are quoted upstream)."""
     parts = line.split()
     nullable = parts[-1].upper() == "NULL" and parts[-2].upper() != "NOT"
-    return Column(parts[0].lower(), parts[1].lower(), nullable)
+    return Column(parts[0].strip('"').lower(), parts[1].lower(), nullable)
 
 
 @cache
-def tables() -> dict[str, Table]:
+def tables(version: str = CDM_VERSION) -> dict[str, Table]:
     """Our tables as defined upstream, keyed by name."""
     keys: dict[str, tuple[str, ...]] = {}
-    for stmt in statements(read_sql("primary_keys")):
+    for stmt in statements(read_sql("primary_keys", version)):
         match = PRIMARY_KEY.search(stmt)
         if match and is_ours(stmt):
             keys[referenced_tables(stmt)[0]] = tuple(c.strip() for c in match.group(2).split(","))
     result = {}
-    for stmt in statements(read_sql("tables")):
+    for stmt in statements(read_sql("tables", version)):
         match = CREATE_TABLE.match(stmt)
         if match is None or schema_for(match.group(1).lower()) is None:
             continue
@@ -167,10 +167,10 @@ def tables() -> dict[str, Table]:
     return result
 
 
-def foreign_keys() -> list[ForeignKey]:
+def foreign_keys(version: str = CDM_VERSION) -> list[ForeignKey]:
     """Upstream foreign keys we keep (clinical table to clinical table)."""
     result = []
-    for stmt in statements(read_sql("constraints")):
+    for stmt in statements(read_sql("constraints", version)):
         match = FOREIGN_KEY.search(stmt)
         if match and is_kept_foreign_key(stmt):
             table, ref_table = referenced_tables(stmt)
@@ -181,26 +181,28 @@ def foreign_keys() -> list[ForeignKey]:
     return result
 
 
-def render_tables() -> list[str]:
+def render_tables(version: str = CDM_VERSION) -> list[str]:
     """CREATE TABLE statements for our tables, schema-qualified."""
-    return [qualify(s) for s in statements(read_sql("tables")) if is_ours(s)]
+    return [qualify(s) for s in statements(read_sql("tables", version)) if is_ours(s)]
 
 
-def render_primary_keys() -> list[str]:
+def render_primary_keys(version: str = CDM_VERSION) -> list[str]:
     """Primary-key constraints for our tables."""
-    return [qualify(s) for s in statements(read_sql("primary_keys")) if is_ours(s)]
+    return [qualify(s) for s in statements(read_sql("primary_keys", version)) if is_ours(s)]
 
 
-def render_foreign_keys() -> list[str]:
+def render_foreign_keys(version: str = CDM_VERSION) -> list[str]:
     """Foreign keys between clinical tables only (none into vocab, none to absent tables)."""
-    return [qualify(s) for s in statements(read_sql("constraints")) if is_kept_foreign_key(s)]
+    return [
+        qualify(s) for s in statements(read_sql("constraints", version)) if is_kept_foreign_key(s)
+    ]
 
 
-def render_indices() -> list[str]:
+def render_indices(version: str = CDM_VERSION) -> list[str]:
     """Upstream indexes for our tables; CLUSTER statements are dropped."""
     return [
         qualify(s)
-        for s in statements(read_sql("indices"))
+        for s in statements(read_sql("indices", version))
         if s.upper().startswith("CREATE INDEX") and is_ours(s)
     ]
 

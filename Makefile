@@ -5,7 +5,7 @@ SPARK_RUN := $(COMPOSE) --profile spark run --rm spark
 SEED ?= 42
 N_PATIENTS ?= 2000
 
-.PHONY: help setup up up-full down lint test generate-data generate-data-scale pipeline test-pipelines spark-build
+.PHONY: help setup up up-full down lint test db-migrate db-setup generate-data generate-data-scale pipeline test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -27,13 +27,20 @@ down: ## Stop all containers (data volumes are kept)
 lint: ## Ruff, mypy, ESLint and TypeScript checks
 	uv run ruff check .
 	uv run ruff format --check .
-	uv run mypy $(PY_SRC)
+	@# One mypy run per package: each tests/ folder has its own conftest.py.
+	for pkg in $(PY_SRC); do uv run mypy $$pkg || exit 1; done
 	pnpm --dir frontend lint
 	pnpm --dir frontend typecheck
 
 test: ## Python tests (Spark tests are skipped here) and frontend tests
 	uv run pytest
 	pnpm --dir frontend test
+
+db-migrate: ## Apply database migrations (OMOP schemas, tenant RLS, indexes)
+	uv run alembic -c backend/alembic.ini upgrade head
+
+db-setup: db-migrate ## Migrate, then create the app login role from APP_DATABASE_URL
+	uv run txlens-db-setup
 
 generate-data: ## Generate synthetic data into data/ (override: SEED=7 N_PATIENTS=500)
 	uv run txlens-generate --seed $(SEED) --n-patients $(N_PATIENTS) --out data

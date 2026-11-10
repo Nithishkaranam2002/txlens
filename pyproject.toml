@@ -47,6 +47,7 @@ mypy_path = [
     "evals/src",
     "omop/src",
     "data_generator/tests",
+    "backend/tests",
 ]
 explicit_package_bases = true
 
@@ -59,5 +60,8 @@ ignore_missing_imports = true
 addopts = "-ra --strict-markers --import-mode=importlib"
 testpaths = ["backend/tests", "data_generator/tests", "evals/tests", "omop/tests", "pipelines/tests"]
 # Shared test helpers (uniquely named so they cannot clash with other packages).
-pythonpath = ["data_generator/tests"]
-markers = ["spark: needs PySpark + Java (runs in the Spark container or CI)"]
+pythonpath = ["data_generator/tests", "backend/tests"]
+markers = [
+    "spark: needs PySpark + Java (runs in the Spark container or CI)",
+    "db: needs PostgreSQL (local `make up`, or the CI service)",
+]

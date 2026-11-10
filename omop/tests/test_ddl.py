@@ -25,6 +25,7 @@ def test_columns_are_parsed() -> None:
     measurement = {c.name: c for c in ddl.tables()["measurement"].columns}
     assert measurement["value_as_number"].data_type == "numeric"
     assert measurement["value_as_number"].nullable
+    assert "offset" in {c.name for c in ddl.tables()["note_nlp"].columns}
     concept = {c.name: c for c in ddl.tables()["concept"].columns}
     assert concept["concept_name"].data_type == "varchar(255)"
 

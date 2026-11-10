@@ -11,6 +11,25 @@ permissions:
 jobs:
   python:
     runs-on: ubuntu-latest
+    services:
+      # Same image as the local stack. Throwaway CI-only credentials, not a secret.
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg16-bookworm
+        env:
+          POSTGRES_USER: txlens
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: txlens
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U txlens -d txlens"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://txlens:ci-only-password@localhost:5432/txlens
+      # Fail (not skip) the database tests if Postgres is unreachable.
+      TXLENS_REQUIRE_DB: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
@@ -27,7 +46,8 @@ jobs:
         run: |
           uv run ruff check .
           uv run ruff format --check .
-          uv run mypy backend data_generator pipelines evals omop
+          # One mypy run per package: each tests/ folder has its own conftest.py.
+          for pkg in backend data_generator pipelines evals omop; do uv run mypy "$pkg" || exit 1; done
       - name: Test
         run: uv run pytest
 
