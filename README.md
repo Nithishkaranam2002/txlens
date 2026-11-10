@@ -13,7 +13,7 @@ TxLens is a multi-tenant clinical data and AI platform for organ transplant prog
 
 > **All data is synthetic**, created by `data_generator/`. No real patient data is used.
 
-**Status:** project skeleton (Step 1.1). Features arrive step by step.
+**Status:** skeleton and synthetic data generator (Steps 1.1–1.2). Features arrive step by step.
 
 ## Tech stack
 
@@ -53,6 +53,9 @@ make up             # Postgres + Temporal   (Temporal UI: http://localhost:8233)
 make up-full        # ...plus Langfuse      (http://localhost:3001)
 make lint           # ruff, mypy, eslint, tsc
 make test           # pytest + vitest
+
+make generate-data        # 2,000 synthetic patients -> data/raw + data/ground_truth (~240 MB)
+make generate-data-scale  # 20,000 patients, no PDFs/notes -> data_scale/ (Spark volume tests)
 
 make spark-build    # once: build the Spark image (~1 GB)
 make pipeline       # run pipelines inside the Spark container

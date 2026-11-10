@@ -28,6 +28,7 @@ coverage/
 
 # Generated data and Spark/Delta output
 data/
+data_scale/
 spark-warehouse/
 metastore_db/
 derby.log

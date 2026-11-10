@@ -2,11 +2,13 @@
 COMPOSE := docker compose -f infra/docker-compose.yml --env-file .env
 PY_SRC := backend data_generator pipelines evals
 SPARK_RUN := $(COMPOSE) --profile spark run --rm spark
+SEED ?= 42
+N_PATIENTS ?= 2000
 
-.PHONY: help setup up up-full down lint test generate-data pipeline test-pipelines spark-build
+.PHONY: help setup up up-full down lint test generate-data generate-data-scale pipeline test-pipelines spark-build
 
 help: ## List available commands
-	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
+	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
 
 setup: ## Install Python + frontend dependencies and create .env from the example
 	@test -f .env || (cp .env.example .env && echo "Created .env - add your real OPENAI_API_KEY there.")
@@ -33,8 +35,11 @@ test: ## Python tests (Spark tests are skipped here) and frontend tests
 	uv run pytest
 	pnpm --dir frontend test
 
-generate-data: ## Generate synthetic transplant data into data/
-	uv run txlens-generate
+generate-data: ## Generate synthetic data into data/ (override: SEED=7 N_PATIENTS=500)
+	uv run txlens-generate --seed $(SEED) --n-patients $(N_PATIENTS) --out data
+
+generate-data-scale: ## 20,000 patients, no PDFs or note text, into data_scale/ (Spark volume tests)
+	uv run txlens-generate --seed $(SEED) --n-patients 20000 --out data_scale --no-pdfs --no-note-text
 
 spark-build: ## Build the Spark runner image (Python 3.12 + Java 17 + PySpark + Delta)
 	$(COMPOSE) --profile spark build spark
