@@ -26,7 +26,6 @@ TABLES: dict[str, type] = {
     "outcomes": Outcome,
     "rejection_episodes": RejectionEpisode,
     "injury_episodes": InjuryEpisode,
-    "biopsies": Biopsy,
     "medications": MedOrder,
     "surveillance_schedule": ScheduledTest,
     "encounters": Encounter,
@@ -59,6 +58,7 @@ class GroundTruthWriter:
         }
         self.labs = self.open_csv(out_dir / "labs.csv", LAB_COLUMNS)
         self.notes = self.open_csv(out_dir / "notes.csv", NOTE_COLUMNS)
+        self.biopsies = self.open_csv(out_dir / "biopsies.csv", [*fields_of(Biopsy), "pdf_file"])
         self.facts = (out_dir / "note_facts.jsonl").open("w", encoding="utf-8")
         self.files.append(self.facts)
 
@@ -82,13 +82,16 @@ class GroundTruthWriter:
         locations: dict[str, RawLocation],
         issues: list[FeedIssue],
         note_files: dict[str, str],
+        pdf_files: dict[str, str],
     ) -> None:
         """Write every ground-truth row for one patient."""
         self.rows("patients", [record.patient])
         self.rows("outcomes", [record.outcome])
         self.rows("rejection_episodes", record.rejections)
         self.rows("injury_episodes", record.injuries)
-        self.rows("biopsies", record.biopsies)
+        for biopsy in record.biopsies:
+            row = {k: cell(v) for k, v in dataclasses.asdict(biopsy).items()}
+            self.biopsies.writerow(row | {"pdf_file": pdf_files.get(biopsy.biopsy_id, "")})
         self.rows("medications", record.meds)
         self.rows("surveillance_schedule", record.schedule)
         self.rows("encounters", record.encounters)

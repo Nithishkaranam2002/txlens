@@ -8,12 +8,13 @@ from pathlib import Path
 
 from txlens_datagen.config import Center, GeneratorConfig
 from txlens_datagen.models import PatientRecord
-from txlens_datagen.rand import STREAM_FEED, rng_for
+from txlens_datagen.rand import STREAM_FEED, STREAM_PDF, rng_for
 from txlens_datagen.record import build_record
 from txlens_datagen.writers.fhir import write_bundle
 from txlens_datagen.writers.ground_truth import GroundTruthWriter
 from txlens_datagen.writers.lab_feeds import LabFeedWriter
 from txlens_datagen.writers.notes import write_note
+from txlens_datagen.writers.pathology_pdf import write_report
 
 FEED_PART_LABS, FEED_PART_FHIR = 0, 1
 
@@ -99,7 +100,9 @@ def generate(
                 rng_for(config.seed, STREAM_FEED, index, FEED_PART_FHIR),
             )
             note_files = {n.note_id: write_note(n, center.tenant_id, raw) for n in record.notes}
-            truth.add(record, locations, issues, note_files)
+            pdf_files = write_pdfs(record, center, raw, config, index) if pdfs else {}
+            truth.add(record, locations, issues, note_files, pdf_files)
+            summary.pdfs += len(pdf_files)
             duplicates = sum(i.issue == "duplicate" for i in issues)
             summary.add(record, len(record.labs) + duplicates, len(issues))
     finally:
@@ -107,6 +110,23 @@ def generate(
         truth.close()
     write_manifest(config, out_dir, summary, pdfs=pdfs, note_text=note_text)
     return summary
+
+
+def write_pdfs(
+    record: PatientRecord, center: Center, raw: Path, config: GeneratorConfig, index: int
+) -> dict[str, str]:
+    """One scanned-looking pathology PDF per biopsy; returns biopsy_id -> relative path."""
+    return {
+        b.biopsy_id: write_report(
+            b,
+            record.patient,
+            center.name,
+            raw,
+            config.pdf_dpi,
+            rng_for(config.seed, STREAM_PDF, index, n),
+        )
+        for n, b in enumerate(record.biopsies)
+    }
 
 
 def write_manifest(
