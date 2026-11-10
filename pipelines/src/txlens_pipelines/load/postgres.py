@@ -1,0 +1,131 @@
+"""Load one tenant's gold rows into Postgres `cdm`, as the non-superuser app role.
+
+Row-Level Security stays on: the session is the app login (never a superuser, never
+BYPASSRLS) with `app.tenant_id` set. Postgres does not allow COPY FROM into a table with
+RLS, so each table is COPYed into a temporary staging table first and then moved with
+INSERT ... SELECT, which passes the RLS WITH CHECK policy.
+
+Everything for one tenant is one transaction: delete the tenant's rows, insert the new ones,
+check the counts, write one audit_log row per table. A re-run therefore replaces rather than
+duplicates, and a failure leaves the previous load in place.
+"""
+
+import os
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+
+import psycopg
+from psycopg import sql
+from psycopg.conninfo import make_conninfo
+from psycopg.types.json import Jsonb
+
+Connection = psycopg.Connection[tuple[object, ...]]
+# Parents before children (foreign keys between clinical tables); deleted in reverse.
+LOAD_ORDER = (
+    "person",
+    "observation_period",
+    "visit_occurrence",
+    "condition_occurrence",
+    "drug_exposure",
+    "measurement",
+    "procedure_occurrence",
+    "death",
+    "note",
+    "cdm_source",
+)
+
+
+class UnsafeLoadError(RuntimeError):
+    """The connection could bypass Row-Level Security."""
+
+
+@dataclass(frozen=True)
+class TableRows:
+    """Rows for one table, in `columns` order (tenant_id first)."""
+
+    columns: Sequence[str]
+    rows: Iterable[Sequence[object]]
+
+
+def database_url() -> str:
+    """APP_DATABASE_URL (the app login), with host/port swapped when running in compose."""
+    url = os.environ.get("APP_DATABASE_URL", "").replace("postgresql+psycopg://", "postgresql://")
+    if not url:
+        raise SystemExit("Set APP_DATABASE_URL (the non-superuser app login) to load Postgres.")
+    overrides = {
+        key: os.environ[env]
+        for key, env in (("host", "TXLENS_DB_HOST"), ("port", "TXLENS_DB_PORT"))
+        if os.environ.get(env)
+    }
+    return make_conninfo(url, **overrides)
+
+
+def check_role_is_rls_bound(conn: Connection) -> None:
+    """Refuse superusers and BYPASSRLS roles: RLS must apply to the load."""
+    row = conn.execute(
+        "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user"
+    ).fetchone()
+    if row is None or row[0] or row[1]:
+        raise UnsafeLoadError("load with the app login role (not a superuser, no BYPASSRLS)")
+
+
+def copy_into_stage(conn: Connection, table: str, data: TableRows) -> int:
+    """COPY rows into a temporary table shaped like cdm.<table>; returns the row count."""
+    stage = sql.Identifier(f"stage_{table}")
+    conn.execute(
+        sql.SQL("CREATE TEMP TABLE {} (LIKE cdm.{}) ON COMMIT DROP").format(
+            stage, sql.Identifier(table)
+        )
+    )
+    columns = sql.SQL(", ").join(map(sql.Identifier, data.columns))
+    count = 0
+    with conn.cursor().copy(sql.SQL("COPY {} ({}) FROM STDIN").format(stage, columns)) as copy:
+        for row in data.rows:
+            copy.write_row(row)
+            count += 1
+    return count
+
+
+def move_from_stage(conn: Connection, table: str, columns: Sequence[str]) -> None:
+    """INSERT ... SELECT from the stage: this is where RLS WITH CHECK applies."""
+    names = sql.SQL(", ").join(map(sql.Identifier, columns))
+    conn.execute(
+        sql.SQL("INSERT INTO cdm.{} ({}) SELECT {} FROM {}").format(
+            sql.Identifier(table), names, names, sql.Identifier(f"stage_{table}")
+        )
+    )
+
+
+def audit(conn: Connection, table: str, batch_id: str, deleted: int, inserted: int) -> None:
+    """One append-only audit row per table write."""
+    conn.execute(
+        "INSERT INTO app.audit_log (action, object_type, object_id, details) "
+        "VALUES ('pipeline_load', %s, %s, %s)",
+        (f"cdm.{table}", batch_id, Jsonb({"deleted": deleted, "inserted": inserted})),
+    )
+
+
+def load_tenant(
+    conn: Connection, tenant_id: str, tables: dict[str, TableRows], batch_id: str
+) -> dict[str, int]:
+    """Replace one tenant's rows in every table, in one transaction; returns rows inserted."""
+    check_role_is_rls_bound(conn)
+    inserted: dict[str, int] = {}
+    with conn.transaction():
+        conn.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant_id,))
+        deleted = {}
+        for table in reversed(LOAD_ORDER):
+            result = conn.execute(sql.SQL("DELETE FROM cdm.{}").format(sql.Identifier(table)))
+            deleted[table] = result.rowcount
+        for table in LOAD_ORDER:
+            if table not in tables:
+                continue
+            inserted[table] = copy_into_stage(conn, table, tables[table])
+            move_from_stage(conn, table, tables[table].columns)
+            stored = conn.execute(
+                sql.SQL("SELECT count(*) FROM cdm.{}").format(sql.Identifier(table))
+            ).fetchone()
+            if stored is None or stored[0] != inserted[table]:
+                raise RuntimeError(f"cdm.{table}: {stored} rows stored, {inserted[table]} sent")
+            audit(conn, table, batch_id, deleted[table], inserted[table])
+    return inserted

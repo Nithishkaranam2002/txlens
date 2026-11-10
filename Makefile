@@ -6,7 +6,7 @@ SEED ?= 42
 VOCAB_SOURCE ?= omop/athena
 N_PATIENTS ?= 2000
 
-.PHONY: help setup up up-full down lint test db-migrate db-setup vocab-load vocab-subset vocab-check generate-data generate-data-scale pipeline test-pipelines spark-build
+.PHONY: help setup up up-full down lint test db-migrate db-setup vocab-load vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -61,8 +61,11 @@ generate-data-scale: ## 20,000 patients, no PDFs or note text, into data_scale/ 
 spark-build: ## Build the Spark runner image (Python 3.12 + Java 17 + PySpark + Delta)
 	$(COMPOSE) --profile spark build spark
 
-pipeline: ## Run the medallion pipelines inside the Spark container
-	$(SPARK_RUN) python -m txlens_pipelines
+pipeline: ## Run bronze -> silver -> gold -> Postgres load in the Spark container (LAYERS=...)
+	$(SPARK_RUN) python -m txlens_pipelines $(if $(LAYERS),--layers $(LAYERS))
+
+pipeline-clean: ## Delete the local Delta lake (bronze/silver/gold); Postgres is untouched
+	rm -rf lake
 
 test-pipelines: ## Run the Spark tests inside the Spark container
 	$(SPARK_RUN) pytest -p no:cacheprovider -m spark pipelines/tests

@@ -9,10 +9,20 @@ from txlens_pipelines.runtime import Runtime
 from txlens_pipelines.silver.run import run_silver
 
 Layer = Callable[[Runtime, PipelineConfig], dict[str, int]]
+
+
+def run_load(runtime: Runtime, config: PipelineConfig) -> dict[str, int]:
+    """Postgres load; imported here because psycopg exists only in local runs."""
+    from txlens_pipelines.load.run import run_load as load
+
+    return load(runtime, config)
+
+
 LAYER_FUNCTIONS: dict[str, Layer] = {
     "bronze": run_bronze,
     "silver": run_silver,
     "gold": run_gold,
+    "load": run_load,
 }
 
 
