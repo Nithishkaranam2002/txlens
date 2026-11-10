@@ -13,7 +13,8 @@ TxLens is a multi-tenant clinical data and AI platform for organ transplant prog
 
 > **All data is synthetic**, created by `data_generator/`. No real patient data is used.
 
-**Status:** skeleton and synthetic data generator (Steps 1.1–1.2). Features arrive step by step.
+**Status:** skeleton, synthetic data generator and OMOP database (Steps 1.1–1.3). Features arrive
+step by step.
 
 ## Tech stack
 
@@ -21,7 +22,7 @@ TxLens is a multi-tenant clinical data and AI platform for organ transplant prog
 |---|---|
 | Frontend | Next.js, React, TypeScript, Tailwind, Vitest |
 | Backend | Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2 |
-| Database | PostgreSQL 16 + pgvector, Row-Level Security per tenant |
+| Database | PostgreSQL 16 + pgvector, OMOP CDM v5.4 (official OHDSI DDL), Alembic, Row-Level Security per tenant |
 | Workflows | Temporal |
 | Data platform | PySpark + Delta Lake (bronze/silver/gold), runs in Docker and on Databricks |
 | AI | LiteLLM, Instructor, LangGraph, Langfuse |
@@ -54,6 +55,11 @@ make up-full        # ...plus Langfuse      (http://localhost:3001)
 make lint           # ruff, mypy, eslint, tsc
 make test           # pytest + vitest
 
+make db-migrate     # OMOP schemas (cdm, vocab), tenant RLS, indexes
+make db-setup       # ...plus the app login role from APP_DATABASE_URL
+make vocab-load     # load the Athena vocabulary zip from omop/athena/ (see omop/README.md)
+make vocab-check    # check every code we use against the vocabulary
+
 make generate-data        # 2,000 synthetic patients -> data/raw + data/ground_truth (~240 MB)
 make generate-data-scale  # 20,000 patients, no PDFs/notes -> data_scale/ (Spark volume tests)
 
@@ -66,3 +72,6 @@ make down           # stop containers (data is kept)
 ```
 
 Run `make help` to see every command.
+
+The OMOP vocabulary is licensed and never committed: download it yourself from Athena as
+described in [omop/README.md](omop/README.md). Tests use a fake TEST ONLY fixture instead.

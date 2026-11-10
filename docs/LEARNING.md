@@ -143,3 +143,94 @@ experiencer flags).
    truth lets us measure that.
 5. **How does it scale?** It streams one patient at a time to open files: 20,000 patients
    in under a minute with about 50 MB of memory.
+
+## Phase 1, Step 1.3 — OMOP CDM database
+
+### What was built
+- **Postgres tables for OMOP CDM v5.4**, created by Alembic migrations (`make db-migrate`) from
+  the official OHDSI DDL (release v5.4.3, kept unedited in `omop/src/txlens_omop/sql/`).
+  13 clinical tables live in schema `cdm`, 8 vocabulary tables in schema `vocab`.
+- **Multi-tenancy**: every clinical table has a `tenant_id` (one tenant = one transplant center)
+  and Row-Level Security, so a center only ever sees its own rows.
+- **Vocabulary loader** (`make vocab-load`): reads the Athena zip without unpacking it and
+  bulk-loads ~4 million concepts and ~62 million relationship/ancestor rows in about 3 minutes.
+- **Subset extractor** (`make vocab-subset`) for a small local vocabulary.
+- **Code check** (`make vocab-check`): every code the project uses is checked against the real
+  vocabulary. It found one imprecise code (tacrolimus trough), which was fixed.
+
+### OMOP in plain English
+- **OMOP CDM** (Common Data Model) is a standard set of tables for patient data, used by
+  hundreds of hospitals and research networks (OHDSI). If our data is in OMOP, standard tools
+  and other researchers' queries work on it unchanged.
+- **The main tables**: `person` (one row per patient), `visit_occurrence` (visits and stays),
+  `condition_occurrence` (diagnoses), `drug_exposure` (medications), `measurement` (lab
+  results such as creatinine and dd-cfDNA), `procedure_occurrence` (transplant, biopsy),
+  `observation` (other facts), `death`, `note` and `note_nlp` (clinical text and what NLP found
+  in it), `specimen` (biopsy tissue), `observation_period` (when we can see the patient).
+- **concept_id**: OMOP never stores a diagnosis as text like "kidney rejection". It stores a
+  number, a **concept_id**, that points to a row in `vocab.concept` with the name, the
+  vocabulary (SNOMED, LOINC, ...), the original code and the domain. Example:
+  `3016723` = LOINC `2160-0` "Creatinine [Mass/volume] in Serum or Plasma".
+- **Source vs standard concepts.** A *source* concept is the code exactly as the hospital sent
+  it, for example ICD-10-CM `T86.11` "Kidney transplant rejection" (concept_id 45609393). A
+  *standard* concept is the one OMOP uses for analysis, for example SNOMED `236570004`
+  "Renal transplant rejection" (concept_id 4128369). Each clinical row stores both: the
+  standard one in `condition_concept_id`, the source one in `condition_source_concept_id`, and
+  the raw text in `condition_source_value`. Standard concepts have `standard_concept = 'S'`.
+- **"Maps to"**: the relationship in `concept_relationship` that leads from a source concept to
+  its standard concept. `T86.11 —Maps to→ 236570004`. If a code has no valid "Maps to", we
+  store `concept_id = 0`, keep the source value, and send it to human review.
+- **concept_ancestor**: a precomputed table of every ancestor → descendant pair in the
+  hierarchy. That is why a search for SNOMED "Transplanted organ rejection" (4309320) finds all
+  57 of its sub-types in one query, including "Renal transplant rejection", "Acute rejection of
+  renal transplant - grade II" and "Cardiac transplant rejection". No recursive query needed.
+- **Domains** tell you which table a concept belongs in: Condition → `condition_occurrence`,
+  Measurement → `measurement`, Drug → `drug_exposure`, Procedure → `procedure_occurrence`.
+  A code with the wrong domain would land in the wrong table, which is why the code check
+  checks domains.
+- **Vocabularies we load**: SNOMED (conditions, procedures), LOINC (labs), RxNorm and RxNorm
+  Extension (drugs), ICD-10-CM (diagnosis codes as hospitals bill them), UCUM (units) and small
+  ones for types, visits and demographics. CPT4 is excluded (separate licence).
+- **Why the vocabulary is not on GitHub**: SNOMED and the other vocabularies are licensed. We
+  may use them, but not redistribute them. The download stays in the git-ignored `omop/athena/`;
+  tests use a fake fixture with obviously fake codes.
+
+### Why Row-Level Security (RLS)
+- RLS is a Postgres feature: each table gets a **policy**, a condition Postgres adds to every
+  query automatically. Ours is "`tenant_id` must equal the tenant set for this transaction".
+- So even a query that forgets `WHERE tenant_id = ...`, or SQL written by the AI copilot, can
+  only see the current center's rows. No tenant set means no rows at all.
+- Two traps we handled: **superusers skip RLS**, so the app uses a separate, limited role
+  (`txlens_app`); and **connection pools reuse connections**, so the tenant is set per
+  transaction (`set_config(..., true)`), never per connection.
+- See ADR 0004 for the comparison with schema-per-tenant and database-per-tenant.
+
+### Why these tools
+- **Alembic**: versioned, reviewable database changes that run the same way locally and in CI.
+- **Pinned official DDL** instead of hand-written tables: a test proves the database matches the
+  OHDSI standard column by column.
+- **psycopg 3 `COPY`**: the fastest way to bulk-load into Postgres; streaming from the zip keeps
+  memory near 0.5 GB for a 4.9 GB download.
+
+### Trade-offs
+- No foreign keys from clinical tables to the vocabulary: the vocabulary can be reloaded on its
+  own, but concept validity is checked by our pipeline instead of the database.
+- One shared set of tables for all centers is simple and efficient, but per-center backup or
+  deletion is a filtered job, and a foreign-key error could reveal that another center's id
+  exists (never its data).
+- The full vocabulary costs ~7 GB of disk; the subset exists for quick work.
+
+### Likely interview questions
+1. **What is the difference between a source and a standard concept?** The source concept is
+   the code as the hospital sent it (ICD-10-CM T86.11); the standard concept is the one OMOP
+   analyses use (SNOMED 236570004). "Maps to" links them; we store both so nothing is lost.
+2. **How do you find every kind of transplant rejection?** Look up the parent concept and join
+   `concept_ancestor`: one query returns all descendants, whatever their depth.
+3. **How do you stop one hospital seeing another's patients?** `tenant_id` on every clinical
+   table plus Postgres Row-Level Security, with the app on a non-superuser role and the tenant
+   set per transaction. Tests try direct SELECTs, inserts and updates across tenants.
+4. **Why not a schema or database per hospital?** More migrations, more copies of a 7 GB
+   vocabulary, harder cross-center research. RLS gives database-enforced isolation with one
+   copy of everything; the ADR lists when the other options would win.
+5. **What happens with a code you don't recognise?** `concept_id = 0`, the original code is
+   kept in the `*_source_value` column, and the record goes to the human review queue.
