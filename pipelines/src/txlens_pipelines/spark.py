@@ -16,6 +16,9 @@ def build_spark_session(app_name: str = "txlens") -> SparkSession:
         )
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.ui.enabled", "false")
+        .config("spark.ui.showConsoleProgress", "false")
+        .config("spark.driver.memory", "4g")
     )
     session: SparkSession = configure_spark_with_delta_pip(builder).getOrCreate()
+    session.sparkContext.setLogLevel("WARN")
     return session
