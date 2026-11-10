@@ -23,8 +23,8 @@ separate `pipelines-e2e` job on pushes to main and on manual runs. Pull requests
 |---|---|---|
 | bronze | `lab_rows`, `fhir_resources`, `note_files`, `pdf_index` | Raw rows as-is, with `source_file`, `source_row`, `file_sha256`, `ingested_at`, `tenant_id`, `batch_id`. Insert-only. |
 | silver | `patients`, `encounters`, `procedures`, `conditions`, `medications`, `labs`, `notes`, `lab_duplicates`, `quarantine` | Dates per center, duplicates removed, units converted, censored values, lab and drug normalization. Bad rows are quarantined with a reason. |
-| gold | OMOP `person`, `observation_period`, `visit_occurrence`, `drug_exposure`, `measurement`, `condition_occurrence`, `procedure_occurrence`, `death`, `note`, `cdm_source`; plus `lineage`, `mapping_gaps`, `id_map` | Standard concepts, stable ids, DDL-exact columns. |
-| load | Postgres `cdm.*` | Per tenant, one transaction, as the app role with the tenant set. COPY into a stage, then INSERT through RLS. Audit-logged. |
+| gold | OMOP `person`, `observation_period`, `visit_occurrence`, `drug_exposure`, `measurement`, `condition_occurrence`, `procedure_occurrence`, `death`, `note`, `cdm_source`; plus `patient_identity`, `lineage`, `mapping_gaps`, `id_map` | Standard concepts, stable ids, DDL-exact columns. No identifiers in OMOP: `person` keeps only the birth year; MRN, name and exact birth date go to `patient_identity`, loaded into `app.patient_identity`. Kidney transplants get the donor-specific SNOMED concept (live donor / cadaveric). |
+| load | Postgres `cdm.*` and `app.patient_identity` | Per tenant, one transaction, as the app role with the tenant set. COPY into a stage, then INSERT through RLS. Audit-logged. |
 
 Code map (`src/txlens_pipelines/`):
 

@@ -41,6 +41,12 @@ LAB_RULES = (
 
 # Graft biopsy procedure by transplanted organ.
 BIOPSY_CODES = {"kidney": ("SNOMED", "1293269004"), "heart": ("SNOMED", "387829002")}
+# Transplant by (organ, donor type), when a more specific standard concept exists. Both are
+# descendants of "Transplant of kidney" (70536003), so organ queries still find them.
+DONOR_TRANSPLANT_CODES = {
+    ("kidney", "living"): ("SNOMED", "175901007"),  # Live donor renal transplant
+    ("kidney", "deceased"): ("SNOMED", "175902000"),  # Cadaveric renal transplant
+}
 # Routes as written in orders (lower case) -> SNOMED route.
 ROUTE_CODES = {"oral": ("SNOMED", "26643006"), "iv": ("SNOMED", "47625008")}
 NOTE_CLASS = ("LOINC", "11506-3")  # progress note

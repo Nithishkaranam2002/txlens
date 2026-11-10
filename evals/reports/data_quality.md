@@ -9,7 +9,7 @@ Generated 2026-11-10 by `make pipeline-report` (evals/src/txlens_evals/pipeline_
 | Check | Expected | Actual | Result | Note |
 |---|---|---|---|---|
 | patients: one person per ground-truth patient (MRN, per tenant) | 2,000 | 2,000 | PASS | missing 0, extra 0 |
-| patients: sex and year of birth | 2,000 | 2,000 | PASS | 0 differ |
+| patients: sex, birth year (OMOP) and birth date (identity) | 2,000 | 2,000 | PASS | 0 differ |
 | deaths: same people and dates | 65 | 65 | PASS | 0 differ |
 | labs: every clean ground-truth result reaches silver | 240,945 | 240,945 | PASS |  |
 | labs: patient, test, time and value (standard units) match | 240,945 | 240,945 | PASS | 1,186 censored results checked against their bound |
@@ -19,7 +19,7 @@ Generated 2026-11-10 by `make pipeline-report` (evals/src/txlens_evals/pipeline_
 | medications: dose and start date | 22,234 | 22,234 | PASS |  |
 | duplicates: every injected duplicate removed, nothing else | 4,885 | 4,886 | PASS | missed 0; 1 extra, of which 1 are identical genuine results |
 | quarantine: exactly the rows with an injected bad date or missing value | 3,686 | 3,686 | PASS | missed 0, extra 0 |
-| postgres: cdm row counts equal gold, per tenant and table | 301,682 | 301,682 | PASS | 30 (tenant, table) pairs compared |
+| postgres: cdm + identity row counts equal gold, per tenant and table | 303,682 | 303,682 | PASS | 33 (tenant, table) pairs compared |
 
 ## Rows per layer
 
@@ -48,6 +48,7 @@ Generated 2026-11-10 by `make pipeline-report` (evals/src/txlens_evals/pipeline_
 | gold | death | 65 |
 | gold | note | 12,505 |
 | gold | cdm_source | 3 |
+| gold | patient_identity | 2,000 |
 | gold | lineage | 301,679 |
 | gold | mapping_gaps | 46 |
 

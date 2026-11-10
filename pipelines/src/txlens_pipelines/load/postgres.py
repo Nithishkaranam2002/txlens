@@ -1,4 +1,7 @@
-"""Load one tenant's gold rows into Postgres `cdm`, as the non-superuser app role.
+"""Load one tenant's gold rows into Postgres, as the non-superuser app role.
+
+OMOP tables go to `cdm`; the patient identifiers (MRN, name, birth date) go to
+`app.patient_identity`, which only the clinician API path reads.
 
 Row-Level Security stays on: the session is the app login (never a superuser, never
 BYPASSRLS) with `app.tenant_id` set. Postgres does not allow COPY FROM into a table with
@@ -32,7 +35,10 @@ LOAD_ORDER = (
     "death",
     "note",
     "cdm_source",
+    "patient_identity",
 )
+# Tables outside the OMOP schema.
+APP_TABLES = {"patient_identity"}
 
 
 class UnsafeLoadError(RuntimeError):
@@ -69,13 +75,21 @@ def check_role_is_rls_bound(conn: Connection) -> None:
         raise UnsafeLoadError("load with the app login role (not a superuser, no BYPASSRLS)")
 
 
+def schema_of(table: str) -> str:
+    """'app' for our own tables, 'cdm' for OMOP ones."""
+    return "app" if table in APP_TABLES else "cdm"
+
+
+def target(table: str) -> sql.Composed:
+    """The schema-qualified table name."""
+    return sql.SQL("{}.{}").format(sql.Identifier(schema_of(table)), sql.Identifier(table))
+
+
 def copy_into_stage(conn: Connection, table: str, data: TableRows) -> int:
-    """COPY rows into a temporary table shaped like cdm.<table>; returns the row count."""
+    """COPY rows into a temporary table shaped like the target; returns the row count."""
     stage = sql.Identifier(f"stage_{table}")
     conn.execute(
-        sql.SQL("CREATE TEMP TABLE {} (LIKE cdm.{}) ON COMMIT DROP").format(
-            stage, sql.Identifier(table)
-        )
+        sql.SQL("CREATE TEMP TABLE {} (LIKE {}) ON COMMIT DROP").format(stage, target(table))
     )
     columns = sql.SQL(", ").join(map(sql.Identifier, data.columns))
     count = 0
@@ -90,8 +104,8 @@ def move_from_stage(conn: Connection, table: str, columns: Sequence[str]) -> Non
     """INSERT ... SELECT from the stage: this is where RLS WITH CHECK applies."""
     names = sql.SQL(", ").join(map(sql.Identifier, columns))
     conn.execute(
-        sql.SQL("INSERT INTO cdm.{} ({}) SELECT {} FROM {}").format(
-            sql.Identifier(table), names, names, sql.Identifier(f"stage_{table}")
+        sql.SQL("INSERT INTO {} ({}) SELECT {} FROM {}").format(
+            target(table), names, names, sql.Identifier(f"stage_{table}")
         )
     )
 
@@ -101,7 +115,11 @@ def audit(conn: Connection, table: str, batch_id: str, deleted: int, inserted: i
     conn.execute(
         "INSERT INTO app.audit_log (action, object_type, object_id, details) "
         "VALUES ('pipeline_load', %s, %s, %s)",
-        (f"cdm.{table}", batch_id, Jsonb({"deleted": deleted, "inserted": inserted})),
+        (
+            f"{schema_of(table)}.{table}",
+            batch_id,
+            Jsonb({"deleted": deleted, "inserted": inserted}),
+        ),
     )
 
 
@@ -115,7 +133,7 @@ def load_tenant(
         conn.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant_id,))
         deleted = {}
         for table in reversed(LOAD_ORDER):
-            result = conn.execute(sql.SQL("DELETE FROM cdm.{}").format(sql.Identifier(table)))
+            result = conn.execute(sql.SQL("DELETE FROM {}").format(target(table)))
             deleted[table] = result.rowcount
         for table in LOAD_ORDER:
             if table not in tables:
@@ -123,9 +141,9 @@ def load_tenant(
             inserted[table] = copy_into_stage(conn, table, tables[table])
             move_from_stage(conn, table, tables[table].columns)
             stored = conn.execute(
-                sql.SQL("SELECT count(*) FROM cdm.{}").format(sql.Identifier(table))
+                sql.SQL("SELECT count(*) FROM {}").format(target(table))
             ).fetchone()
             if stored is None or stored[0] != inserted[table]:
-                raise RuntimeError(f"cdm.{table}: {stored} rows stored, {inserted[table]} sent")
+                raise RuntimeError(f"{table}: {stored} rows stored, {inserted[table]} sent")
             audit(conn, table, batch_id, deleted[table], inserted[table])
     return inserted

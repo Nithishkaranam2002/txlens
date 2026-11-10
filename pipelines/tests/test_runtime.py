@@ -27,6 +27,15 @@ def test_replace_tenants_leaves_other_tenants_alone(
     assert values(runtime) == [("center_a", 2, "a2"), ("center_b", 1, "b1")]
 
 
+def test_replace_tenants_adds_new_columns(spark: SparkSession, runtime: LocalRuntime) -> None:
+    first = spark.createDataFrame([("center_a", 1, "a1"), ("center_b", 1, "b1")], SCHEMA)
+    runtime.replace_tenants(first, "silver", "t", ["center_a", "center_b"])
+    wider = spark.createDataFrame([("center_a", 2, "a2", "new")], SCHEMA + ", extra string")
+    runtime.replace_tenants(wider, "silver", "t", ["center_a"])
+    rows = runtime.read("silver", "t").orderBy("tenant_id").collect()
+    assert [(r.tenant_id, r.extra) for r in rows] == [("center_a", "new"), ("center_b", None)]
+
+
 def test_append_new_is_insert_only_and_idempotent(
     spark: SparkSession, runtime: LocalRuntime
 ) -> None:

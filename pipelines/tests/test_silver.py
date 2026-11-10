@@ -101,6 +101,15 @@ def test_patients_normalize_sex_dates_and_death(built: LocalRuntime) -> None:
     assert by_mrn["730000063"].death_date is None
 
 
+def test_patients_keep_the_name_for_the_identity_table(built: LocalRuntime) -> None:
+    names = {r.mrn: (r.given_name, r.family_name) for r in rows(built, "patients")}
+    assert names == {
+        "A1": ("Ysolde", "Quorrin"),
+        "MRN-B-1": (None, "Brennick"),  # no given name; whitespace trimmed
+        "730000063": (None, None),  # no name element at all
+    }
+
+
 def test_drugs_are_normalized_without_substring_matching(built: LocalRuntime) -> None:
     meds = {
         r.order_source_id: (r.drug_concept_id, r.mapping_method) for r in rows(built, "medications")

@@ -57,7 +57,11 @@ class Runtime(ABC):
 
     @abstractmethod
     def overwrite_where(self, df: DataFrame, layer: str, name: str, predicate: str) -> None:
-        """Replace the rows matching `predicate` with `df`."""
+        """Replace the rows matching `predicate` with `df`.
+
+        New columns in `df` are added to the table (mergeSchema); existing columns are never
+        dropped or retyped, so a pipeline change can add a field without a manual migration.
+        """
 
     def raw(self, *parts: str) -> str:
         """Path of a raw file or folder."""
@@ -118,8 +122,12 @@ class LocalRuntime(Runtime):
         writer.partitionBy(TENANT_COLUMN).save(self.path(layer, name))
 
     def overwrite_where(self, df: DataFrame, layer: str, name: str, predicate: str) -> None:
-        df.write.format("delta").mode("overwrite").option("replaceWhere", predicate).save(
-            self.path(layer, name)
+        (
+            df.write.format("delta")
+            .mode("overwrite")
+            .option("replaceWhere", predicate)
+            .option("mergeSchema", "true")
+            .save(self.path(layer, name))
         )
 
 
@@ -149,6 +157,10 @@ class DatabricksRuntime(Runtime):
         writer.partitionBy(TENANT_COLUMN).saveAsTable(self.table(layer, name))
 
     def overwrite_where(self, df: DataFrame, layer: str, name: str, predicate: str) -> None:
-        df.write.format("delta").mode("overwrite").option("replaceWhere", predicate).saveAsTable(
-            self.table(layer, name)
+        (
+            df.write.format("delta")
+            .mode("overwrite")
+            .option("replaceWhere", predicate)
+            .option("mergeSchema", "true")
+            .saveAsTable(self.table(layer, name))
         )

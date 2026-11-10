@@ -62,7 +62,7 @@ class GoldWriter:
         return stored
 
     def write_extra(self, table: str, df: DataFrame) -> None:
-        """A non-OMOP gold table (lineage, mapping gaps)."""
+        """A non-OMOP gold table (identity, lineage, mapping gaps)."""
         self.runtime.replace_tenants(df, "gold", table, self.tenants)
         self.counts[table] = df.count()
 
@@ -105,6 +105,7 @@ def run_gold(runtime: Runtime, config: PipelineConfig) -> dict[str, int]:
 
     persons = w.with_ids(t.person_rows(silver("patients")), "person")
     w.write("person", persons)
+    w.write_extra("patient_identity", t.identity_rows(silver("patients"), persons))
     visits = w.with_ids(t.visit_rows(silver("encounters"), persons), "visit_occurrence")
     w.write("visit_occurrence", visits)
     procedures = silver("procedures")

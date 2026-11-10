@@ -43,6 +43,8 @@ CONCEPTS = [
     (19011227, "Drug", "RxNorm", "Brand Name", "", "TEST-BN-5", "Valcyte"),
     (4322471, "Procedure", "SNOMED", "Procedure", "S", "70536003", "kidney transplant"),
     (4137127, "Procedure", "SNOMED", "Procedure", "S", "32413006", "heart transplant"),
+    (4022805, "Procedure", "SNOMED", "Procedure", "S", "175901007", "live donor kidney transplant"),
+    (4021107, "Procedure", "SNOMED", "Procedure", "S", "175902000", "cadaveric kidney transplant"),
     (1244937, "Procedure", "SNOMED", "Procedure", "S", "1293269004", "kidney graft biopsy"),
     (4308808, "Procedure", "SNOMED", "Procedure", "S", "387829002", "endomyocardial biopsy"),
     (193782, "Condition", "SNOMED", "Disorder", "S", "46177005", "esrd"),

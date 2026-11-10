@@ -49,6 +49,13 @@ def test_new_step_1_4_codes_are_checked() -> None:
     assert "dsa_mfi" in KNOWN_GAPS
 
 
+def test_donor_transplant_codes_are_checked_under_kidney_transplant() -> None:
+    codes = {(c.vocabulary_id, c.code): c for c in all_codes()}
+    for code in ("175901007", "175902000"):
+        use = codes[("SNOMED", code)]
+        assert (use.expected_domain, use.descends_from) == ("Procedure", ("SNOMED", "70536003"))
+
+
 def test_every_lab_name_variant_and_local_code_is_mapped() -> None:
     mapped = {(m.source_vocabulary_id, m.source_code) for m in read_mappings()}
     for dialect in DIALECTS.values():

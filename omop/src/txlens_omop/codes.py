@@ -22,6 +22,8 @@ class CodeUse:
     label: str
     expected_domain: str
     used_in: str
+    # (vocabulary, code) this code's standard concept must descend from, when queries rely on it.
+    descends_from: tuple[str, str] | None = None
 
 
 PLANNED_ICD10CM = {
@@ -40,6 +42,8 @@ PIPELINE_CODES = {
     ("LOINC", "103142-6"): ("dd-cfDNA donor fraction", "Measurement"),
     ("SNOMED", "1293269004"): ("kidney graft biopsy", "Procedure"),
     ("SNOMED", "387829002"): ("heart graft (endomyocardial) biopsy", "Procedure"),
+    ("SNOMED", "175901007"): ("live donor kidney transplant", "Procedure"),
+    ("SNOMED", "175902000"): ("deceased (cadaveric) donor kidney transplant", "Procedure"),
     ("UCUM", "mg/dL"): ("creatinine unit", "Unit"),
     ("UCUM", "mL/min/(173.10*-2.m2)"): ("eGFR unit (mL/min/1.73 m2)", "Unit"),
     ("UCUM", "ng/mL"): ("tacrolimus trough unit", "Unit"),
@@ -48,6 +52,12 @@ PIPELINE_CODES = {
     ("SNOMED", "47625008"): ("intravenous route", "Route"),
     ("LOINC", "11506-3"): ("progress note (note class)", "Note"),
     ("SNOMED", "297487008"): ("English language (note language)", "Language"),
+}
+# Codes that queries find through an ancestor (e.g. "any kidney transplant" must also match
+# the donor-specific ones), so the hierarchy is checked too.
+ANCESTORS = {
+    ("SNOMED", "175901007"): ("SNOMED", "70536003"),
+    ("SNOMED", "175902000"): ("SNOMED", "70536003"),
 }
 # Facts with no standard concept: reviewed, mapped to 0 in OMOP and listed in the gaps report.
 KNOWN_GAPS = {
@@ -84,7 +94,14 @@ def planned_codes() -> list[CodeUse]:
 def pipeline_codes() -> list[CodeUse]:
     """Standard codes the pipeline writes (biopsies, dd-cfDNA, units)."""
     return [
-        CodeUse(vocabulary, code, label, domain, "codes.py PIPELINE_CODES")
+        CodeUse(
+            vocabulary,
+            code,
+            label,
+            domain,
+            "codes.py PIPELINE_CODES",
+            ANCESTORS.get((vocabulary, code)),
+        )
         for (vocabulary, code), (label, domain) in PIPELINE_CODES.items()
     ]
 

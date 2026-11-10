@@ -26,7 +26,8 @@ def gold(runtime: LocalRuntime, table: str) -> list[Row]:
 
 
 def person_ids(runtime: LocalRuntime) -> dict[str, int]:
-    return {r.person_source_value: r.person_id for r in gold(runtime, "person")}
+    """MRN -> person_id, through the identity table (OMOP itself holds no MRN)."""
+    return {r.mrn: r.person_id for r in gold(runtime, "patient_identity")}
 
 
 def test_tables_have_exactly_the_omop_columns(built: LocalRuntime) -> None:
@@ -36,7 +37,9 @@ def test_tables_have_exactly_the_omop_columns(built: LocalRuntime) -> None:
 
 
 def test_person_ids_are_in_tenant_ranges_with_gender_concepts(built: LocalRuntime) -> None:
-    by_mrn = {r.person_source_value: r for r in gold(built, "person")}
+    ids = person_ids(built)
+    by_mrn = {mrn: next(r for r in gold(built, "person") if r.person_id == i)
+              for mrn, i in ids.items()}  # fmt: skip
     assert by_mrn["A1"].person_id == 100_000_001
     assert by_mrn["MRN-B-1"].person_id == 200_000_001
     assert by_mrn["A1"].gender_concept_id == 8532
@@ -84,13 +87,40 @@ def test_conditions_from_codes_only_and_dated(built: LocalRuntime) -> None:
 
 def test_procedures_transplants_and_biopsies(built: LocalRuntime) -> None:
     rows = {(r.tenant_id, r.procedure_source_value): r for r in gold(built, "procedure_occurrence")}
-    assert rows[("center_a", "70536003")].procedure_concept_id == 4322471
+    # Donor type extension -> donor-specific concept; the code the center sent stays the source.
+    assert rows[("center_a", "70536003")].procedure_concept_id == 4021107  # cadaveric
     uncoded = rows[("center_b", "Kidney transplant - living donor")]
-    assert uncoded.procedure_concept_id == 4322471  # reviewed source_to_concept_map row
+    assert uncoded.procedure_concept_id == 4022805  # reviewed source_to_concept_map row
     biopsy = rows[("center_a", "biopsy of kidney")]
     assert biopsy.procedure_concept_id == 1244937
     assert biopsy.visit_occurrence_id is not None
     assert rows[("center_c", "32413006")].procedure_concept_id == 4137127
+
+
+def test_person_holds_no_direct_identifiers(built: LocalRuntime) -> None:
+    for row in gold(built, "person"):
+        assert row.year_of_birth is not None
+        assert (row.person_source_value, row.month_of_birth, row.day_of_birth) == (None, None, None)
+        assert row.birth_datetime is None
+
+
+def test_identity_table_holds_mrn_name_and_birth_date(built: LocalRuntime) -> None:
+    rows = {r.mrn: r for r in gold(built, "patient_identity")}
+    a = rows["A1"]
+    assert (a.tenant_id, a.given_name, a.family_name, a.birth_date) == (
+        "center_a", "Ysolde", "Quorrin", date(1970, 1, 2)
+    )  # fmt: skip
+    assert (rows["730000063"].given_name, rows["730000063"].family_name) == (None, None)
+    assert sorted(r.person_id for r in rows.values()) == sorted(
+        r.person_id for r in gold(built, "person")
+    )
+
+
+def test_identity_person_ids_match_the_id_map(built: LocalRuntime) -> None:
+    id_map = {(r.tenant_id, r.natural_key): r.omop_id
+              for r in gold(built, "id_map") if r.omop_table == "person"}  # fmt: skip
+    for r in gold(built, "patient_identity"):
+        assert id_map[(r.tenant_id, f"{r.tenant_id}|{r.mrn}")] == r.person_id
 
 
 def test_death_notes_and_observation_periods(built: LocalRuntime) -> None:

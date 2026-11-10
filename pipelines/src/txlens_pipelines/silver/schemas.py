@@ -25,6 +25,8 @@ class Lineage(pa.DataFrameModel):  # type: ignore[type-arg]
 class Patients(Lineage):
     patient_source_id: StringType = pa.Field(nullable=False)
     mrn: StringType = pa.Field(nullable=False)
+    given_name: StringType = pa.Field(nullable=True)
+    family_name: StringType = pa.Field(nullable=True)
     sex: StringType = pa.Field(nullable=True, isin=["male", "female"])
     birth_date: DateType = pa.Field(nullable=False)
     death_date: DateType = pa.Field(nullable=True)

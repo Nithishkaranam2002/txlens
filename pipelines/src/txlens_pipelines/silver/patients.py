@@ -1,4 +1,4 @@
-"""FHIR Patient -> silver.patients: one row per patient with MRN, sex, birth and death dates.
+"""FHIR Patient -> silver.patients: one row per patient with MRN, name, sex, birth and death dates.
 
 Center B writes gender as M/F and dates with a time part; both are normalized here.
 """
@@ -11,7 +11,8 @@ from txlens_pipelines.silver.common import LINEAGE, blank_to_null, fhir_date, fh
 
 TABLE = "patients"
 SCHEMA = (
-    "id string, identifier array<struct<system: string, value: string>>, gender string, "
+    "id string, identifier array<struct<system: string, value: string>>, "
+    "name array<struct<family: string, given: array<string>>>, gender string, "
     "birthDate string, deceasedDateTime string"
 )
 SEX = {"female": "female", "f": "female", "male": "male", "m": "male"}
@@ -28,10 +29,13 @@ def build(bronze_fhir: DataFrame) -> tuple[DataFrame, DataFrame]:
     rows = fhir_resources(bronze_fhir, "Patient", SCHEMA)
     mrn_system = F.concat(F.lit("urn:txlens:"), F.col("tenant_id"), F.lit(":mrn"))
     mrn = F.try_element_at(F.filter("r.identifier", lambda i: i["system"] == mrn_system), F.lit(1))
+    name = F.try_element_at("r.name", F.lit(1))
     parsed = rows.select(
         *LINEAGE,
         F.col("r.id").alias("patient_source_id"),
         blank_to_null(mrn["value"]).alias("mrn"),
+        blank_to_null(F.try_element_at(name["given"], F.lit(1))).alias("given_name"),
+        blank_to_null(name["family"]).alias("family_name"),
         sex(F.col("r.gender")).alias("sex"),
         F.col("r.gender").alias("gender_source_value"),
         F.col("r.birthDate").alias("birth_date_source"),

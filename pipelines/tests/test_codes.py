@@ -3,7 +3,7 @@
 from txlens_datagen.writers.lab_feeds import DIALECTS
 from txlens_omop.codes import all_codes
 from txlens_omop.mappings import LOCAL_CONCEPT_FILE, mappings_dir
-from txlens_pipelines.codes import BIOPSY_CODES, LAB_RULES
+from txlens_pipelines.codes import BIOPSY_CODES, DONOR_TRANSPLANT_CODES, LAB_RULES
 
 
 def checked() -> set[tuple[str, str]]:
@@ -23,6 +23,10 @@ def test_lab_and_unit_codes_are_in_the_vocab_check() -> None:
 
 def test_biopsy_codes_are_in_the_vocab_check() -> None:
     assert set(BIOPSY_CODES.values()) <= checked()
+
+
+def test_donor_transplant_codes_are_in_the_vocab_check() -> None:
+    assert set(DONOR_TRANSPLANT_CODES.values()) <= checked()
 
 
 def test_every_unit_the_feeds_write_has_a_conversion() -> None:

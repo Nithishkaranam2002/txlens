@@ -10,6 +10,7 @@ from pyspark.sql import functions as F
 
 from txlens_pipelines.codes import (
     BIOPSY_CODES,
+    DONOR_TRANSPLANT_CODES,
     GENDER,
     OPERATORS,
     ROUTE_CODES,
@@ -32,23 +33,29 @@ def literal_map(values: dict[str, int]) -> Column:
 
 
 def person_rows(patients: DataFrame) -> DataFrame:
-    """One person per patient; natural key = tenant + MRN."""
-    birth = F.col("birth_date")
+    """One person per patient; natural key = tenant + MRN.
+
+    No direct identifiers in OMOP: only the birth year is kept, and person_source_value is
+    empty. MRN, name and exact birth date go to the separate identity table (identity_rows).
+    """
     return patients.select(
         *LINEAGE,
         "patient_source_id",
         natural_key("tenant_id", "mrn").alias("natural_key"),
         F.coalesce(literal_map(GENDER)[F.col("sex")], F.lit(0)).alias("gender_concept_id"),
-        F.year(birth).alias("year_of_birth"),
-        F.month(birth).alias("month_of_birth"),
-        F.dayofmonth(birth).alias("day_of_birth"),
-        F.to_timestamp(birth).alias("birth_datetime"),
+        F.year("birth_date").alias("year_of_birth"),
         F.lit(0).alias("race_concept_id"),
         F.lit(0).alias("ethnicity_concept_id"),
-        F.col("mrn").alias("person_source_value"),
         F.col("gender_source_value"),
         F.lit(0).alias("gender_source_concept_id"),
         F.col("death_date"),
+    )
+
+
+def identity_rows(patients: DataFrame, persons: DataFrame) -> DataFrame:
+    """Direct identifiers per person (gold.patient_identity -> app.patient_identity)."""
+    return with_person(patients, persons).select(
+        "tenant_id", "person_id", "mrn", "given_name", "family_name", "birth_date"
     )
 
 
@@ -201,7 +208,11 @@ def condition_rows(
 def procedure_rows(
     procedures: DataFrame, persons: DataFrame, visits: DataFrame, vocab: Vocabulary
 ) -> DataFrame:
-    """Transplants (sent code, else reviewed text mapping) and biopsies (by organ)."""
+    """Transplants and biopsies (by organ).
+
+    A transplant gets the donor-specific concept when one exists for its organ and donor type,
+    else the code the center sent, else the reviewed text mapping.
+    """
     snomed = code_lookup(vocab, "SNOMED")
     sent = snomed.select(
         F.col("concept_code").alias("snomed_code"), F.col("standard_concept_id").alias("by_code")
@@ -216,6 +227,13 @@ def procedure_rows(
     biopsy = biopsy_keys.join(snomed, "concept_code").select(
         "organ", F.col("standard_concept_id").alias("by_organ")
     )
+    donor_keys = procedures.sparkSession.createDataFrame(
+        [(organ, donor, code) for (organ, donor), (_, code) in DONOR_TRANSPLANT_CODES.items()],
+        "organ string, donor_type string, concept_code string",
+    )
+    by_donor = donor_keys.join(snomed, "concept_code").select(
+        "organ", "donor_type", F.col("standard_concept_id").alias("by_donor")
+    )
     visit_ids = visits.select("tenant_id", "encounter_source_id", "visit_occurrence_id")
     df = (
         with_person(procedures, persons)
@@ -223,10 +241,13 @@ def procedure_rows(
         .join(sent, "snomed_code", "left")
         .join(reviewed, "text_key", "left")
         .join(biopsy, "organ", "left")
+        .join(by_donor, ["organ", "donor_type"], "left")
         .join(visit_ids, ["tenant_id", "encounter_source_id"], "left")
     )
     is_biopsy = F.col("kind") == "biopsy"
-    concept = F.when(is_biopsy, F.col("by_organ")).otherwise(F.coalesce("by_code", "by_text"))
+    concept = F.when(is_biopsy, F.col("by_organ")).otherwise(
+        F.coalesce("by_donor", "by_code", "by_text")
+    )
     return df.select(
         *LINEAGE,
         natural_key("tenant_id", "procedure_source_id").alias("natural_key"),

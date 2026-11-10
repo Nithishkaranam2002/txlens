@@ -180,6 +180,17 @@ def test_code_check_flags_each_kind_of_problem(loaded: Conn) -> None:
     assert "2 OK, 4 with problems, 6 checked." in report
 
 
+def test_code_check_verifies_the_expected_ancestor(loaded: Conn) -> None:
+    under = CodeUse("SNOMED", "TEST-SCT-102", "x", "Condition", "test", ("SNOMED", "TEST-SCT-100"))
+    itself = CodeUse("SNOMED", "TEST-SCT-100", "x", "Condition", "test", ("SNOMED", "TEST-SCT-100"))
+    sibling = CodeUse(
+        "SNOMED", "TEST-SCT-200", "x", "Condition", "test", ("SNOMED", "TEST-SCT-100")
+    )
+    no_parent = CodeUse("SNOMED", "TEST-SCT-102", "x", "Condition", "test", ("SNOMED", "NOPE"))
+    statuses = [r.status for r in check_codes(loaded, [under, itself, sibling, no_parent])]
+    assert statuses == ["OK", "OK", "NOT UNDER SNOMED TEST-SCT-100", "NOT UNDER SNOMED NOPE"]
+
+
 def test_ingredient_suggestions_for_uncoded_drugs(loaded: Conn) -> None:
     assert [c.concept_code for c in suggest_ingredients(loaded, "tacrolimus")] == ["TEST-RX-42316"]
 

@@ -1,7 +1,8 @@
 """Check every code we use against the loaded vocabulary.
 
-For each code: does it exist, is its domain the one we expect, and is it standard (or does it
-"Map to" a standard concept)? The vocabulary's own name is shown next to our label, because a
+For each code: does it exist, is its domain the one we expect, is it standard (or does it
+"Map to" a standard concept), and, where queries rely on it, does it sit under the expected
+ancestor? The vocabulary's own name is shown next to our label, because a
 code can exist and still mean something else; that part needs a human eye.
 """
 
@@ -54,7 +55,22 @@ def check_code(conn: Connection, use: CodeUse) -> CodeCheck:
         problems.append(
             f"WRONG DOMAIN ({'/'.join(sorted(domains))}, expected {use.expected_domain})"
         )
+    if use.descends_from and standard and not descends_from(conn, standard, use.descends_from):
+        problems.append(f"NOT UNDER {' '.join(use.descends_from)}")
     return CodeCheck(use, concept, standard, tuple(problems))
+
+
+def descends_from(conn: Connection, standard: tuple[Concept, ...], parent: tuple[str, str]) -> bool:
+    """True if every standard concept is a descendant of the parent code's concept."""
+    ancestor = find_concept(conn, *parent)
+    if ancestor is None:
+        return False
+    found = conn.execute(
+        "SELECT count(DISTINCT descendant_concept_id) FROM vocab.concept_ancestor "
+        "WHERE ancestor_concept_id = %s AND descendant_concept_id = ANY(%s)",
+        (ancestor.concept_id, [c.concept_id for c in standard]),
+    ).fetchone()
+    return found is not None and found[0] == len(standard)
 
 
 def check_codes(conn: Connection, uses: list[CodeUse]) -> list[CodeCheck]:

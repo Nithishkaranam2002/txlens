@@ -38,7 +38,7 @@ LAYER_TABLES = {
                "lab_duplicates", "notes", "quarantine"),
     "gold": ("person", "observation_period", "visit_occurrence", "condition_occurrence",
              "drug_exposure", "measurement", "procedure_occurrence", "death", "note",
-             "cdm_source", "lineage", "mapping_gaps"),
+             "cdm_source", "patient_identity", "lineage", "mapping_gaps"),
 }  # fmt: skip
 
 
@@ -79,30 +79,42 @@ def count(df: DataFrame) -> int:
     return int(df.count())
 
 
-def check_patients(lake: Lake, truth: DataFrame) -> list[Check]:
-    """Same MRNs per tenant; same sex and birth year."""
-    person = lake.read("gold", "person").select(
-        "tenant_id", F.col("person_source_value").alias("mrn"), "gender_concept_id",
-        "year_of_birth",
-    )  # fmt: skip
-    expected = truth.select(
-        "tenant_id", "mrn", F.year(F.to_date("birth_date")).alias("year"), "sex"
+def persons_by_mrn(lake: Lake) -> DataFrame:
+    """gold.person with each person's MRN and exact birth date from gold.patient_identity.
+
+    OMOP holds no identifiers, so the identity table is the only link to the source MRN.
+    A person without an identity row keeps a NULL MRN and so shows up as missing and extra.
+    """
+    identity = lake.read("gold", "patient_identity").select(
+        "tenant_id", "person_id", "mrn", "birth_date"
     )
+    return lake.read("gold", "person").join(identity, ["tenant_id", "person_id"], "left")
+
+
+def check_patients(lake: Lake, truth: DataFrame) -> list[Check]:
+    """Same MRNs per tenant; same sex, birth year (OMOP) and birth date (identity table)."""
+    person = persons_by_mrn(lake).select(
+        "tenant_id", "mrn", "gender_concept_id", "year_of_birth",
+        F.col("birth_date").alias("identity_birth_date"),
+    )  # fmt: skip
+    expected = truth.select("tenant_id", "mrn", F.to_date("birth_date").alias("birth"), "sex")
     joined = expected.join(person, ["tenant_id", "mrn"], "full")
     missing = count(joined.where(F.col("gender_concept_id").isNull()))
     extra = count(joined.where(F.col("sex").isNull()))
     gender = F.when(F.col("sex") == "F", 8532).otherwise(8507)
     wrong = count(
         joined.where(
-            (F.col("gender_concept_id") != gender) | (F.col("year_of_birth") != F.col("year"))
+            (F.col("gender_concept_id") != gender)
+            | (F.col("year_of_birth") != F.year("birth"))
+            | (F.col("identity_birth_date") != F.col("birth"))
         )
     )
     total = count(truth)
     return [
         Check("patients: one person per ground-truth patient (MRN, per tenant)", total,
               count(person), missing == 0 and extra == 0, f"missing {missing}, extra {extra}"),
-        Check("patients: sex and year of birth", total, total - wrong, wrong == 0,
-              f"{wrong} differ"),
+        Check("patients: sex, birth year (OMOP) and birth date (identity)", total,
+              total - wrong, wrong == 0, f"{wrong} differ"),
     ]  # fmt: skip
 
 
@@ -113,9 +125,7 @@ def check_deaths(lake: Lake, patients: DataFrame, outcomes: DataFrame) -> Check:
         .join(patients.select("patient_id", "tenant_id", "mrn"), "patient_id")
         .select("tenant_id", "mrn", F.to_date("death_date").alias("death_date"))
     )
-    person = lake.read("gold", "person").select(
-        "tenant_id", "person_id", F.col("person_source_value").alias("mrn")
-    )
+    person = persons_by_mrn(lake).select("tenant_id", "person_id", "mrn")
     gold = (
         lake.read("gold", "death")
         .join(person, ["tenant_id", "person_id"])
@@ -309,7 +319,7 @@ def postgres_counts(tenants: Sequence[str]) -> dict[tuple[str, str], int] | None
     try:
         import psycopg
 
-        from txlens_pipelines.load.postgres import LOAD_ORDER, database_url
+        from txlens_pipelines.load.postgres import LOAD_ORDER, database_url, schema_of
 
         result = {}
         with psycopg.connect(database_url(), autocommit=True, connect_timeout=3) as conn:
@@ -317,7 +327,8 @@ def postgres_counts(tenants: Sequence[str]) -> dict[tuple[str, str], int] | None
                 with conn.transaction():
                     conn.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant,))
                     for table in LOAD_ORDER:
-                        row = conn.execute(f"SELECT count(*) FROM cdm.{table}").fetchone()
+                        name = f"{schema_of(table)}.{table}"
+                        row = conn.execute(f"SELECT count(*) FROM {name}").fetchone()
                         result[(tenant, table)] = int(str(row[0])) if row else 0
         return result
     except (ImportError, SystemExit, Exception) as error:  # no psycopg, no URL, no server
@@ -333,7 +344,7 @@ def check_postgres(lake: Lake, pg: dict[tuple[str, str], int]) -> Check:
             gold[(r.tenant_id, table)] = int(r["count"])
     differ = [k for k in pg if pg[k] != gold.get(k, 0)]
     note = f"{len(pg)} (tenant, table) pairs compared" + (f"; differ: {differ}" if differ else "")
-    return Check("postgres: cdm row counts equal gold, per tenant and table",
+    return Check("postgres: cdm + identity row counts equal gold, per tenant and table",
                  sum(gold.get(k, 0) for k in pg), sum(pg.values()), not differ, note)  # fmt: skip
 
 
