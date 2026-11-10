@@ -495,6 +495,7 @@ dependencies = [
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
     { name = "sqlalchemy" },
+    { name = "txlens-datagen" },
     { name = "txlens-omop" },
 ]
 
@@ -504,6 +505,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pydantic-settings", specifier = ">=2.10" },
     { name = "sqlalchemy", specifier = ">=2.0" },
+    { name = "txlens-datagen", editable = "data_generator" },
     { name = "txlens-omop", editable = "omop" },
 ]
 

@@ -1,7 +1,8 @@
-"""`make db-setup`: create (or update) the app's login role after migrations have run.
+"""`make db-setup`: create (or update) the app's login role and tenants after migrations.
 
 The login user named in APP_DATABASE_URL becomes a member of `txlens_app`, the non-superuser
 role that the Row-Level Security policies apply to. Passwords come from `.env` only.
+The tenant registry gets one row per transplant center; the app role cannot write it itself.
 """
 
 import psycopg
@@ -10,6 +11,7 @@ from sqlalchemy.engine import make_url
 
 from txlens_backend.config import get_settings
 from txlens_backend.db import APP_ROLE
+from txlens_datagen.config import GeneratorConfig
 
 
 def libpq_url(url: str) -> str:
@@ -29,8 +31,23 @@ def ensure_login_role(conn: psycopg.Connection, user: str, password: str) -> Non
     conn.execute(sql.SQL("GRANT {} TO {}").format(sql.Identifier(APP_ROLE), sql.Identifier(user)))
 
 
+def ensure_tenants(conn: psycopg.Connection, tenants: dict[str, str]) -> None:
+    """Insert or rename each tenant (tenant_id -> display name)."""
+    for tenant_id, name in tenants.items():
+        conn.execute(
+            "INSERT INTO app.tenant (tenant_id, name) VALUES (%s, %s) "
+            "ON CONFLICT (tenant_id) DO UPDATE SET name = EXCLUDED.name",
+            (tenant_id, name),
+        )
+
+
+def center_tenants() -> dict[str, str]:
+    """The synthetic transplant centers, one tenant each."""
+    return {c.tenant_id: c.name for c in GeneratorConfig().centers}
+
+
 def main() -> int:
-    """Create the app login role named in APP_DATABASE_URL."""
+    """Create the app login role named in APP_DATABASE_URL and register the tenants."""
     settings = get_settings()
     app_url = make_url(settings.app_database_url.get_secret_value())
     if not app_url.username or not app_url.password:
@@ -38,7 +55,9 @@ def main() -> int:
     owner_url = libpq_url(settings.database_url.get_secret_value())
     with psycopg.connect(owner_url, autocommit=True) as conn:
         ensure_login_role(conn, app_url.username, app_url.password)
+        ensure_tenants(conn, center_tenants())
     print(f"Login role '{app_url.username}' is ready (member of {APP_ROLE}).")
+    print(f"Tenants: {', '.join(center_tenants())}.")
     return 0
 
 

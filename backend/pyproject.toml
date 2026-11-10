@@ -8,6 +8,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "pydantic-settings>=2.10",
     "sqlalchemy>=2.0",
+    "txlens-datagen",
     "txlens-omop",
 ]
 
@@ -22,4 +23,5 @@ build-backend = "hatchling.build"
 packages = ["src/txlens_backend"]
 
 [tool.uv.sources]
+txlens-datagen = { workspace = true }
 txlens-omop = { workspace = true }

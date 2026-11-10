@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, pool, text
 from sqlalchemy.engine import make_url
 
 from txlens_backend.db import tenant_transaction
-from txlens_backend.db_setup import ensure_login_role
+from txlens_backend.db_setup import center_tenants, ensure_login_role, ensure_tenants, libpq_url
 
 pytestmark = pytest.mark.db
 
@@ -42,3 +42,16 @@ def test_login_role_is_rls_bound_member_of_app_role(database_url: str) -> None:
                 psycopg.sql.SQL("DROP OWNED BY {} CASCADE").format(psycopg.sql.Identifier(user))
             )
             admin.execute(psycopg.sql.SQL("DROP ROLE {}").format(psycopg.sql.Identifier(user)))
+
+
+def test_tenants_are_upserted(database_url: str) -> None:
+    with psycopg.connect(libpq_url(database_url)) as conn:
+        ensure_tenants(conn, {"center_x": "Old name"})
+        ensure_tenants(conn, {"center_x": "New name"})
+        rows = conn.execute("SELECT name FROM app.tenant WHERE tenant_id = 'center_x'").fetchall()
+        assert rows == [("New name",)]
+        conn.rollback()
+
+
+def test_center_tenants_are_the_three_centers() -> None:
+    assert sorted(center_tenants()) == ["center_a", "center_b", "center_c"]
