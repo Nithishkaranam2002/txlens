@@ -12,6 +12,7 @@ dependencies = [
     "pyjwt>=2.10",
     "pyyaml>=6.0",
     "sqlalchemy>=2.0",
+    "temporalio>=1.9,<1.36",
     "txlens-datagen",
     "txlens-omop",
     "uvicorn[standard]>=0.32",
@@ -21,6 +22,8 @@ dependencies = [
 txlens-db-setup = "txlens_backend.db_setup:main"
 txlens-seed-users = "txlens_backend.seed_users:main"
 txlens-prune-login-attempts = "txlens_backend.maintenance:main"
+txlens-worker = "txlens_backend.workflows.cli:worker_main"
+txlens-surveillance = "txlens_backend.workflows.cli:main"
 
 [build-system]
 requires = ["hatchling"]

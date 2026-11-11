@@ -189,12 +189,18 @@ def client(api_app: FastAPI, api_owner: Engine) -> Iterator[TestClient]:
 
 
 @pytest.fixture(scope="session")
-def api_flags(api_app: FastAPI, api_database: str, app_login: tuple[str, str]) -> date:
-    """Surveillance flags for every API center, committed, as of SURVEILLANCE_AS_OF."""
+def api_app_engine(api_database: str, app_login: tuple[str, str]) -> Iterator[Engine]:
+    """App-login engine for the API database (RLS applies)."""
     eng = login_engine(api_database, app_login)
-    for tenant in API_TENANTS:
-        run_tenant(eng, tenant, SURVEILLANCE_AS_OF, transplant_configs())
+    yield eng
     eng.dispose()
+
+
+@pytest.fixture(scope="session")
+def api_flags(api_app: FastAPI, api_app_engine: Engine) -> date:
+    """Surveillance flags for every API center, committed, as of SURVEILLANCE_AS_OF."""
+    for tenant in API_TENANTS:
+        run_tenant(api_app_engine, tenant, SURVEILLANCE_AS_OF, transplant_configs())
     return SURVEILLANCE_AS_OF
 
 

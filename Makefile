@@ -6,7 +6,7 @@ SEED ?= 42
 VOCAB_SOURCE ?= omop/athena
 N_PATIENTS ?= 2000
 
-.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api prune-login-attempts cohort-report vocab-load vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
+.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api worker surveillance-schedule surveillance-run prune-login-attempts cohort-report vocab-load vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -48,6 +48,15 @@ seed-users: ## Create/update one demo user per role per center (passwords from .
 
 api: ## Run the API with auto-reload (docs: http://localhost:8000/docs)
 	uv run uvicorn txlens_backend.api.app:create_app --factory --reload --port 8000
+
+worker: ## Run the Temporal worker that executes surveillance runs (needs `make up`)
+	uv run txlens-worker
+
+surveillance-schedule: ## Create/update the nightly surveillance schedule (02:00 UTC)
+	uv run txlens-surveillance schedule
+
+surveillance-run: ## Run surveillance for every center now (AS_OF=YYYY-MM-DD replays a date)
+	uv run txlens-surveillance run $(if $(AS_OF),--as-of $(AS_OF))
 
 prune-login-attempts: ## Delete login attempts older than 30 days (logins also do this)
 	uv run txlens-prune-login-attempts cohort-report
