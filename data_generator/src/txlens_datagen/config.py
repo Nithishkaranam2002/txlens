@@ -185,4 +185,6 @@ class GeneratorConfig:
     dsa_positive_mfi: float = 1000.0
     surveillance: SurveillanceConfig = SurveillanceConfig()
     mess: MessConfig = MessConfig()
-    pdf_dpi: int = 120
+    # 200 dpi: like an office scanner. At 120 dpi the small report font defeated OCR (65% of
+    # key tokens exact vs 97% at 200 dpi, evals/reports/ocr.md).
+    pdf_dpi: int = 200

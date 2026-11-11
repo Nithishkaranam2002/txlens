@@ -4,15 +4,18 @@ Boxes are in PDF points (1/72 inch) with the origin at the page's top-left corne
 not depend on the resolution the page was rendered at. Confidence is 0..1.
 
 Two engines produce the same `OcrResult`:
-- Tesseract (default): renders each page at 400 dpi, removes speckles with a median filter and
-  reads words with `image_to_data`, which gives a confidence per word. These settings read the
-  most key tokens correctly on a 30-report sample (see docs/adr/0013).
+- Tesseract (default): renders each page at 300 dpi, straightens it, removes speckles with a
+  median filter and reads words with `image_to_data`, which gives a confidence per word. Then
+  score and grade tokens after known anchors ("scores:", "Banff grade", ...) are read a second
+  time allowing only the characters such a token can contain ("vO" -> "v0"). This read 96.7%
+  of key tokens exactly on 100 reports (`make ocr-report`, evals/reports/ocr.md).
 - Docling (`OCR_ENGINE=docling`, opt-in dependency group): layout-aware conversion with
   Tesseract inside. On our one-column reports it read as many key tokens as plain Tesseract,
   more slowly and without word confidence, so it is not the default. If it is missing, fails
   or reads almost nothing, the Tesseract engine runs instead.
 """
 
+import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,14 +23,24 @@ from typing import Any, Literal
 
 import pymupdf
 import pytesseract
-from PIL import Image, ImageFilter
+from PIL import Image
+
+from txlens_backend.documents.preprocess import OcrSettings, prepare
 
 BBox = tuple[float, float, float, float]  # x0, y0, x1, y1 in points, origin top-left
 Engine = Literal["tesseract", "docling"]
 POINTS_PER_INCH = 72
-RENDER_DPI = 400
-MEDIAN_FILTER = 3  # pixels; removes scanner speckles without eroding thin strokes
-TESSERACT_CONFIG = "--psm 4"  # one column of text of variable sizes
+DEFAULT_SETTINGS = OcrSettings()
+# Second reading of tokens whose characters are known: (the line contains, anchor word,
+# characters allowed in the words after it, how many words (None = to the line end), what a
+# valid token looks like). A word is replaced only by a valid re-read.
+REREADS = (
+    ("banff lesion", "scores", "itvgpc0123", None, re.compile(r"(i|t|v|g|ptc|ci|ct|cv)[0-3]")),
+    ("capillaries", "capillaries", "C4d0123", 1, re.compile(r"C4d[0-3]")),
+    ("banff grade", "grade", "IAB.", 1, re.compile(r"(IA|IB|IIA|IIB|III)\.?")),
+    ("ishlt 2004", "2004", "0123R", 1, re.compile(r"[0-3]R")),
+    ("ishlt grade", "grade", "0123R", 1, re.compile(r"[0-3]R")),
+)
 MIN_WORDS = 20  # fewer words than this from Docling means it failed; fall back to Tesseract
 
 
@@ -96,29 +109,86 @@ def union(boxes: Iterable[BBox]) -> BBox:
     return (min(x0s), min(y0s), max(x1s), max(y1s))
 
 
-def render_page(page: pymupdf.Page, dpi: int = RENDER_DPI) -> Image.Image:
-    """A grayscale image of the page, speckles removed."""
-    pix = page.get_pixmap(dpi=dpi, colorspace=pymupdf.csGRAY)
-    image = Image.frombytes("L", (pix.width, pix.height), pix.samples)
-    return image.filter(ImageFilter.MedianFilter(MEDIAN_FILTER))
+def render_page(page: pymupdf.Page, settings: OcrSettings) -> Image.Image:
+    """The page as a grayscale image, prepared for Tesseract."""
+    pix = page.get_pixmap(dpi=settings.dpi, colorspace=pymupdf.csGRAY)
+    return prepare(Image.frombytes("L", (pix.width, pix.height), pix.samples), settings)
 
 
-def tesseract_lines(image: Image.Image, scale: float) -> list[list[Word]]:
-    """Words of one page image grouped by Tesseract's (block, paragraph, line)."""
-    data = pytesseract.image_to_data(
-        image, config=TESSERACT_CONFIG, output_type=pytesseract.Output.DICT
-    )
+def tesseract_words(image: Image.Image, config: str) -> list[list[Word]]:
+    """Words of an image (pixel boxes) grouped by Tesseract's (block, paragraph, line)."""
+    data = pytesseract.image_to_data(image, config=config, output_type=pytesseract.Output.DICT)
     grouped: dict[tuple[int, int, int], list[Word]] = {}
     for i, text in enumerate(data["text"]):
         confidence = float(data["conf"][i])
         if not text.strip() or confidence < 0:
             continue
-        x, y, w, h = (data[k][i] * scale for k in ("left", "top", "width", "height"))
+        x, y, w, h = (float(data[k][i]) for k in ("left", "top", "width", "height"))
         key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
         grouped.setdefault(key, []).append(
             Word(text.strip(), (x, y, x + w, y + h), confidence / 100)
         )
     return list(grouped.values())
+
+
+def reread(
+    image: Image.Image, words: list[Word], allowed: str, valid: re.Pattern[str]
+) -> list[Word]:
+    """The same words read again as one line with only the allowed characters; a word is
+    replaced only when its re-read is a valid token."""
+    x0, y0, x1, y1 = union(w.bbox for w in words)
+    pad = (y1 - y0) / 2
+    box = (max(x0 - pad, 0), max(y0 - pad, 0), x1 + pad, y1 + pad)
+    config = f'--psm 7 -c "tessedit_char_whitelist={allowed} "'
+    found = [w for line in tesseract_words(image.crop(box), config) for w in line]
+    if len(found) != len(words):
+        return words  # the re-read split differently: keep the first reading
+    chosen = []
+    for first, again in zip(words, found, strict=True):
+        if not valid.fullmatch(again.text):
+            chosen.append(first)
+            continue
+        x0, y0, x1, y1 = again.bbox
+        chosen.append(
+            Word(again.text, (x0 + box[0], y0 + box[1], x1 + box[0], y1 + box[1]), again.confidence)
+        )
+    return chosen
+
+
+def apply_rereads(image: Image.Image, line: list[Word]) -> list[Word]:
+    """Re-read score and grade tokens after their anchor words (see REREADS)."""
+    text = " ".join(w.text for w in line).lower()
+    for context, anchor, allowed, count, valid in REREADS:
+        if context not in text:
+            continue
+        at = next((i for i, w in enumerate(line) if anchor in w.text.lower()), None)
+        if at is None or at + 1 >= len(line):
+            continue
+        end = len(line) if count is None else at + 1 + count
+        line = [*line[: at + 1], *reread(image, line[at + 1 : end], allowed, valid), *line[end:]]
+    return line
+
+
+def to_points(line: list[Word], scale: float) -> list[Word]:
+    """Pixel boxes -> PDF points."""
+    return [
+        Word(
+            w.text,
+            (w.bbox[0] * scale, w.bbox[1] * scale, w.bbox[2] * scale, w.bbox[3] * scale),
+            w.confidence,
+        )
+        for w in line
+    ]
+
+
+def read_page(page: pymupdf.Page, settings: OcrSettings) -> list[list[Word]]:
+    """One page's lines of words, boxes in points."""
+    image = render_page(page, settings)
+    lines = tesseract_words(image, f"--psm {settings.psm}")
+    if settings.whitelist_rereads:
+        lines = [apply_rereads(image, line) for line in lines]
+    scale = POINTS_PER_INCH / settings.pixels_per_inch
+    return [to_points(line, scale) for line in lines]
 
 
 def split_words(text: str, box: BBox, confidence: float) -> list[Word]:
@@ -158,15 +228,11 @@ def number_lines(pages: Iterable[tuple[int, list[list[Word]]]]) -> tuple[Line, .
     return tuple(lines)
 
 
-def ocr_with_tesseract(path: Path) -> OcrResult:
+def ocr_with_tesseract(path: Path, settings: OcrSettings = DEFAULT_SETTINGS) -> OcrResult:
     """Read every page with Tesseract."""
-    scale = POINTS_PER_INCH / RENDER_DPI
     with pymupdf.open(path) as doc:  # type: ignore[no-untyped-call]  # pymupdf is untyped here
         sizes = tuple(PageSize(p.rect.width, p.rect.height) for p in doc)
-        pages = [
-            (number, tesseract_lines(render_page(page), scale))
-            for number, page in enumerate(doc, start=1)
-        ]
+        pages = [(number, read_page(page, settings)) for number, page in enumerate(doc, start=1)]
     return OcrResult("tesseract", sizes, number_lines(pages))
 
 

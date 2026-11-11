@@ -15,14 +15,16 @@ The project owner pays for the API, so cost must be capped and visible.
 
 ## Options compared
 
-**OCR**
+**OCR** (100 reports, exact key tokens: Banff scores, C4d, grades, adequacy, date, diagnosis
+wording; `make ocr-report`, evals/reports/ocr.md)
 
-| | **Tesseract, Docling opt-in** (chosen) | Docling by default | Cloud OCR |
-|---|---|---|---|
-| Key tokens read exactly (30 kidney reports) | 60.4% | 61.7% | not tried (sends scans out) |
-| Time per page | 0.7 s | 1.2 s, plus model loading | network |
-| Confidence per word | yes | page-level score only | yes |
-| Install size | system package | PyTorch + layout models (~1–2 GB) | none |
+| | 120 dpi scans | 200 dpi scans |
+|---|---|---|
+| Tesseract, 400 dpi render + denoise (Step 2.1 start) | 65.2% | 80.1% |
+| 300 dpi render + deskew + denoise | 70.4% | 79.6% |
+| … + Otsu / adaptive binarization | 58.5% / 46.3% | 76.4% / 66.9% |
+| … + whitelist re-reads of score and grade tokens (**chosen**) | 79.2% | **96.7%** |
+| Docling with Tesseract inside (30 reports, 120 dpi) | 61.7% | not measured |
 
 **Structured output**
 
@@ -38,6 +40,15 @@ The project owner pays for the API, so cost must be capped and visible.
 | Measurable, reproducible | yes | no (self-reported) | provider-specific |
 
 ## Decision
+- **OCR:**
+  - The generator now scans pathology reports at 200 dpi (like an office scanner) instead of
+    120 dpi. At 120 dpi the small report font defeated every OCR setup we tried; at 300 dpi
+    the text renders larger than Tesseract reads best (91.9% at most).
+  - Tesseract renders at 300 dpi, deskews, removes speckles, then re-reads the tokens after
+    known anchors ("scores:", "capillaries):", "Banff grade", "ISHLT 2004):") allowing only
+    the characters such a token can contain. A word is replaced only by a valid re-read
+    ("vO" becomes "v0"; "i2" is never turned into "12").
+  - Binarization made things worse on these scans and is off. Docling stays opt-in.
 - **Pipeline:** one Temporal workflow per PDF, id `biopsy-<tenant>-<sha256>`. The steps:
   1. register by file hash;
   2. OCR and link to the biopsy;
@@ -107,9 +118,12 @@ The project owner pays for the API, so cost must be capped and visible.
   retention and abuse monitoring configured, or a local model (`ollama/...`) inside the
   hospital network. The LiteLLM interface makes either a configuration change; the
   minimization layer stays in place regardless.
-- OCR, not the LLM, causes most errors on these simulated scans. A dropped character (a
+- OCR, not the LLM, caused most errors on these simulated scans. A dropped character (a
   "t2" read as "2.") is rejected by the evidence check and sends the document to review,
   rather than being guessed.
+- The whitelist re-reads use knowledge of this report template (its anchors and token
+  shapes). Real pathology reports come from many templates; each would need its anchors,
+  and the 96.7% is not a claim about real scans.
 - The two passes use the same model with different prompts. Their agreement is a useful
   signal, but not independent evidence. `LLM_MODEL_PASS_B` can name a second model for
   stronger independence, at about twice the cost.

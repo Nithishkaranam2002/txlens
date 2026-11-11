@@ -18,7 +18,7 @@ from txlens_backend.documents.ocr import OcrResult, PageSize, Word, to_json
 from txlens_datagen.rand import rng_for
 from txlens_datagen.writers.pathology_pdf import BODY, HEADING, TITLE, Line, draw_page, scan_effects
 
-DPI = 120  # same as the generator's pathology PDFs
+DPI = 200  # same as the generator's pathology PDFs
 KIDNEY_LINES: list[Line] = [
     (TITLE, "TEST ONLY MEDICAL CENTER"),
     (HEADING, "SURGICAL PATHOLOGY REPORT"),
