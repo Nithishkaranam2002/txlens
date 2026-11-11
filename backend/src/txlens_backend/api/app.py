@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from sqlalchemy import Engine
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
@@ -113,5 +114,13 @@ def build_app(
 
 
 def export_openapi() -> None:
-    """Print the OpenAPI schema as JSON (`txlens-export-openapi > frontend/openapi.json`)."""
-    print(json.dumps(build_app(Settings(), None).openapi(), indent=2, sort_keys=True))
+    """Print the OpenAPI schema as JSON (`txlens-export-openapi > frontend/openapi.json`).
+
+    This is the schema before the Swagger tweak, so the CSRF header stays optional in the
+    generated TypeScript types: the frontend's fetch wrapper adds it to every POST.
+    """
+    app = build_app(Settings(), None)
+    schema = get_openapi(
+        title=app.title, version=app.version, description=app.description, routes=app.routes
+    )
+    print(json.dumps(schema, indent=2, sort_keys=True))

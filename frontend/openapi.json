@@ -1,0 +1,3388 @@
+{
+  "components": {
+    "schemas": {
+      "Cohort": {
+        "description": "A saved cohort.",
+        "properties": {
+          "cohort_id": {
+            "title": "Cohort Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "member_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Member Count"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "rules": {
+            "$ref": "#/components/schemas/CohortRules"
+          }
+        },
+        "required": [
+          "cohort_id",
+          "name",
+          "rules",
+          "created_by",
+          "created_at",
+          "member_count"
+        ],
+        "title": "Cohort",
+        "type": "object"
+      },
+      "CohortPage": {
+        "description": "One page of saved cohorts.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Cohort"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "CohortPage",
+        "type": "object"
+      },
+      "CohortRules": {
+        "additionalProperties": false,
+        "description": "All rules must hold. Empty rules select every patient of the center.",
+        "properties": {
+          "age_max": {
+            "anyOf": [
+              {
+                "maximum": 120.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Age at transplant",
+            "title": "Age Max"
+          },
+          "age_min": {
+            "anyOf": [
+              {
+                "maximum": 120.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Age at transplant",
+            "title": "Age Min"
+          },
+          "condition_concept_ids": {
+            "description": "Has any of these conditions, or any of their descendants.",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 50,
+            "title": "Condition Concept Ids",
+            "type": "array"
+          },
+          "donor_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "living",
+                  "deceased"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Donor Type"
+          },
+          "lab_rules": {
+            "items": {
+              "$ref": "#/components/schemas/LabRule"
+            },
+            "maxItems": 10,
+            "title": "Lab Rules",
+            "type": "array"
+          },
+          "organ": {
+            "anyOf": [
+              {
+                "enum": [
+                  "kidney",
+                  "heart"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organ"
+          },
+          "transplant_date": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "CohortRules",
+        "type": "object"
+      },
+      "ConceptHit": {
+        "description": "A condition concept a cohort rule can use.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "concept_id": {
+            "title": "Concept Id",
+            "type": "integer"
+          },
+          "descendants": {
+            "title": "Descendants",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "concept_id",
+          "name",
+          "code",
+          "descendants"
+        ],
+        "title": "ConceptHit",
+        "type": "object"
+      },
+      "Condition": {
+        "description": "One condition.",
+        "properties": {
+          "concept_id": {
+            "title": "Concept Id",
+            "type": "integer"
+          },
+          "condition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condition"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "concept_id",
+          "condition"
+        ],
+        "title": "Condition",
+        "type": "object"
+      },
+      "DateRange": {
+        "additionalProperties": false,
+        "description": "Inclusive date range; either end may be open.",
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          }
+        },
+        "title": "DateRange",
+        "type": "object"
+      },
+      "DeidentifiedPatient": {
+        "description": "Researcher / data steward view: pseudonym, age band, shifted dates.",
+        "properties": {
+          "age_band": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age Band"
+          },
+          "death_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Death Date"
+          },
+          "donor_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "living",
+                  "deceased"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Donor Type"
+          },
+          "organ": {
+            "anyOf": [
+              {
+                "enum": [
+                  "kidney",
+                  "heart"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organ"
+          },
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "string"
+          },
+          "sex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sex"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "graft_failure",
+              "deceased"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "transplant_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transplant Date"
+          }
+        },
+        "required": [
+          "sex",
+          "organ",
+          "donor_type",
+          "status",
+          "transplant_date",
+          "death_date",
+          "patient_id",
+          "age_band"
+        ],
+        "title": "DeidentifiedPatient",
+        "type": "object"
+      },
+      "Detected": {
+        "additionalProperties": false,
+        "description": "The latest result is at or above the assay's limit of detection.",
+        "properties": {
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "detected",
+            "title": "Kind",
+            "type": "string"
+          },
+          "limit_of_detection": {
+            "title": "Limit Of Detection",
+            "type": "number"
+          },
+          "marker": {
+            "title": "Marker",
+            "type": "string"
+          },
+          "max_age_days": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Age Days"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity",
+            "default": "medium"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "marker",
+          "limit_of_detection"
+        ],
+        "title": "Detected",
+        "type": "object"
+      },
+      "Drug": {
+        "description": "One drug exposure.",
+        "properties": {
+          "concept_id": {
+            "title": "Concept Id",
+            "type": "integer"
+          },
+          "drug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drug"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date",
+          "concept_id",
+          "drug"
+        ],
+        "title": "Drug",
+        "type": "object"
+      },
+      "EvidenceItem": {
+        "description": "A result (or due date) a flag is based on.",
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "marker": {
+            "title": "Marker",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "marker",
+          "date",
+          "value",
+          "role"
+        ],
+        "title": "EvidenceItem",
+        "type": "object"
+      },
+      "FlagEvent": {
+        "description": "One step in a flag's life: raised by the engine, reviewed by a clinician, or cleared.",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "By"
+          },
+          "event": {
+            "enum": [
+              "raised",
+              "acknowledged",
+              "resolved",
+              "cleared"
+            ],
+            "title": "Event",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "at",
+          "event",
+          "by",
+          "note"
+        ],
+        "title": "FlagEvent",
+        "type": "object"
+      },
+      "FlagView": {
+        "description": "A reason to review a patient. Clinical decision support, never a diagnosis.",
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "cleared": {
+            "title": "Cleared",
+            "type": "boolean"
+          },
+          "config_id": {
+            "title": "Config Id",
+            "type": "string"
+          },
+          "config_version": {
+            "title": "Config Version",
+            "type": "integer"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceItem"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "flag_id": {
+            "title": "Flag Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity"
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status"
+          },
+          "status_changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Changed At"
+          },
+          "status_changed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Changed By"
+          }
+        },
+        "required": [
+          "flag_id",
+          "rule_id",
+          "config_id",
+          "config_version",
+          "severity",
+          "reason",
+          "evidence",
+          "as_of",
+          "status",
+          "status_changed_at",
+          "status_changed_by",
+          "note",
+          "cleared"
+        ],
+        "title": "FlagView",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Health": {
+        "description": "Liveness of the API and its database.",
+        "properties": {
+          "database": {
+            "title": "Database",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "database"
+        ],
+        "title": "Health",
+        "type": "object"
+      },
+      "IdentifiedPatient": {
+        "description": "Clinician view: real ids, identifiers and dates.",
+        "properties": {
+          "birth_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Date"
+          },
+          "death_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Death Date"
+          },
+          "donor_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "living",
+                  "deceased"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Donor Type"
+          },
+          "family_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family Name"
+          },
+          "given_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Given Name"
+          },
+          "mrn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mrn"
+          },
+          "organ": {
+            "anyOf": [
+              {
+                "enum": [
+                  "kidney",
+                  "heart"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organ"
+          },
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "integer"
+          },
+          "sex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sex"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "graft_failure",
+              "deceased"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "transplant_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transplant Date"
+          }
+        },
+        "required": [
+          "sex",
+          "organ",
+          "donor_type",
+          "status",
+          "transplant_date",
+          "death_date",
+          "patient_id",
+          "mrn",
+          "given_name",
+          "family_name",
+          "birth_date"
+        ],
+        "title": "IdentifiedPatient",
+        "type": "object"
+      },
+      "Lab": {
+        "description": "One lab result (value in the standard unit).",
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "lab": {
+            "title": "Lab",
+            "type": "string"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "date",
+          "time",
+          "lab",
+          "value",
+          "unit"
+        ],
+        "title": "Lab",
+        "type": "object"
+      },
+      "LabRule": {
+        "additionalProperties": false,
+        "description": "At least one result of `lab` meeting `op value` within a window after transplant.",
+        "properties": {
+          "days_from_transplant": {
+            "default": [
+              0,
+              365
+            ],
+            "description": "Inclusive window, in days after the transplant date.",
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Days From Transplant",
+            "type": "array"
+          },
+          "lab": {
+            "enum": [
+              "dd_cfdna",
+              "creatinine",
+              "egfr",
+              "tacrolimus_trough",
+              "dsa_mfi"
+            ],
+            "title": "Lab",
+            "type": "string"
+          },
+          "op": {
+            "enum": [
+              ">=",
+              ">",
+              "<=",
+              "<"
+            ],
+            "title": "Op",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "lab",
+          "op",
+          "value"
+        ],
+        "title": "LabRule",
+        "type": "object"
+      },
+      "Level": {
+        "additionalProperties": false,
+        "description": "One threshold level, e.g. >= 1.0% is \"high risk of rejection\".",
+        "properties": {
+          "at_or_above": {
+            "title": "At Or Above",
+            "type": "number"
+          },
+          "meaning": {
+            "title": "Meaning",
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity"
+          }
+        },
+        "required": [
+          "at_or_above",
+          "severity",
+          "meaning"
+        ],
+        "title": "Level",
+        "type": "object"
+      },
+      "LoginRequest": {
+        "description": "User name and password.",
+        "properties": {
+          "password": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "Marker": {
+        "additionalProperties": false,
+        "description": "A measurement, found by vocabulary code. `source_concept` markers (local codes with no\nstandard concept) are matched on `measurement_source_concept_id`.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "source_concept": {
+            "default": false,
+            "title": "Source Concept",
+            "type": "boolean"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "vocabulary": {
+            "title": "Vocabulary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "vocabulary",
+          "code",
+          "unit"
+        ],
+        "title": "Marker",
+        "type": "object"
+      },
+      "Me": {
+        "description": "The logged-in user and their center.",
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "tenant_name": {
+            "title": "Tenant Name",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "username",
+          "display_name",
+          "role",
+          "tenant_id",
+          "tenant_name"
+        ],
+        "title": "Me",
+        "type": "object"
+      },
+      "NewCohort": {
+        "description": "A cohort to save.",
+        "properties": {
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "rules": {
+            "$ref": "#/components/schemas/CohortRules"
+          }
+        },
+        "required": [
+          "name",
+          "rules"
+        ],
+        "title": "NewCohort",
+        "type": "object"
+      },
+      "NewPositive": {
+        "additionalProperties": false,
+        "description": "The first result at or above `positive_at_or_above` (no earlier positive), shown for\n`active_days` after it was collected.",
+        "properties": {
+          "active_days": {
+            "exclusiveMinimum": 0.0,
+            "title": "Active Days",
+            "type": "integer"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "new_positive",
+            "title": "Kind",
+            "type": "string"
+          },
+          "marker": {
+            "title": "Marker",
+            "type": "string"
+          },
+          "max_age_days": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Age Days"
+          },
+          "positive_at_or_above": {
+            "title": "Positive At Or Above",
+            "type": "number"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity",
+            "default": "medium"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "marker",
+          "positive_at_or_above",
+          "active_days"
+        ],
+        "title": "NewPositive",
+        "type": "object"
+      },
+      "NoteMeta": {
+        "description": "A clinical note's metadata; the text is never returned. Id and title: clinicians only.",
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "note_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "date"
+        ],
+        "title": "NoteMeta",
+        "type": "object"
+      },
+      "PatientFlag": {
+        "description": "A flag with its status history, oldest event first.",
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "cleared": {
+            "title": "Cleared",
+            "type": "boolean"
+          },
+          "config_id": {
+            "title": "Config Id",
+            "type": "string"
+          },
+          "config_version": {
+            "title": "Config Version",
+            "type": "integer"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceItem"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "flag_id": {
+            "title": "Flag Id",
+            "type": "string"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/FlagEvent"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity"
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status"
+          },
+          "status_changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Changed At"
+          },
+          "status_changed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Changed By"
+          }
+        },
+        "required": [
+          "flag_id",
+          "rule_id",
+          "config_id",
+          "config_version",
+          "severity",
+          "reason",
+          "evidence",
+          "as_of",
+          "status",
+          "status_changed_at",
+          "status_changed_by",
+          "note",
+          "cleared",
+          "history"
+        ],
+        "title": "PatientFlag",
+        "type": "object"
+      },
+      "PatientFlags": {
+        "description": "All flags of one patient, open and closed, newest first, each with its history.",
+        "properties": {
+          "flags": {
+            "items": {
+              "$ref": "#/components/schemas/PatientFlag"
+            },
+            "title": "Flags",
+            "type": "array"
+          },
+          "patient": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IdentifiedPatient"
+              },
+              {
+                "$ref": "#/components/schemas/DeidentifiedPatient"
+              }
+            ],
+            "title": "Patient"
+          }
+        },
+        "required": [
+          "patient",
+          "flags"
+        ],
+        "title": "PatientFlags",
+        "type": "object"
+      },
+      "PatientPage": {
+        "description": "One page of patients: identified for clinicians, de-identified for everyone else.\n\n`total` is a string such as \"<11\" where small counts are suppressed.",
+        "properties": {
+          "items": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/IdentifiedPatient"
+                },
+                "type": "array"
+              },
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DeidentifiedPatient"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Items"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "PatientPage",
+        "type": "object"
+      },
+      "Phase": {
+        "additionalProperties": false,
+        "description": "A target range that applies from `from_month` (inclusive) to `to_month` (exclusive).",
+        "properties": {
+          "from_month": {
+            "minimum": 0.0,
+            "title": "From Month",
+            "type": "integer"
+          },
+          "high": {
+            "title": "High",
+            "type": "number"
+          },
+          "low": {
+            "title": "Low",
+            "type": "number"
+          },
+          "to_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Month"
+          }
+        },
+        "required": [
+          "from_month",
+          "low",
+          "high"
+        ],
+        "title": "Phase",
+        "type": "object"
+      },
+      "Preview": {
+        "description": "Cohort size and attrition.",
+        "properties": {
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Count"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/Step"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "steps"
+        ],
+        "title": "Preview",
+        "type": "object"
+      },
+      "Procedure": {
+        "description": "A transplant, a biopsy, or another procedure.",
+        "properties": {
+          "concept_id": {
+            "title": "Concept Id",
+            "type": "integer"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "transplant",
+              "biopsy",
+              "other"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "procedure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Procedure"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "date",
+          "kind",
+          "concept_id",
+          "procedure"
+        ],
+        "title": "Procedure",
+        "type": "object"
+      },
+      "RangeByPhase": {
+        "additionalProperties": false,
+        "description": "The latest result is outside the target range for the time since the anchor date.",
+        "properties": {
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "range_by_phase",
+            "title": "Kind",
+            "type": "string"
+          },
+          "marker": {
+            "title": "Marker",
+            "type": "string"
+          },
+          "max_age_days": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Age Days"
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/Phase"
+            },
+            "minItems": 1,
+            "title": "Phases",
+            "type": "array"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity",
+            "default": "medium"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "marker",
+          "phases"
+        ],
+        "title": "RangeByPhase",
+        "type": "object"
+      },
+      "RelativeChange": {
+        "additionalProperties": false,
+        "description": "The latest result moved `pct` percent up or down from the patient's own baseline: the\nmedian of results in the `baseline_days` before it (the last `exclude_recent_days` left out).",
+        "properties": {
+          "baseline_days": {
+            "exclusiveMinimum": 0.0,
+            "title": "Baseline Days",
+            "type": "integer"
+          },
+          "direction": {
+            "enum": [
+              "up",
+              "down"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "exclude_recent_days": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Exclude Recent Days",
+            "type": "integer"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "relative_change",
+            "title": "Kind",
+            "type": "string"
+          },
+          "marker": {
+            "title": "Marker",
+            "type": "string"
+          },
+          "max_age_days": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Age Days"
+          },
+          "min_baseline_points": {
+            "default": 2,
+            "minimum": 1.0,
+            "title": "Min Baseline Points",
+            "type": "integer"
+          },
+          "pct": {
+            "exclusiveMinimum": 0.0,
+            "title": "Pct",
+            "type": "number"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity",
+            "default": "medium"
+          },
+          "start_after_days": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Start After Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "marker",
+          "direction",
+          "pct",
+          "baseline_days"
+        ],
+        "title": "RelativeChange",
+        "type": "object"
+      },
+      "Review": {
+        "description": "An optional note kept with the flag (clinicians only see it).",
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "Review",
+        "type": "object"
+      },
+      "RisingTrend": {
+        "additionalProperties": false,
+        "description": "The latest results keep rising: `consecutive_increases` rises in a row, or the latest is\n`relative_rise_pct` above the previous one. `min_latest` ignores rises in the noise floor.",
+        "properties": {
+          "consecutive_increases": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consecutive Increases"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "rising_trend",
+            "title": "Kind",
+            "type": "string"
+          },
+          "marker": {
+            "title": "Marker",
+            "type": "string"
+          },
+          "max_age_days": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Age Days"
+          },
+          "min_latest": {
+            "default": 0.0,
+            "title": "Min Latest",
+            "type": "number"
+          },
+          "relative_rise_pct": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relative Rise Pct"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity",
+            "default": "medium"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "marker"
+        ],
+        "title": "RisingTrend",
+        "type": "object"
+      },
+      "Schedule": {
+        "additionalProperties": false,
+        "description": "When the marker test is due, in months after the anchor date (e.g. transplant).",
+        "properties": {
+          "marker": {
+            "title": "Marker",
+            "type": "string"
+          },
+          "months": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Months",
+            "type": "array"
+          },
+          "then_every_months": {
+            "exclusiveMinimum": 0.0,
+            "title": "Then Every Months",
+            "type": "integer"
+          },
+          "tolerance_days": {
+            "minimum": 0.0,
+            "title": "Tolerance Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "marker",
+          "months",
+          "then_every_months",
+          "tolerance_days"
+        ],
+        "title": "Schedule",
+        "type": "object"
+      },
+      "ScheduleAdherence": {
+        "additionalProperties": false,
+        "description": "The scheduled marker test has no result within the tolerance window around its due date.",
+        "properties": {
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "schedule_adherence",
+            "title": "Kind",
+            "type": "string"
+          },
+          "max_age_days": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Age Days"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity",
+            "default": "medium"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "title": "ScheduleAdherence",
+        "type": "object"
+      },
+      "Session": {
+        "description": "Who is now logged in (the tokens themselves are only in cookies).",
+        "properties": {
+          "access_expires_at": {
+            "title": "Access Expires At",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "tenant_id",
+          "role",
+          "access_expires_at"
+        ],
+        "title": "Session",
+        "type": "object"
+      },
+      "Severity": {
+        "description": "How urgently a flag should be reviewed. It is never a diagnosis.",
+        "enum": [
+          "high",
+          "medium",
+          "low"
+        ],
+        "title": "Severity",
+        "type": "string"
+      },
+      "Status": {
+        "description": "Where a flag is in the clinician's review.",
+        "enum": [
+          "new",
+          "acknowledged",
+          "resolved"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "Step": {
+        "description": "Patients remaining after one rule (a string like \"<11\" when suppressed).",
+        "properties": {
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Count"
+          },
+          "rule": {
+            "title": "Rule",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule",
+          "count"
+        ],
+        "title": "Step",
+        "type": "object"
+      },
+      "SurveillanceConfig": {
+        "additionalProperties": false,
+        "description": "One program's surveillance rules, e.g. kidney transplant dd-cfDNA monitoring.",
+        "properties": {
+          "anchor": {
+            "title": "Anchor",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "markers": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Marker"
+            },
+            "title": "Markers",
+            "type": "object"
+          },
+          "program": {
+            "title": "Program",
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "detected": "#/components/schemas/Detected",
+                  "new_positive": "#/components/schemas/NewPositive",
+                  "range_by_phase": "#/components/schemas/RangeByPhase",
+                  "relative_change": "#/components/schemas/RelativeChange",
+                  "rising_trend": "#/components/schemas/RisingTrend",
+                  "schedule_adherence": "#/components/schemas/ScheduleAdherence",
+                  "threshold": "#/components/schemas/Threshold"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ScheduleAdherence"
+                },
+                {
+                  "$ref": "#/components/schemas/Threshold"
+                },
+                {
+                  "$ref": "#/components/schemas/RisingTrend"
+                },
+                {
+                  "$ref": "#/components/schemas/RelativeChange"
+                },
+                {
+                  "$ref": "#/components/schemas/RangeByPhase"
+                },
+                {
+                  "$ref": "#/components/schemas/NewPositive"
+                },
+                {
+                  "$ref": "#/components/schemas/Detected"
+                }
+              ]
+            },
+            "minItems": 1,
+            "title": "Rules",
+            "type": "array"
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Schedule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "severity_weights": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "default": {
+              "high": 10.0,
+              "low": 1.0,
+              "medium": 4.0
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/Severity"
+            },
+            "title": "Severity Weights",
+            "type": "object"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "title",
+          "program",
+          "anchor",
+          "markers",
+          "rules"
+        ],
+        "title": "SurveillanceConfig",
+        "type": "object"
+      },
+      "Threshold": {
+        "additionalProperties": false,
+        "description": "The latest result is at or above a threshold level (highest matching level wins).",
+        "properties": {
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "threshold",
+            "title": "Kind",
+            "type": "string"
+          },
+          "levels": {
+            "items": {
+              "$ref": "#/components/schemas/Level"
+            },
+            "minItems": 1,
+            "title": "Levels",
+            "type": "array"
+          },
+          "marker": {
+            "title": "Marker",
+            "type": "string"
+          },
+          "max_age_days": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Age Days"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity",
+            "default": "medium"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "marker",
+          "levels"
+        ],
+        "title": "Threshold",
+        "type": "object"
+      },
+      "Timeline": {
+        "description": "Everything known about one patient, oldest first.",
+        "properties": {
+          "conditions": {
+            "items": {
+              "$ref": "#/components/schemas/Condition"
+            },
+            "title": "Conditions",
+            "type": "array"
+          },
+          "drugs": {
+            "items": {
+              "$ref": "#/components/schemas/Drug"
+            },
+            "title": "Drugs",
+            "type": "array"
+          },
+          "labs": {
+            "items": {
+              "$ref": "#/components/schemas/Lab"
+            },
+            "title": "Labs",
+            "type": "array"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/NoteMeta"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "patient": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IdentifiedPatient"
+              },
+              {
+                "$ref": "#/components/schemas/DeidentifiedPatient"
+              }
+            ],
+            "title": "Patient"
+          },
+          "procedures": {
+            "items": {
+              "$ref": "#/components/schemas/Procedure"
+            },
+            "title": "Procedures",
+            "type": "array"
+          }
+        },
+        "required": [
+          "patient",
+          "labs",
+          "drugs",
+          "conditions",
+          "procedures",
+          "notes"
+        ],
+        "title": "Timeline",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WorklistPage": {
+        "description": "One page of the ranked worklist.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorklistRow"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "WorklistPage",
+        "type": "object"
+      },
+      "WorklistRow": {
+        "description": "One patient on the worklist with their open flags, highest priority first.",
+        "properties": {
+          "flags": {
+            "items": {
+              "$ref": "#/components/schemas/FlagView"
+            },
+            "title": "Flags",
+            "type": "array"
+          },
+          "patient": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IdentifiedPatient"
+              },
+              {
+                "$ref": "#/components/schemas/DeidentifiedPatient"
+              }
+            ],
+            "title": "Patient"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "patient",
+          "score",
+          "flags"
+        ],
+        "title": "WorklistRow",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "\nClinical data API for transplant programs (synthetic data only).\n\n**Authentication.** `POST /auth/login` sets two httpOnly cookies: a short-lived access token\nand a refresh token. Every POST also needs the header `X-Requested-With` (any value).\n\n**Tenancy.** Every request runs inside the caller's tenant (transplant center), enforced by\nPostgres Row-Level Security. No endpoint accepts a tenant id. Ids from other tenants give 404.\n\n**Roles.** Clinicians see identified data, and every view is audited. Researchers and data\nstewards see de-identified data: pseudonymous ids, shifted dates, age bands and suppressed\nsmall counts. Admins see no patient data.\n",
+    "title": "TxLens API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "description": "Check the password and start a session. Every success and failure is recorded.",
+        "operationId": "login_auth_login_post",
+        "parameters": [
+          {
+            "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+            "in": "header",
+            "name": "X-Requested-With",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Invalid user name or password"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many failures"
+          }
+        },
+        "summary": "Log in; sets the access and refresh cookies",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "description": "Always succeeds; revokes and audits when a valid refresh token was sent.",
+        "operationId": "logout_auth_logout_post",
+        "parameters": [
+          {
+            "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+            "in": "header",
+            "name": "X-Requested-With",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke the refresh token and clear the cookies",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "description": "Rotate the refresh token. Re-use of an already-rotated token revokes all of the user's\nsessions (a sign that the token was stolen).",
+        "operationId": "refresh_auth_refresh_post",
+        "parameters": [
+          {
+            "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+            "in": "header",
+            "name": "X-Requested-With",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "No valid refresh token"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Swap the refresh cookie for new access and refresh cookies",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/cohorts": {
+      "get": {
+        "description": "Member counts are suppressed for de-identified roles.",
+        "operationId": "list_cohorts_cohorts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CohortPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Saved cohorts of your center, newest first",
+        "tags": [
+          "cohorts"
+        ]
+      },
+      "post": {
+        "description": "The member list is fixed at creation, so the cohort can be reproduced later.",
+        "operationId": "create_cohorts_post",
+        "parameters": [
+          {
+            "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+            "in": "header",
+            "name": "X-Requested-With",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewCohort"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cohort"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save a cohort and a snapshot of its members",
+        "tags": [
+          "cohorts"
+        ]
+      }
+    },
+    "/cohorts/preview": {
+      "post": {
+        "description": "Nothing is saved. Each step shows how many patients remain after that rule.",
+        "operationId": "preview_cohorts_preview_post",
+        "parameters": [
+          {
+            "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+            "in": "header",
+            "name": "X-Requested-With",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CohortRules"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Preview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Count the patients matching the rules, step by step",
+        "tags": [
+          "cohorts"
+        ]
+      }
+    },
+    "/cohorts/{cohort_id}": {
+      "get": {
+        "description": "404 for unknown ids and for cohorts of other centers alike.",
+        "operationId": "get_cohort_cohorts__cohort_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cohort_id",
+            "required": true,
+            "schema": {
+              "title": "Cohort Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cohort"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such cohort in your center"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One saved cohort",
+        "tags": [
+          "cohorts"
+        ]
+      }
+    },
+    "/cohorts/{cohort_id}/members": {
+      "get": {
+        "description": "Identified for clinicians (audited as phi_view), de-identified for researchers.",
+        "operationId": "members_cohorts__cohort_id__members_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cohort_id",
+            "required": true,
+            "schema": {
+              "title": "Cohort Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such cohort in your center"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Members of a saved cohort",
+        "tags": [
+          "cohorts"
+        ]
+      }
+    },
+    "/concepts/conditions": {
+      "get": {
+        "description": "Vocabulary only, no patient data, so nothing is audited.",
+        "operationId": "search_conditions_concepts_conditions_get",
+        "parameters": [
+          {
+            "description": "Name part or code",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "description": "Name part or code",
+              "maxLength": 100,
+              "minLength": 2,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConceptHit"
+                  },
+                  "title": "Response Search Conditions Concepts Conditions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search standard SNOMED condition concepts",
+        "tags": [
+          "cohorts"
+        ]
+      }
+    },
+    "/flags/{flag_id}/acknowledge": {
+      "post": {
+        "description": "new -> acknowledged.",
+        "operationId": "acknowledge_flags__flag_id__acknowledge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "flag_id",
+            "required": true,
+            "schema": {
+              "title": "Flag Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+            "in": "header",
+            "name": "X-Requested-With",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Review"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Review"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlagView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such flag in your center"
+          },
+          "409": {
+            "description": "The flag cannot move to that status (e.g. it is already resolved)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Acknowledge a flag (I have seen it and am looking into it)",
+        "tags": [
+          "surveillance"
+        ]
+      }
+    },
+    "/flags/{flag_id}/resolve": {
+      "post": {
+        "description": "new or acknowledged -> resolved. A resolved flag is never reopened.",
+        "operationId": "resolve_flags__flag_id__resolve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "flag_id",
+            "required": true,
+            "schema": {
+              "title": "Flag Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+            "in": "header",
+            "name": "X-Requested-With",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Review"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Review"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlagView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such flag in your center"
+          },
+          "409": {
+            "description": "The flag cannot move to that status (e.g. it is already resolved)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resolve a flag (reviewed; no further action from this flag)",
+        "tags": [
+          "surveillance"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "No login needed. 503 when the database is unreachable.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Is the API up and can it reach the database?",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/me": {
+      "get": {
+        "description": "Any role. Read through RLS, so it can only ever return the caller's own tenant.",
+        "operationId": "me_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Not logged in"
+          }
+        },
+        "summary": "The logged-in user",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/patients": {
+      "get": {
+        "description": "Patients of your center, filtered by organ, donor type and status.",
+        "operationId": "list_patients_patients_get",
+        "parameters": [
+          {
+            "description": "Clinicians: MRN or name. Others: pseudonym.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Clinicians: MRN or name. Others: pseudonym.",
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "organ",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "kidney",
+                    "heart"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organ"
+            }
+          },
+          {
+            "in": "query",
+            "name": "donor_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "living",
+                    "deceased"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Donor Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "active",
+                    "graft_failure",
+                    "deceased"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List and search patients",
+        "tags": [
+          "patients"
+        ]
+      }
+    },
+    "/patients/{patient_id}/flags": {
+      "get": {
+        "description": "`patient_id` is the person id for clinicians and the pseudonym (`R-...`) for others.",
+        "operationId": "get_patient_flags_patients__patient_id__flags_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientFlags"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such patient in your center"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "All surveillance flags of one patient, newest first, with status history",
+        "tags": [
+          "surveillance"
+        ]
+      }
+    },
+    "/patients/{patient_id}/timeline": {
+      "get": {
+        "description": "`patient_id` is the person id for clinicians and the pseudonym (`R-...`) for others.",
+        "operationId": "patient_timeline_patients__patient_id__timeline_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Timeline"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such patient in your center"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One patient's labs, drugs, conditions, procedures, death and note dates",
+        "tags": [
+          "patients"
+        ]
+      }
+    },
+    "/surveillance/configs/{program}": {
+      "get": {
+        "description": "The config charts draw threshold lines and target bands from. It holds no patient\ndata, so every role that sees patients may read it.",
+        "operationId": "get_config_surveillance_configs__program__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "program",
+            "required": true,
+            "schema": {
+              "title": "Program",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SurveillanceConfig"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No config for this program"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "The surveillance rules of a program (thresholds, target ranges, schedule)",
+        "tags": [
+          "surveillance"
+        ]
+      }
+    },
+    "/worklist": {
+      "get": {
+        "description": "Open flags (not resolved, still firing) grouped by patient and ranked by priority score.",
+        "operationId": "get_worklist_worklist_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "organ",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "kidney",
+                    "heart"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organ"
+            }
+          },
+          {
+            "description": "Rows with an open flag of this severity",
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Severity"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rows with an open flag of this severity",
+              "title": "Severity"
+            }
+          },
+          {
+            "description": "Rows with an open flag in this status",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Status"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rows with an open flag in this status",
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorklistPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patients with open surveillance flags, highest priority first",
+        "tags": [
+          "surveillance"
+        ]
+      }
+    }
+  }
+}
