@@ -589,3 +589,164 @@ experiencer flags).
    shows it. Dropping the trend rule cuts false alarms by about two thirds but misses 6 percentage
    points more rejections (58% → 52%). Raising the watch threshold from 0.5% to 0.7% barely changes either. The right
    setting depends on how many reviews a clinic can handle, so it is a config value, not code.
+
+## Phase 1, Step 1.7 — Frontend (Next.js) for the API
+
+### What was built
+- **A Next.js app** in `frontend/` (App Router, TypeScript, Tailwind, shadcn/ui):
+  - login page;
+  - surveillance worklist;
+  - patient detail with Plotly charts, a timeline and flag history;
+  - cohort builder with an attrition funnel, saved cohorts and members;
+  - admin page.
+- **Role-aware navigation** (`src/lib/roles.ts`):
+  - a clinician sees Worklist and Cohorts;
+  - a data steward sees Worklist;
+  - a researcher sees Cohorts;
+  - an admin sees Admin only.
+
+  Pages a role cannot use show "Not available for your role". The API still enforces every
+  rule with 403.
+- **A typed API client** generated from FastAPI's OpenAPI schema (`make openapi`), with a
+  fetch wrapper (`src/lib/api/client.ts`):
+  - sends cookies;
+  - adds the CSRF header to every POST;
+  - refreshes the session once on a 401 and retries.
+- **Small API additions the pages needed:**
+  - worklist filters;
+  - `GET /surveillance/configs/{program}` (threshold lines and target bands);
+  - `GET /concepts/conditions` (condition search);
+  - flag status history from the audit log;
+  - a nullable biopsy `result` (filled in Phase 2);
+  - a configurable refresh-cookie path;
+  - a trusted-proxy setting for the client address.
+- **Tests:**
+  - Vitest for components and the client;
+  - Playwright end-to-end tests on a seeded throwaway database (`make e2e`), including
+    automatic accessibility checks (axe);
+  - a CI job for both.
+- **README screenshots** taken by `make screenshots`.
+
+### The ideas in plain English
+- **Same origin**: the browser only ever talks to `localhost:3000`. Next.js forwards
+  `/api/...` to FastAPI behind the scenes (a *rewrite*). To the browser the API looks like
+  part of the website, so its cookies are normal first-party cookies and there is no CORS.
+- **Why cookies and not tokens in JavaScript**: the login tokens sit in httpOnly cookies. Page
+  JavaScript cannot read them, so an injected script cannot steal them. SameSite=Strict plus
+  the `X-Requested-With` header stop other websites from making requests in your name (CSRF).
+- **Silent refresh**: the access token lives 15 minutes. When a request gets 401, the client
+  asks `/api/auth/refresh` once for a new token and repeats the request. If many requests fail
+  at the same moment, they share that one refresh call.
+- **TanStack Query**: a cache for server data. Each page asks for data by a key such as
+  `["patient", id, "timeline"]`. It gets loading, error and data states, background refresh
+  and de-duplication for free, without hand-written `useEffect` code.
+- **Optimistic update**: when a clinician resolves a flag, the row disappears at once,
+  before the server answers. If the server refuses, the old list comes back and a message
+  shows the reason and the request id.
+- **Accessibility (WCAG AA)** means people using a keyboard, a screen reader or low vision
+  can use the app:
+  - text has enough contrast;
+  - every input has a label;
+  - severity is a word plus an icon, never only a colour;
+  - dialogs trap and return focus;
+  - a "Skip to content" link;
+  - each chart has its numbers as a table too.
+
+### How the tricky parts work
+- **The refresh cookie path**: the API used to set the refresh cookie only for `/auth`. The
+  browser now calls `/api/auth/refresh`, so that cookie would never be sent. The path is now
+  a setting (`REFRESH_COOKIE_PATH`, default `/api/auth`).
+- **Client address behind the proxy**: the API rate-limits logins per client address. Behind
+  Next.js every request comes from `127.0.0.1`, so the API reads `X-Forwarded-For`, but only
+  when the request comes from a trusted proxy address (never `*`).
+  - We checked how Next.js behaves and found that it passes on a header the browser already
+    sent instead of adding the real address.
+  - So in production something in front of Next.js (the cloud ingress) must add the real
+    address. ADR 0011 explains this.
+- **De-identified views stay de-identified everywhere**:
+  - researchers and stewards get pseudonyms in URLs (`/patients/R-…`);
+  - page titles never name a patient;
+  - error screens and toasts show only API messages and the request id;
+  - nothing is logged to the console;
+  - on logout or session expiry the browser does a full page load, so no patient data stays
+    in memory.
+
+  A Playwright test scans the page text, the URLs and the console for every patient name and
+  MRN in the test database.
+- **Charts from config, not code**: threshold lines (kidney 0.5% and 1%, heart 0.2%) and the
+  tacrolimus target band per phase come from the same YAML the surveillance engine uses,
+  through `GET /surveillance/configs/kidney`. Changing a threshold updates the engine and the
+  chart together. Flagged points come from each flag's evidence (marker and date), and those
+  dates are shifted together with the rest of a de-identified patient's dates.
+- **Next.js 16 rules**: any component that reads the URL (`useSearchParams`, `usePathname`,
+  `params`) must sit inside `<Suspense>`, so the static page shell can render first. Visited
+  pages stay mounted but hidden, so tests look for the visible `main`. Plotly needs `window`,
+  so it is loaded only in the browser, and only on the pages that draw charts.
+- **E2E data without Spark**: `backend/tests/e2e_seed.py` rebuilds a `txlens_e2e` database
+  from the same seeded generator the API tests use, runs surveillance, and then serves the
+  API. Every run starts from the same state.
+
+### Why these tools
+- **Next.js rewrites**: one config line instead of CORS on both sides, or one hand-written
+  handler per endpoint.
+- **TanStack Query**: caching, retries, loading and error states, and optimistic updates
+  with rollback are built in.
+- **openapi-typescript + openapi-fetch**: types are generated from the real API. A changed
+  field breaks `pnpm typecheck`, not the browser. The runtime is a tiny fetch wrapper we
+  control (ADR 0012).
+- **shadcn/ui on Radix**: components are copied into the repo, so we own and can change
+  them. Radix handles focus, keyboard and ARIA for dialogs and selects.
+- **Plotly (basic bundle)**: the line, marker, band and bar charts we need, with zoom and
+  hover. The smaller bundle keeps pages fast.
+- **Playwright + axe**: real browser tests against the real API, plus an automatic WCAG scan
+  on each main page.
+
+### Trade-offs
+- **Client-side auth guard**: pages first render a skeleton, then `/me` decides what to show.
+  A server-side guard (`proxy.ts`) cannot see the refresh cookie (it only goes to
+  `/api/auth`), so it could not tell "expired" from "logged out". Security does not depend on
+  the UI: the API checks every request.
+- **`BACKEND_URL` is fixed at build time.** A frontend build is tied to one API address.
+- **Refresh rotation vs reload**: reloading a page in the middle of a refresh can log the
+  user out, because the API treats the reuse of an old refresh token as theft. This is safe
+  but occasionally annoying. A grace period would fix it.
+- **Biopsy results and rejection diagnoses are not in the data yet.** The timeline says
+  "awaiting document extraction" instead of guessing. Phase 2 extracts them from the
+  documents, with a review queue.
+- **Automated accessibility checks find only part of the problems.** axe passes, and the
+  keyboard flow of the review dialog is tested, but a screen-reader walkthrough by a person
+  is still needed.
+
+### Likely interview questions
+1. **Why proxy the API through Next.js instead of calling it directly?** Same origin. The
+   httpOnly, SameSite=Strict cookies are first-party, there is no CORS, and there are no
+   preflight requests. The browser never learns where the API lives. It costs one rewrite
+   line. The catch is the client IP for rate limiting: only trust `X-Forwarded-For` from a
+   known proxy, and make sure something in front appends the real address.
+2. **Why httpOnly cookies rather than storing the JWT in localStorage?** Any script on the
+   page can read localStorage, including an injected one. JavaScript cannot read httpOnly
+   cookies at all. Cookies bring CSRF risk instead, which SameSite=Strict and a custom
+   header (`X-Requested-With`) close.
+3. **What does TanStack Query give you over `useEffect` + `fetch`?**
+   - A shared cache by key: two components asking for the same data make one request.
+   - Loading and error states, retries (not on 4xx) and background refetch.
+   - Invalidation after a change, for example invalidating the worklist and the patient's
+     flags after a review.
+   - Optimistic updates with rollback.
+4. **How does your optimistic update work, and what if the server says no?**
+   - `onMutate` cancels running worklist requests, saves a snapshot and edits the cache
+     (acknowledged: change the status; resolved: remove the flag, and the patient if no
+     flags remain).
+   - `onError` restores the snapshot and shows the API's message and request id.
+   - `onSettled` refetches, so the screen ends up matching the server either way.
+5. **How did you make it accessible, and how do you know?**
+   - Contrast-checked colour tokens, labels on every input, and severity as text plus an
+     icon.
+   - Radix dialogs that trap and return focus, a skip link, and `aria-sort` on sortable
+     headers.
+   - Charts also offer their values as a table.
+
+   Playwright runs axe (WCAG 2.1 A/AA) on every main page and fails on serious issues. It
+   also drives the review dialog with the keyboard. The tests found real bugs: a chart
+   wrapper marked as an image that contained buttons, and a search box pointing at a list
+   that did not exist yet. A manual screen-reader check is still on the to-do list.

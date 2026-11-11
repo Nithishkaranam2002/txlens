@@ -81,7 +81,10 @@ make surveillance-run AS_OF=2025-06-30  # run surveillance for every center as o
 make surveillance-schedule  # nightly run at 02:00 UTC
 make surveillance-report    # replay vs ground truth -> evals/reports/surveillance.md
 
-pnpm --dir frontend dev   # frontend at http://localhost:3000
+make frontend       # frontend at http://localhost:3000 (proxies /api to the API on :8000)
+make e2e            # Playwright tests on a seeded throwaway database (needs `make up`)
+make screenshots    # README screenshots (needs `make api` and `make frontend` running)
+make openapi        # after API changes: export the schema, regenerate the typed client
 make down           # stop containers (data is kept)
 ```
 
@@ -181,6 +184,51 @@ using surveillance and routine labs only.
 
 Design: [ADR 0009](docs/adr/0009-config-driven-surveillance-engine.md),
 [ADR 0010](docs/adr/0010-temporal-for-surveillance-runs.md).
+
+## Frontend
+
+A Next.js app with a calm clinical design (shadcn/ui, Tailwind). A banner on every page says
+"Synthetic data. Clinical decision support only, not diagnosis." The browser only talks to
+the Next.js server: `/api/*` is rewritten to FastAPI, so the httpOnly cookies are
+first-party and there are no cross-origin requests. A typed client is generated from the
+API's OpenAPI schema. An expired session refreshes itself once, then sends the user to login.
+
+| | Worklist | Patient detail | Cohort builder | Admin |
+|---|---|---|---|---|
+| clinician | names, acknowledge / resolve | identified, flags + history | yes | no |
+| data_steward | pseudonyms, read only | de-identified, flags + history | no | no |
+| researcher | no | de-identified, no flags | yes, counts 1-10 as "<11" | no |
+| admin | no | no | no | own account only |
+
+| | |
+|---|---|
+| ![Worklist: ranked patients with severity badges and plain-English reasons](docs/images/app-worklist.png) | ![Patient detail: dd-cfDNA with threshold lines and flagged results, creatinine/eGFR, tacrolimus target band, DSA](docs/images/app-patient.png) |
+| ![Cohort builder: rules, attrition funnel and save](docs/images/app-cohort.png) | ![Login with the synthetic-data banner](docs/images/app-login.png) |
+
+- **Worklist:** ranked by priority score. Filters (organ, severity, status) are kept in the
+  URL. Acknowledge or resolve with an optional note: the list updates at once and rolls back
+  if the API refuses.
+- **Patient detail:** dd-cfDNA with the organ's threshold lines and flagged results marked,
+  creatinine and eGFR, tacrolimus with its target band per phase, and DSA. Thresholds come
+  from the surveillance YAML through the API. Every chart has a "show values as a table"
+  view. A timeline lists transplant, biopsies, graft events and death, plus the medication
+  history.
+  - Biopsy results show "awaiting document extraction" until Phase 2 reads them from the
+    pathology PDFs.
+- **Cohort builder:** filter by organ, donor type, age, transplant year, SNOMED conditions
+  (including more specific ones) and lab rules. An attrition funnel shows how many patients
+  each rule removes. Saved cohorts keep a frozen list of members.
+- **Quality checks:** loading, empty and error states show the request id. Vitest covers
+  components and the API client. Playwright (`make e2e`) runs against the real API on a
+  seeded database and checks:
+  - a researcher sees no name or MRN anywhere (page text, URL or console);
+  - a steward has no Cohorts menu, and an admin sees no patient data;
+  - another center's patient shows "Not found";
+  - acknowledge and resolve work;
+  - automated WCAG 2.1 AA checks pass (axe), and the review dialog works by keyboard.
+
+Design: [ADR 0011](docs/adr/0011-same-origin-frontend-proxy.md),
+[ADR 0012](docs/adr/0012-generated-typed-api-client.md).
 
 ## Runs on Databricks
 
