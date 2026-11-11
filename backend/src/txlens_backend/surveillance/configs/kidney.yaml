@@ -1,0 +1,78 @@
+# Kidney transplant surveillance. Clinical decision support: these rules flag a patient for
+# review; they never diagnose. Change a value -> bump `version` (flags record the version).
+id: kidney_transplant
+version: 1
+title: Kidney transplant surveillance
+program: kidney
+anchor: transplant_date
+
+markers:
+  dd_cfdna: {label: dd-cfDNA, vocabulary: LOINC, code: "103142-6", unit: "%"}
+  creatinine: {label: Creatinine, vocabulary: LOINC, code: "2160-0", unit: mg/dL}
+  egfr: {label: eGFR, vocabulary: LOINC, code: "98979-8", unit: mL/min/1.73m2}
+  tacrolimus_trough: {label: Tacrolimus trough, vocabulary: LOINC, code: "77348-1", unit: ng/mL}
+  dsa_mfi:
+    {label: DSA (max MFI), vocabulary: TxLens, code: DSA_MAX_MFI, unit: MFI, source_concept: true}
+
+schedule:
+  marker: dd_cfdna
+  months: [1, 2, 3, 4, 6, 9, 12]
+  then_every_months: 3
+  tolerance_days: 14
+
+rules:
+  - id: dd_cfdna_overdue
+    kind: schedule_adherence
+    severity: low
+  - id: dd_cfdna_threshold
+    kind: threshold
+    marker: dd_cfdna
+    group: dd_cfdna
+    max_age_days: 90
+    levels:
+      - {at_or_above: 0.5, severity: medium, meaning: possible graft injury}
+      - {at_or_above: 1.0, severity: high, meaning: high risk of rejection}
+  - id: dd_cfdna_rising
+    kind: rising_trend
+    marker: dd_cfdna
+    group: dd_cfdna
+    max_age_days: 90
+    consecutive_increases: 2
+    relative_rise_pct: 100
+    min_latest: 0.35
+  - id: creatinine_rise
+    kind: relative_change
+    marker: creatinine
+    group: graft_function
+    direction: up
+    pct: 25
+    baseline_days: 90
+    exclude_recent_days: 3
+    min_baseline_points: 2
+    start_after_days: 30
+    max_age_days: 60
+  - id: egfr_decline
+    kind: relative_change
+    marker: egfr
+    group: graft_function
+    direction: down
+    pct: 30
+    baseline_days: 90
+    exclude_recent_days: 3
+    min_baseline_points: 2
+    start_after_days: 30
+    max_age_days: 60
+  - id: tacrolimus_out_of_range
+    kind: range_by_phase
+    marker: tacrolimus_trough
+    severity: low
+    max_age_days: 60
+    phases:
+      - {from_month: 0, to_month: 3, low: 8.0, high: 12.0}
+      - {from_month: 3, low: 5.0, high: 8.0}
+  - id: dsa_new_positive
+    kind: new_positive
+    marker: dsa_mfi
+    severity: high
+    positive_at_or_above: 1000
+    active_days: 90

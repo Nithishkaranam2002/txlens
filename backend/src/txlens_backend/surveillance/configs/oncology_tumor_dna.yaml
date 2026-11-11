@@ -1,0 +1,37 @@
+# Oncology surveillance after curative treatment, with a generic circulating tumor DNA marker.
+# Same engine, different config: this file is the proof that nothing transplant-specific is
+# hard-coded. Clinical decision support only: a flag means "review", never "recurrence".
+id: oncology_tumor_dna
+version: 1
+title: Post-treatment tumor DNA surveillance
+program: oncology
+anchor: treatment_end_date
+
+markers:
+  tumor_dna:
+    {label: Tumor DNA marker, vocabulary: TxLens, code: TUMOR_DNA_MTM, unit: MTM/mL,
+     source_concept: true}
+
+schedule:
+  marker: tumor_dna
+  months: [3]
+  then_every_months: 3
+  tolerance_days: 21
+
+rules:
+  - id: tumor_dna_overdue
+    kind: schedule_adherence
+    severity: low
+  - id: tumor_dna_detected
+    kind: detected
+    marker: tumor_dna
+    severity: high
+    limit_of_detection: 0.1
+    max_age_days: 120
+  - id: tumor_dna_rising
+    kind: rising_trend
+    marker: tumor_dna
+    group: tumor_dna_detected
+    max_age_days: 120
+    consecutive_increases: 2
+    min_latest: 0.05

@@ -1,0 +1,55 @@
+# Heart transplant surveillance. Clinical decision support: these rules flag a patient for
+# review; they never diagnose. Change a value -> bump `version` (flags record the version).
+# Heart dd-cfDNA runs lower than kidney, so one lower threshold is used. Creatinine is left
+# out: after a heart transplant it mostly reflects drug effects on the kidneys, not the graft.
+id: heart_transplant
+version: 1
+title: Heart transplant surveillance
+program: heart
+anchor: transplant_date
+
+markers:
+  dd_cfdna: {label: dd-cfDNA, vocabulary: LOINC, code: "103142-6", unit: "%"}
+  tacrolimus_trough: {label: Tacrolimus trough, vocabulary: LOINC, code: "77348-1", unit: ng/mL}
+  dsa_mfi:
+    {label: DSA (max MFI), vocabulary: TxLens, code: DSA_MAX_MFI, unit: MFI, source_concept: true}
+
+schedule:
+  marker: dd_cfdna
+  months: [1, 2, 3, 4, 6, 9, 12]
+  then_every_months: 3
+  tolerance_days: 14
+
+rules:
+  - id: dd_cfdna_overdue
+    kind: schedule_adherence
+    severity: low
+  - id: dd_cfdna_threshold
+    kind: threshold
+    marker: dd_cfdna
+    group: dd_cfdna
+    max_age_days: 90
+    levels:
+      - {at_or_above: 0.2, severity: high, meaning: high risk of rejection}
+  - id: dd_cfdna_rising
+    kind: rising_trend
+    marker: dd_cfdna
+    group: dd_cfdna
+    max_age_days: 90
+    consecutive_increases: 2
+    relative_rise_pct: 100
+    min_latest: 0.12
+  - id: tacrolimus_out_of_range
+    kind: range_by_phase
+    marker: tacrolimus_trough
+    severity: low
+    max_age_days: 60
+    phases:
+      - {from_month: 0, to_month: 6, low: 10.0, high: 15.0}
+      - {from_month: 6, low: 8.0, high: 10.0}
+  - id: dsa_new_positive
+    kind: new_positive
+    marker: dsa_mfi
+    severity: high
+    positive_at_or_above: 1000
+    active_days: 90
