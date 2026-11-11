@@ -1,5 +1,15 @@
-import { EmptyState } from "@/components/states";
+import type { Metadata } from "next";
 
-export default function Page() {
-  return <EmptyState title="Coming in the next step" />;
+import { RoleGate } from "@/components/role-gate";
+
+import { CohortBuilder } from "./cohort-builder";
+
+export const metadata: Metadata = { title: "Cohorts" };
+
+export default function CohortsPage() {
+  return (
+    <RoleGate area="cohorts">
+      <CohortBuilder />
+    </RoleGate>
+  );
 }

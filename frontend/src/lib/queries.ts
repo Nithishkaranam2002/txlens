@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import { api, unwrap } from "@/lib/api/client";
 import { isApiError } from "@/lib/api/errors";
-import type { Flag, FlagStatus, Organ, Severity, WorklistPage } from "@/lib/types";
+import type { CohortRules, Flag, FlagStatus, Organ, Severity, WorklistPage } from "@/lib/types";
 
 export type WorklistFilters = { organ?: Organ; severity?: Severity; status?: FlagStatus };
 
@@ -113,5 +113,57 @@ export function useSurveillanceConfig(program: string | null | undefined) {
       unwrap(await api.GET("/surveillance/configs/{program}", { params: { path: { program: program! } } })),
     enabled: Boolean(program),
     staleTime: Infinity,
+  });
+}
+
+export function useConceptSearch(q: string) {
+  const term = q.trim();
+  return useQuery({
+    queryKey: keys.concepts(term),
+    queryFn: async () => unwrap(await api.GET("/concepts/conditions", { params: { query: { q: term, limit: 20 } } })),
+    enabled: term.length >= 2,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function usePreviewCohort() {
+  return useMutation({
+    mutationFn: async (rules: CohortRules) => unwrap(await api.POST("/cohorts/preview", { body: rules })),
+  });
+}
+
+export function useSaveCohort() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { name: string; rules: CohortRules }) => unwrap(await api.POST("/cohorts", { body })),
+    onSuccess: (cohort) => {
+      client.invalidateQueries({ queryKey: keys.cohorts });
+      toast.success(`Cohort “${cohort.name}” saved`);
+    },
+  });
+}
+
+export function useCohorts() {
+  return useQuery({
+    queryKey: keys.cohorts,
+    queryFn: async () => unwrap(await api.GET("/cohorts", { params: { query: { limit: 100 } } })),
+  });
+}
+
+export function useCohort(id: string) {
+  return useQuery({
+    queryKey: keys.cohort(id),
+    queryFn: async () => unwrap(await api.GET("/cohorts/{cohort_id}", { params: { path: { cohort_id: id } } })),
+  });
+}
+
+export function useCohortMembers(id: string, offset: number) {
+  return useQuery({
+    queryKey: keys.members(id, offset),
+    queryFn: async () =>
+      unwrap(await api.GET("/cohorts/{cohort_id}/members", {
+        params: { path: { cohort_id: id }, query: { limit: PAGE_SIZE, offset } },
+      })),
+    placeholderData: (previous) => previous,
   });
 }
