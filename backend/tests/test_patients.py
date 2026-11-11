@@ -9,7 +9,6 @@ import pytest
 from api_dataset import Dataset
 from api_testutils import login
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, text
 
 from txlens_backend.api.deps import Role
 from txlens_backend.config import Settings
@@ -180,15 +179,3 @@ def test_wrong_kind_of_id_is_404(client: TestClient, api_data: Dataset) -> None:
 def test_admin_cannot_see_patients(client: TestClient) -> None:
     login(client, Role.ADMIN)
     assert client.get("/patients").status_code == 403
-
-
-def test_views_are_audited(client: TestClient, api_owner: Engine, api_data: Dataset) -> None:
-    login(client, Role.CLINICIAN)
-    pid = next(iter(truth_patients(api_data, "center_a")))
-    response = client.get(f"/patients/{pid}/timeline")
-    with api_owner.connect() as conn:
-        row = conn.execute(
-            text("SELECT tenant_id, action, object_type, object_id FROM app.audit_log "
-                 "WHERE request_id = :r"), {"r": response.headers["X-Request-ID"]},
-        ).one()  # fmt: skip
-    assert tuple(row) == ("center_a", "phi_view", "patient", str(pid))

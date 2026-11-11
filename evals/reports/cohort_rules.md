@@ -1,0 +1,23 @@
+# Cohort rules: database vs ground truth
+
+Generated 2026-11-10 by `make cohort-report` (evals/src/txlens_evals/cohort_reconciliation.py). Synthetic data only.
+
+Each rule runs through the API's cohort service on the pipeline-loaded database (2,000 patients, all centers, Row-Level Security on). Members are matched to the ground truth by (center, MRN).
+
+**7 of 7 rules match the ground truth exactly.**
+
+| Rule | Expected | Actual | Missing | Extra | Result |
+|---|---|---|---|---|---|
+| kidney, dd-cfDNA >= 1% within 365 days of transplant | 198 | 198 | 0 | 0 | PASS |
+| any organ, dd-cfDNA >= 1% within 365 days of transplant | 204 | 204 | 0 | 0 | PASS |
+| kidney, living donor | 620 | 620 | 0 | 0 | PASS |
+| kidney, deceased donor | 1,082 | 1,082 | 0 | 0 | PASS |
+| heart | 298 | 298 | 0 | 0 | PASS |
+| age at transplant 40-59 | 715 | 715 | 0 | 0 | PASS |
+| transplant in 2024 (whole year) | 522 | 522 | 0 | 0 | PASS |
+
+## Known gaps (data not yet mapped upstream)
+
+| Rule | Expected | Actual | Per center (actual/expected) | Why |
+|---|---|---|---|---|
+| any diabetes mellitus (73211009 and descendants) | 820 | 428 | center_a: 328/328, center_b: 0/290, center_c: 100/202 | Center B sends conditions as free text only, center C codes about half. Uncoded conditions get concept 0 and are listed in the mapping-gaps report; text mapping comes with clinical NLP (Phase 2). Where conditions are coded, the rule is exact. |

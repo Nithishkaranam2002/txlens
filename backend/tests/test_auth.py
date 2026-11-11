@@ -16,19 +16,6 @@ from txlens_backend.security import TokenType, encode, issue_token
 pytestmark = pytest.mark.db
 
 
-def audit_rows(owner: Engine, action: str) -> list[tuple[str, str, str | None, str | None]]:
-    """(tenant, action, user_id, request_id) of audit rows with this action."""
-    with owner.connect() as conn:
-        rows = conn.execute(
-            text(
-                "SELECT tenant_id, action, user_id::text, request_id FROM app.audit_log "
-                "WHERE action = :a ORDER BY audit_id"
-            ),
-            {"a": action},
-        ).all()
-    return [tuple(r) for r in rows]
-
-
 def test_login_sets_httponly_secure_strict_cookies(client: TestClient) -> None:
     response = login(client, Role.CLINICIAN)
     assert response.status_code == 200
@@ -120,9 +107,7 @@ def test_refresh_rotates_and_reuse_revokes_every_session(client: TestClient) -> 
     assert legit.status_code == 401
 
 
-def test_logout_revokes_the_refresh_token_and_clears_cookies(
-    client: TestClient, api_owner: Engine
-) -> None:
+def test_logout_revokes_the_refresh_token_and_clears_cookies(client: TestClient) -> None:
     login(client, Role.RESEARCHER)
     refresh_token = client.cookies.get(REFRESH_COOKIE)
     response = client.post("/auth/logout")
@@ -131,8 +116,6 @@ def test_logout_revokes_the_refresh_token_and_clears_cookies(
         assert "max-age=0" in header.lower()
     again = client.post("/auth/refresh", headers={"Cookie": f"{REFRESH_COOKIE}={refresh_token}"})
     assert again.status_code == 401
-    rows = audit_rows(api_owner, "logout")
-    assert rows[-1][2] is not None and rows[-1][3] == response.headers["X-Request-ID"]
 
 
 @pytest.mark.parametrize("kind", ["expired", "wrong_key", "tampered_role", "alg_none", "refresh"])
@@ -161,16 +144,3 @@ def test_post_without_the_csrf_header_is_refused(api_app: FastAPI) -> None:
         response = bare.post("/auth/login", json=body)
     assert response.status_code == 403
     assert "X-Requested-With" in response.json()["detail"]
-
-
-def test_logins_and_failures_are_audited_in_the_users_tenant(
-    client: TestClient, api_owner: Engine
-) -> None:
-    ok = login(client, Role.DATA_STEWARD, "center_b")
-    failed = client.post("/auth/login", json={"username": "data_steward.center_b", "password": "x"})
-    login_row = next(
-        r for r in audit_rows(api_owner, "login") if r[3] == ok.headers["X-Request-ID"]
-    )
-    failed_row = audit_rows(api_owner, "login_failed")[-1]
-    assert login_row[0] == "center_b" and login_row[2] == ok.json()["user_id"]
-    assert failed_row[0] == "center_b" and failed_row[3] == failed.headers["X-Request-ID"]

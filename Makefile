@@ -6,7 +6,7 @@ SEED ?= 42
 VOCAB_SOURCE ?= omop/athena
 N_PATIENTS ?= 2000
 
-.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api prune-login-attempts vocab-load vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
+.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api prune-login-attempts cohort-report vocab-load vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -50,7 +50,7 @@ api: ## Run the API with auto-reload (docs: http://localhost:8000/docs)
 	uv run uvicorn txlens_backend.api.app:create_app --factory --reload --port 8000
 
 prune-login-attempts: ## Delete login attempts older than 30 days (logins also do this)
-	uv run txlens-prune-login-attempts
+	uv run txlens-prune-login-attempts cohort-report
 
 vocab-load: ## Load OMOP vocabularies from omop/athena (or VOCAB_SOURCE=omop/vocab_subset)
 	uv run txlens-vocab load --source $(VOCAB_SOURCE)
@@ -72,6 +72,9 @@ spark-build: ## Build the Spark runner image (Python 3.12 + Java 17 + PySpark + 
 
 pipeline: ## Run bronze -> silver -> gold -> Postgres load in the Spark container (LAYERS=...)
 	$(SPARK_RUN) python -m txlens_pipelines $(if $(LAYERS),--layers $(LAYERS))
+
+cohort-report: ## Cohort rules on the loaded database vs ground truth -> evals/reports/cohort_rules.md
+	uv run python -m txlens_evals.cohort_reconciliation
 
 pipeline-report: ## Reconcile gold/Postgres with data/ground_truth -> evals/reports/data_quality.md
 	$(SPARK_RUN) python -m txlens_evals.pipeline_reconciliation

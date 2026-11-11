@@ -866,6 +866,12 @@ requires-dist = [
 name = "txlens-evals"
 version = "0.1.0"
 source = { editable = "evals" }
+dependencies = [
+    { name = "txlens-backend" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "txlens-backend", editable = "backend" }]
 
 [[package]]
 name = "txlens-omop"
