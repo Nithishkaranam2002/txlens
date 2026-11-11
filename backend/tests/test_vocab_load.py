@@ -15,13 +15,20 @@ from txlens_omop.athena import AthenaSource
 from txlens_omop.check import (
     check_codes,
     check_drug_names,
+    check_local_concept,
     check_mapping,
+    format_local_report,
     format_report,
     suggest_ingredients,
 )
 from txlens_omop.codes import CodeUse
-from txlens_omop.loader import MissingVocabularyError, load_vocabulary, vocab_table_sizes
-from txlens_omop.mappings import MappingRow, read_mappings
+from txlens_omop.loader import (
+    MissingVocabularyError,
+    load_local_only,
+    load_vocabulary,
+    vocab_table_sizes,
+)
+from txlens_omop.mappings import LOCAL_CONCEPT_FILE, MappingRow, mappings_dir, read_mappings
 from txlens_omop.vocab import (
     descendants,
     find_concept,
@@ -34,6 +41,9 @@ pytestmark = pytest.mark.db
 FAKE_ATHENA = Path(__file__).parents[2] / "omop" / "tests" / "fixtures" / "athena_fake"
 B = 2_100_000_000
 Conn = psycopg.Connection[tuple[object, ...]]
+FAKE_CONCEPTS = 18  # TEST ONLY concepts in the fake Athena download
+# Our local concepts ship with the package and are loaded with every vocabulary.
+LOCAL_CONCEPTS = len((mappings_dir() / LOCAL_CONCEPT_FILE).read_text().splitlines()) - 1
 
 
 @pytest.fixture(scope="module")
@@ -83,7 +93,7 @@ def test_load_filters_vocabularies_and_warns_about_ucum(vocab_db: str, fake_zip:
     assert report.rows["concept_relationship"] == 26
     assert report.rows["concept_ancestor"] == 21
     assert report.rows["concept_synonym"] == 2
-    assert report.rows["local_concept"] == 1
+    assert report.rows["local_concept"] == LOCAL_CONCEPTS
     assert report.rows["source_to_concept_map"] == len(read_mappings())
 
 
@@ -99,7 +109,11 @@ def test_loaded_rows_have_parsed_dates_and_nulls(loaded: Conn) -> None:
 def test_reload_replaces_rather_than_duplicates(loaded: Conn, fake_zip: Path) -> None:
     before = count(loaded, "SELECT count(*) FROM vocab.concept")
     load_vocabulary(loaded, AthenaSource(fake_zip))
-    assert count(loaded, "SELECT count(*) FROM vocab.concept") == before == 19
+    assert (
+        count(loaded, "SELECT count(*) FROM vocab.concept")
+        == before
+        == FAKE_CONCEPTS + LOCAL_CONCEPTS
+    )
     stcm = count(loaded, "SELECT count(*) FROM vocab.source_to_concept_map")
     assert stcm == len(read_mappings())
 
@@ -243,3 +257,39 @@ def test_mapping_check_flags_each_problem(loaded: Conn) -> None:
     assert "VOCABULARY IS ICD10CM, ROW SAYS SNOMED" in wrong.problems
     assert "WRONG DOMAIN (Condition, expected Drug)" in wrong.problems
     assert "TARGET NOT STANDARD" in wrong.problems
+
+
+def test_local_concept_check_flags_each_problem(loaded: Conn) -> None:
+    with loaded.transaction(force_rollback=True):
+        loaded.execute(
+            "UPDATE vocab.concept SET standard_concept = 'S' WHERE concept_code = 'BANFF_T' "
+            "AND vocabulary_id = 'TxLens'"
+        )
+        results = [
+            check_local_concept(loaded, "BANFF_I", "Measurement"),
+            check_local_concept(loaded, "BANFF_I", "Condition"),
+            check_local_concept(loaded, "BANFF_T", "Measurement"),
+            check_local_concept(loaded, "NOPE", "Measurement"),
+        ]
+    assert [r.problems for r in results] == [
+        (),
+        ("WRONG DOMAIN (Measurement, expected Condition)",),
+        ("MARKED STANDARD",),
+        ("NOT FOUND",),
+    ]
+    assert "1 OK, 3 with problems, 4 checked." in format_local_report(results)
+
+
+def test_load_local_only_replaces_our_rows_and_keeps_athena(loaded: Conn) -> None:
+    with loaded.transaction(force_rollback=True):
+        athena = count(loaded, "SELECT count(*) FROM vocab.concept WHERE vocabulary_id <> 'TxLens'")
+        loaded.execute("DELETE FROM vocab.concept WHERE concept_code = 'BANFF_I'")
+        rows = load_local_only(loaded)
+        assert rows["local_concept"] == count(
+            loaded, "SELECT count(*) FROM vocab.concept WHERE vocabulary_id = 'TxLens'"
+        )
+        assert rows["source_to_concept_map"] == len(read_mappings())
+        assert find_concept(loaded, "TxLens", "BANFF_I") is not None
+        assert athena == count(
+            loaded, "SELECT count(*) FROM vocab.concept WHERE vocabulary_id <> 'TxLens'"
+        )

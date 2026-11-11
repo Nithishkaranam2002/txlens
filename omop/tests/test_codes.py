@@ -1,16 +1,28 @@
+import csv
+
 from txlens_datagen.meds import RXNORM
 from txlens_datagen.notes import DRUG_NAMES
 from txlens_datagen.writers.fhir import SNOMED_CODES
 from txlens_datagen.writers.lab_feeds import DIALECTS, LOINC
 from txlens_omop.codes import (
+    EXTRACTION_LOCAL_CODES,
     KNOWN_GAPS,
     all_codes,
+    extraction_codes,
     generator_codes,
     pipeline_codes,
     planned_codes,
     uncoded_drugs,
 )
-from txlens_omop.mappings import SOURCE_VOCABULARIES, normalize_source_code, read_mappings
+from txlens_omop.mappings import (
+    LOCAL_CONCEPT_FILE,
+    LOCAL_CONCEPT_MIN,
+    LOCAL_VOCABULARY,
+    SOURCE_VOCABULARIES,
+    mappings_dir,
+    normalize_source_code,
+    read_mappings,
+)
 
 BRANDS = {"Prograf", "CellCept", "Solu-Medrol", "Thymoglobulin", "Valcyte"}
 
@@ -35,7 +47,10 @@ def test_domains_follow_vocabulary() -> None:
 def test_planned_icd10cm_codes_are_included() -> None:
     assert {c.vocabulary_id for c in planned_codes()} == {"ICD10CM"}
     assert len(all_codes()) == (
-        len(generator_codes()) + len(planned_codes()) + len(pipeline_codes())
+        len(generator_codes())
+        + len(planned_codes())
+        + len(pipeline_codes())
+        + len(extraction_codes())
     )
 
 
@@ -99,3 +114,21 @@ def test_every_uncoded_transplant_text_is_mapped() -> None:
     for organ, donors in (("kidney", ("living", "deceased")), ("heart", ("deceased",))):
         for donor in donors:
             assert f"{organ} transplant - {donor} donor" in mapped
+
+
+def test_biopsy_diagnosis_codes_are_checked_as_conditions() -> None:
+    codes = {(c.vocabulary_id, c.code): c.expected_domain for c in all_codes()}
+    for code in ("236574008", "1381981002", "432843002", "713886006", "35455006"):
+        assert codes[("SNOMED", code)] == "Condition"
+
+
+def test_every_extraction_local_code_is_a_non_standard_local_concept() -> None:
+    with (mappings_dir() / LOCAL_CONCEPT_FILE).open(encoding="utf-8", newline="") as handle:
+        rows = {r["concept_code"]: r for r in csv.DictReader(handle, delimiter="\t")}
+    ids = [int(r["concept_id"]) for r in rows.values()]
+    assert len(ids) == len(set(ids))
+    for code, domain in EXTRACTION_LOCAL_CODES.items():
+        row = rows[code]
+        assert int(row["concept_id"]) >= LOCAL_CONCEPT_MIN
+        assert (row["vocabulary_id"], row["domain_id"]) == (LOCAL_VOCABULARY, domain)
+        assert row["standard_concept"] == ""

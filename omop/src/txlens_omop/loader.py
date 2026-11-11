@@ -24,7 +24,13 @@ from txlens_omop.athena import (
     links_kept,
     wanted_vocabularies,
 )
-from txlens_omop.mappings import LOCAL_CONCEPT_FILE, STCM_FILE, mappings_dir
+from txlens_omop.mappings import (
+    LOCAL_CONCEPT_FILE,
+    LOCAL_CONCEPT_MIN,
+    LOCAL_VOCABULARY,
+    STCM_FILE,
+    mappings_dir,
+)
 
 log = logging.getLogger(__name__)
 Connection = psycopg.Connection[tuple[object, ...]]
@@ -144,6 +150,22 @@ def load_local_mappings(cur: Cursor, report: LoadReport) -> None:
         header = handle.readline().decode("utf-8").rstrip("\r\n").split("\t")
         statement = copy_statement("source_to_concept_map", header)
         report.rows["source_to_concept_map"] = copy_lines(cur, statement, handle)
+
+
+def load_local_only(conn: Connection) -> dict[str, int]:
+    """Replace only our local concepts and reviewed mappings, keeping the Athena load.
+
+    For editing LOCAL_CONCEPT.csv or SOURCE_TO_CONCEPT_MAP.csv without a full reload.
+    """
+    report = LoadReport()
+    with conn.transaction(), conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM vocab.concept WHERE vocabulary_id = %s AND concept_id >= %s",
+            (LOCAL_VOCABULARY, LOCAL_CONCEPT_MIN),
+        )
+        cur.execute("TRUNCATE vocab.source_to_concept_map")
+        load_local_mappings(cur, report)
+    return report.rows
 
 
 def load_vocabulary(

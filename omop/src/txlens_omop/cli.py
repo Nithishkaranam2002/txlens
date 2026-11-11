@@ -18,13 +18,15 @@ from txlens_omop.athena import AthenaSource
 from txlens_omop.check import (
     check_codes,
     check_drug_names,
+    check_local_concept,
     check_mapping,
+    format_local_report,
     format_mapping_report,
     format_report,
     suggest_ingredients,
 )
-from txlens_omop.codes import KNOWN_GAPS, all_codes, uncoded_drugs
-from txlens_omop.loader import load_vocabulary, vocab_table_sizes
+from txlens_omop.codes import EXTRACTION_LOCAL_CODES, KNOWN_GAPS, all_codes, uncoded_drugs
+from txlens_omop.loader import load_local_only, load_vocabulary, vocab_table_sizes
 from txlens_omop.mappings import read_mappings
 from txlens_omop.subset import extract_subset
 
@@ -55,6 +57,10 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     load.add_argument("--database-url", help="default: DATABASE_URL from the environment or .env")
     check = commands.add_parser("check", help="check every code we use against the vocabulary")
     check.add_argument("--database-url", help="default: DATABASE_URL from the environment or .env")
+    local = commands.add_parser(
+        "load-local", help="replace only our local concepts and reviewed mappings"
+    )
+    local.add_argument("--database-url", help="default: DATABASE_URL from the environment or .env")
     subset = commands.add_parser("subset", help="extract a small subset around our codes")
     subset.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     subset.add_argument("--out", type=Path, default=DEFAULT_SUBSET)
@@ -86,13 +92,16 @@ def run_load(source: AthenaSource, database_url: str) -> None:
 
 
 def run_check(database_url: str) -> int:
-    """Print the code, mapping and drug-name reports; 1 if anything has a problem."""
+    """Print the code, mapping, local-concept and drug-name reports; 1 on any problem."""
     with psycopg.connect(libpq_url(database_url)) as conn:
         results = check_codes(conn, all_codes())
         print(format_report(results))
         print("\nReviewed source_to_concept_map rows:")
         mappings = [check_mapping(conn, row) for row in read_mappings()]
         print(format_mapping_report(mappings))
+        print("\nTxLens local concepts written by document extraction:")
+        local = [check_local_concept(conn, c, d) for c, d in EXTRACTION_LOCAL_CODES.items()]
+        print(format_local_report(local))
         print("\nDrug names as written in our data -> RxNorm ingredient:")
         drug_problems = check_drug_names(conn, DRUG_NAMES, RXNORM)
         for drug, name, problem in drug_problems:
@@ -113,7 +122,13 @@ def run_check(database_url: str) -> int:
                 ", ".join(f"{c.concept_code} ({c.concept_name})" for c in found) or "none found"
             )
             print(f"  {drug}: {options}")
-    failed = any(r.problems for r in results) or any(m.problems for m in mappings)
+    failed = any(
+        [
+            *(r.problems for r in results),
+            *(m.problems for m in mappings),
+            *(c.problems for c in local),
+        ]
+    )
     return 1 if failed or drug_problems else 0
 
 
@@ -134,6 +149,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if args.command == "check":
         return run_check(database_url(args.database_url))
+    if args.command == "load-local":
+        with psycopg.connect(libpq_url(database_url(args.database_url))) as conn:
+            rows = load_local_only(conn)
+        print("Reloaded local rows: " + ", ".join(f"{t}={n}" for t, n in rows.items()))
+        return 0
     source = resolve_source(args.source)
     if args.command == "load":
         run_load(source, database_url(args.database_url))

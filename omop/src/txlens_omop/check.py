@@ -109,6 +109,45 @@ def check_mapping(conn: Connection, row: MappingRow) -> MappingCheck:
     return MappingCheck(row, target, tuple(problems))
 
 
+@dataclass(frozen=True)
+class LocalCheck:
+    """Result for one TxLens local concept we write."""
+
+    code: str
+    expected_domain: str
+    concept: Concept | None
+    problems: tuple[str, ...]
+
+
+def check_local_concept(conn: Connection, code: str, expected_domain: str) -> LocalCheck:
+    """The local concept is loaded, in our id range, non-standard, valid, in the right domain."""
+    concept = find_concept(conn, LOCAL_VOCABULARY, code)
+    if concept is None:
+        return LocalCheck(code, expected_domain, None, ("NOT FOUND",))
+    problems = []
+    if concept.concept_id < LOCAL_CONCEPT_MIN:
+        problems.append(f"ID BELOW {LOCAL_CONCEPT_MIN:,}")
+    if concept.is_standard:
+        problems.append("MARKED STANDARD")
+    if concept.invalid_reason is not None:
+        problems.append(f"DEPRECATED ({concept.invalid_reason})")
+    if concept.domain_id != expected_domain:
+        problems.append(f"WRONG DOMAIN ({concept.domain_id}, expected {expected_domain})")
+    return LocalCheck(code, expected_domain, concept, tuple(problems))
+
+
+def format_local_report(results: list[LocalCheck]) -> str:
+    """One line per local concept, then a summary."""
+    lines = []
+    for r in results:
+        status = "; ".join(r.problems) or OK
+        found = f"{r.concept.concept_id} {r.concept.concept_name}" if r.concept else "-"
+        lines.append(f"[{status}] {LOCAL_VOCABULARY} {r.code} -> {found}")
+    failed = sum(1 for r in results if r.problems)
+    lines.append(f"\n{len(results) - failed} OK, {failed} with problems, {len(results)} checked.")
+    return "\n".join(lines)
+
+
 def check_drug_names(
     conn: Connection, names: Mapping[str, tuple[str, ...]], rxnorm: Mapping[str, str]
 ) -> list[tuple[str, str, str]]:

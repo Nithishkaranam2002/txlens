@@ -46,6 +46,20 @@ class Settings(BaseSettings):
     deid_hmac_key: SecretStr = SecretStr("")  # keys pseudonyms and date shifts
     small_cell_threshold: int = 11  # de-identified counts 1..threshold-1 are shown as "<11"
 
+    # --- Document extraction (LLM) ---
+    # LiteLLM model names: "openai/<model>" (paid) or "ollama/llama3.1:8b" (local, free).
+    llm_model: str = "openai/gpt-6-luna"
+    llm_model_pass_b: str = ""  # second extraction pass; empty = same model, other prompt
+    llm_reasoning_effort: str = "low"  # ignored by models without reasoning
+    llm_budget_usd: float = 3.0  # hard cap per batch; the batch stops when it is reached
+    llm_concurrency: int = 4  # LLM calls in flight at once (per worker)
+    llm_timeout_seconds: int = 60
+    ollama_base_url: str = "http://localhost:11434"
+    langfuse_public_key: SecretStr = SecretStr("")
+    langfuse_secret_key: SecretStr = SecretStr("")
+    review_threshold: float = 0.85  # document confidence below this goes to human review
+    review_timeout_days: int = 14  # an unanswered review expires; nothing is loaded
+
     # --- Demo users (`make seed-users`) ---
     demo_clinician_password: SecretStr = SecretStr("")
     demo_researcher_password: SecretStr = SecretStr("")

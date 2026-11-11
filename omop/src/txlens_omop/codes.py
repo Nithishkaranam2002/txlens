@@ -53,6 +53,49 @@ PIPELINE_CODES = {
     ("LOINC", "11506-3"): ("progress note (note class)", "Note"),
     ("SNOMED", "297487008"): ("English language (note language)", "Language"),
 }
+# Diagnoses the biopsy document extraction writes as conditions (Step 2.1). No SNOMED concept
+# names T-cell mediated rejection as such; the graded "acute rejection of renal transplant"
+# concepts carry it (Banff IA/IB = grade I, IIA/IIB = grade II, III = grade III).
+EXTRACTION_CODES = {
+    ("SNOMED", "236574008"): ("acute rejection of renal transplant (TCMR)", "Condition"),
+    ("SNOMED", "236575009"): (
+        "acute renal transplant rejection, grade I (Banff IA/IB)",
+        "Condition",
+    ),
+    ("SNOMED", "236576005"): (
+        "acute renal transplant rejection, grade II (Banff IIA/IIB)",
+        "Condition",
+    ),
+    ("SNOMED", "236577001"): (
+        "acute renal transplant rejection, grade III (Banff III)",
+        "Condition",
+    ),
+    ("SNOMED", "1381981002"): ("antibody-mediated rejection of transplant", "Condition"),
+    ("SNOMED", "432843002"): ("acute rejection of cardiac transplant (ISHLT 2R/3R)", "Condition"),
+    ("SNOMED", "713886006"): ("BK virus nephropathy", "Condition"),
+    ("SNOMED", "35455006"): (
+        "acute tubular necrosis (reported as acute tubular injury)",
+        "Condition",
+    ),
+    ("SNOMED", "28944009"): ("cytomegalovirus infection", "Condition"),
+}
+# TxLens local concepts (LOCAL_CONCEPT.csv, by concept_code) the extraction writes. They are
+# non-standard: OMOP rows get concept_id 0 and the local id as the source concept.
+EXTRACTION_LOCAL_CODES = {
+    "BORDERLINE_REJECTION": "Condition",
+    "BANFF_I": "Measurement",
+    "BANFF_T": "Measurement",
+    "BANFF_V": "Measurement",
+    "BANFF_G": "Measurement",
+    "BANFF_PTC": "Measurement",
+    "BANFF_CI": "Measurement",
+    "BANFF_CT": "Measurement",
+    "BANFF_CV": "Measurement",
+    "BANFF_C4D": "Measurement",
+    "BANFF_ADEQUACY": "Measurement",
+    "ISHLT_ACR_GRADE": "Measurement",
+    "ISHLT_PAMR_GRADE": "Measurement",
+}
 # Codes that queries find through an ancestor (e.g. "any kidney transplant" must also match
 # the donor-specific ones), so the hierarchy is checked too.
 ANCESTORS = {
@@ -106,9 +149,17 @@ def pipeline_codes() -> list[CodeUse]:
     ]
 
 
+def extraction_codes() -> list[CodeUse]:
+    """Standard condition codes written by the biopsy document extraction."""
+    return [
+        CodeUse(vocabulary, code, label, domain, "codes.py EXTRACTION_CODES")
+        for (vocabulary, code), (label, domain) in EXTRACTION_CODES.items()
+    ]
+
+
 def all_codes() -> list[CodeUse]:
-    """Generator codes, planned source codes and pipeline codes."""
-    return generator_codes() + planned_codes() + pipeline_codes()
+    """Generator codes, planned source codes, pipeline codes and extraction codes."""
+    return generator_codes() + planned_codes() + pipeline_codes() + extraction_codes()
 
 
 def uncoded_drugs() -> list[str]:

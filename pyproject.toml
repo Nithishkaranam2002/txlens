@@ -13,7 +13,18 @@ txlens-omop = { workspace = true }
 [tool.uv]
 # importlib-metadata 10.2 (released 2026-11-09) added an unverified new dependency
 # ("lazy-importer": no author, no source link). Stay on the established 9.x line.
-constraint-dependencies = ["importlib-metadata<10"]
+# Releases younger than two weeks are not taken (supply-chain safety). These caps hold back
+# transitive dependencies of litellm/instructor whose newest release was days old when added
+# (2026-11-11); lift them once those releases have aged.
+constraint-dependencies = [
+    "importlib-metadata<10",
+    "boto3<=1.43.120",
+    "botocore<=1.43.120",
+    "hf-xet<=1.7.0",
+    "markdown-it-py<4.3",
+    "regex<2026.11",
+    "typer<0.28",
+]
 
 [dependency-groups]
 dev = [
