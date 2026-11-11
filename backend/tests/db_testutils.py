@@ -82,3 +82,10 @@ def seed_row(conn: Connection, table: str, tenant: str, row_id: int) -> None:
     names = ", ".join(f'"{name}"' for name in values)
     params = ", ".join(f":{name}" for name in values)
     conn.execute(text(f"INSERT INTO cdm.{table} ({names}) VALUES ({params})"), values)
+
+
+def act_as_app(conn: Connection, tenant: str | None) -> None:
+    """Switch this transaction to the non-superuser app role, scoped to a tenant (or none)."""
+    conn.execute(text("SET LOCAL ROLE txlens_app"))
+    if tenant is not None:
+        conn.execute(text("SELECT set_config('app.tenant_id', :t, true)"), {"t": tenant})

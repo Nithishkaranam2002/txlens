@@ -1,4 +1,5 @@
-"""App tables (identity, users, tokens, cohorts): tenant isolation and the login lookup."""
+"""App tables (identity, users, tokens, cohorts, surveillance): tenant isolation and the login
+lookup."""
 
 from collections.abc import Callable
 from datetime import date
@@ -9,11 +10,14 @@ from sqlalchemy.exc import ProgrammingError
 
 pytestmark = pytest.mark.db
 AsApp = Callable[[Connection, str | None], None]
-ISOLATED = ("patient_identity", "app_user", "refresh_token", "cohort", "cohort_member")
+ISOLATED = ("patient_identity", "app_user", "refresh_token", "cohort", "cohort_member",
+            "surveillance_run", "surveillance_flag")  # fmt: skip
 USERS = {"center_a": "00000000-0000-0000-0000-00000000000a",
          "center_b": "00000000-0000-0000-0000-00000000000b"}  # fmt: skip
 COHORTS = {"center_a": "00000000-0000-0000-0000-0000000000ca",
            "center_b": "00000000-0000-0000-0000-0000000000cb"}  # fmt: skip
+RUNS = {"center_a": "00000000-0000-0000-0000-0000000000aa",
+        "center_b": "00000000-0000-0000-0000-0000000000bb"}  # fmt: skip
 
 
 @pytest.fixture
@@ -21,7 +25,8 @@ def app_rows(db: Connection) -> Connection:
     """One row per isolated app table per tenant, inserted by the owner."""
     for tenant, person_id in (("center_a", 1), ("center_b", 2)):
         user, cohort = USERS[tenant], COHORTS[tenant]
-        params = {"t": tenant, "p": person_id, "u": user, "c": cohort, "d": date(1970, 1, 2)}
+        params = {"t": tenant, "p": person_id, "u": user, "c": cohort, "d": date(1970, 1, 2),
+                  "r": RUNS[tenant]}  # fmt: skip
         for statement in (
             "INSERT INTO app.patient_identity (tenant_id, person_id, mrn, birth_date) "
             "VALUES (:t, :p, 'MRN' || :p, :d)",
@@ -32,6 +37,11 @@ def app_rows(db: Connection) -> Connection:
             "INSERT INTO app.cohort (cohort_id, tenant_id, name, rules, created_by, member_count) "
             "VALUES (:c, :t, 'c', '{}', :u, 1)",
             "INSERT INTO app.cohort_member (tenant_id, cohort_id, person_id) VALUES (:t, :c, :p)",
+            "INSERT INTO app.surveillance_run (run_id, tenant_id, as_of, configs, patients, "
+            "flags_opened, flags_cleared) VALUES (:r, :t, :d, '{}', 1, 1, 0)",
+            "INSERT INTO app.surveillance_flag (tenant_id, person_id, run_id, config_id, "
+            "config_version, rule_id, rule_group, severity, reason, evidence, evidence_key, "
+            "as_of) VALUES (:t, :p, :r, 'c', 1, 'r', 'g', 'high', 'why', '[]', 'k', :d)",
         ):
             db.execute(text(statement), params)
     return db

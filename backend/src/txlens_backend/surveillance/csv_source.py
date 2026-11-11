@@ -66,12 +66,17 @@ def load(
         r["patient_id"]: r for r in rows(root / "patients.csv")
         if r.get("program", r.get("organ")) == config.program
     }  # fmt: skip
-    values: dict[str, dict[str, list[Observation]]] = defaultdict(lambda: defaultdict(list))
+    # Collected-at timestamps keep same-day results in the order the database returns them.
+    values: dict[str, dict[str, list[tuple[datetime, Observation]]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
     for lab in rows(root / "labs.csv"):
         wanted = lab["patient_id"] in patients and lab["lab"] in config.markers
         if wanted and lab["value"] and lab.get("lab_id") not in skipped:
-            day = datetime.fromisoformat(lab["collected_at"]).date()
-            values[lab["patient_id"]][lab["lab"]].append(Observation(day, float(lab["value"])))
+            at = datetime.fromisoformat(lab["collected_at"])
+            values[lab["patient_id"]][lab["lab"]].append(
+                (at, Observation(at.date(), float(lab["value"])))
+            )
     ends = end_dates(root)
     return {
         pid: CsvPatient(row["tenant_id"], PatientSeries(
@@ -79,7 +84,7 @@ def load(
             program=config.program,
             anchor_date=date.fromisoformat(row[config.anchor]),
             end_date=ends.get(pid),
-            observations={m: tuple(sorted(obs, key=lambda o: o.day))
+            observations={m: tuple(o for _, o in sorted(obs, key=lambda x: x[0]))
                           for m, obs in values[pid].items()},
         ))
         for pid, row in patients.items()

@@ -6,6 +6,7 @@ makes that a failure, so CI can never pass by silently skipping them.
 
 import os
 from collections.abc import Callable, Iterator
+from datetime import date
 
 import psycopg
 import pytest
@@ -16,6 +17,7 @@ from api_testutils import API_TENANTS, BASE_URL, PASSWORDS
 from db_testutils import (
     SEED_ORDER,
     TENANTS,
+    act_as_app,
     admin_connection,
     create_database,
     drop_database,
@@ -33,6 +35,10 @@ from txlens_backend.api.deps import CSRF_HEADER, Role
 from txlens_backend.config import Settings
 from txlens_backend.db_setup import ensure_login_role
 from txlens_backend.seed_users import demo_passwords, seed_users
+from txlens_backend.surveillance.run import run_tenant, transplant_configs
+
+# The date the API tests' surveillance run is "as of" (inside the generated follow-up).
+SURVEILLANCE_AS_OF = date(2025, 6, 30)
 
 
 @pytest.fixture(scope="session")
@@ -75,13 +81,6 @@ def db(engine: Engine) -> Iterator[Connection]:
 
 
 AsApp = Callable[[Connection, str | None], None]
-
-
-def act_as_app(conn: Connection, tenant: str | None) -> None:
-    """Switch this transaction to the non-superuser app role, scoped to a tenant (or none)."""
-    conn.execute(text("SET LOCAL ROLE txlens_app"))
-    if tenant is not None:
-        conn.execute(text("SELECT set_config('app.tenant_id', :t, true)"), {"t": tenant})
 
 
 @pytest.fixture
@@ -187,3 +186,23 @@ def client(api_app: FastAPI, api_owner: Engine) -> Iterator[TestClient]:
         conn.execute(text("DELETE FROM app.login_attempt"))
     with TestClient(api_app, base_url=BASE_URL, headers={CSRF_HEADER: "test"}) as test_client:
         yield test_client
+
+
+@pytest.fixture(scope="session")
+def api_flags(api_app: FastAPI, api_database: str, app_login: tuple[str, str]) -> date:
+    """Surveillance flags for every API center, committed, as of SURVEILLANCE_AS_OF."""
+    eng = login_engine(api_database, app_login)
+    for tenant in API_TENANTS:
+        run_tenant(eng, tenant, SURVEILLANCE_AS_OF, transplant_configs())
+    eng.dispose()
+    return SURVEILLANCE_AS_OF
+
+
+@pytest.fixture
+def api_tx(api_owner: Engine, api_app: FastAPI) -> Iterator[Connection]:
+    """Owner connection to the API database (data and users loaded) in a transaction that is
+    rolled back afterwards; switch it to the app role with `act_as_app`."""
+    with api_owner.connect() as conn:
+        transaction = conn.begin()
+        yield conn
+        transaction.rollback()
