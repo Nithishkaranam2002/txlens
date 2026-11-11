@@ -259,7 +259,7 @@ def upgrade() -> None:
         isolate(table)
     create_load_function()
     op.execute("GRANT SELECT, INSERT, UPDATE ON app.document TO txlens_app")
-    op.execute("GRANT SELECT, INSERT ON app.extraction TO txlens_app")
+    op.execute("GRANT SELECT, INSERT, UPDATE ON app.extraction TO txlens_app")
     op.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON app.extracted_field TO txlens_app")
     op.execute("GRANT SELECT, INSERT ON app.document_review TO txlens_app")
     op.execute("GRANT SELECT, INSERT, DELETE ON app.document_cdm_row TO txlens_app")

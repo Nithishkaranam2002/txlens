@@ -9,8 +9,9 @@ RLS, so each table is COPYed into a temporary staging table first and then moved
 INSERT ... SELECT, which passes the RLS WITH CHECK policy.
 
 Everything for one tenant is one transaction: delete the tenant's rows, insert the new ones,
-check the counts, write one audit_log row per table. A re-run therefore replaces rather than
-duplicates, and a failure leaves the previous load in place.
+check the counts, restore the biopsy results extracted from pathology reports, and write one
+audit_log row per step. A re-run therefore replaces rather than duplicates, and a failure
+leaves the previous load in place.
 """
 
 import os
@@ -39,6 +40,9 @@ LOAD_ORDER = (
 )
 # Tables outside the OMOP schema.
 APP_TABLES = {"patient_identity"}
+# Conditions and measurements extracted from biopsy reports live in app tables (the document
+# workflow's source of truth) and are copied back into cdm after every reload.
+BIOPSY_RESULTS = "biopsy_results"
 
 
 class UnsafeLoadError(RuntimeError):
@@ -146,4 +150,12 @@ def load_tenant(
             if stored is None or stored[0] != inserted[table]:
                 raise RuntimeError(f"{table}: {stored} rows stored, {inserted[table]} sent")
             audit(conn, table, batch_id, deleted[table], inserted[table])
+        inserted[BIOPSY_RESULTS] = restore_biopsy_results(conn)
+        audit(conn, BIOPSY_RESULTS, batch_id, 0, inserted[BIOPSY_RESULTS])
     return inserted
+
+
+def restore_biopsy_results(conn: Connection) -> int:
+    """Copy reviewed biopsy results (app tables) back into cdm after the reload removed them."""
+    row = conn.execute("SELECT app.load_biopsy_results()").fetchone()
+    return int(str(row[0])) if row else 0

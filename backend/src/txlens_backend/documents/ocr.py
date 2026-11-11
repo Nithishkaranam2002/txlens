@@ -16,7 +16,7 @@ Two engines produce the same `OcrResult`:
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import pymupdf
 import pytesseract
@@ -190,3 +190,36 @@ def ocr_pdf(path: Path, engine: Engine = "tesseract") -> OcrResult:
         if result is not None and result.word_count >= MIN_WORDS:
             return result
     return ocr_with_tesseract(path)
+
+
+def to_json(result: OcrResult) -> dict[str, Any]:
+    """The result as plain JSON (stored on app.document)."""
+    return {
+        "engine": result.engine,
+        "pages": [[p.width, p.height] for p in result.pages],
+        "lines": [
+            {
+                "line_no": line.line_no,
+                "page": line.page,
+                "words": [[w.text, list(w.bbox), w.confidence] for w in line.words],
+            }
+            for line in result.lines
+        ],
+    }
+
+
+def from_json(data: dict[str, Any]) -> OcrResult:
+    """Rebuild a result stored with `to_json`."""
+    lines = tuple(
+        Line(
+            line["line_no"],
+            line["page"],
+            tuple(
+                Word(text, (box[0], box[1], box[2], box[3]), conf)
+                for text, box, conf in line["words"]
+            ),
+        )
+        for line in data["lines"]
+    )
+    pages = tuple(PageSize(width, height) for width, height in data["pages"])
+    return OcrResult(data["engine"], pages, lines)

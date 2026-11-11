@@ -17,6 +17,9 @@ PERSON = ["tenant_id", "person_id", "gender_concept_id", "year_of_birth", "race_
           "ethnicity_concept_id"]  # fmt: skip
 DEATH = ["tenant_id", "person_id", "death_date"]
 IDENTITY = ["tenant_id", "person_id", "mrn", "given_name", "family_name", "birth_date"]
+PROCEDURE = ["tenant_id", "procedure_occurrence_id", "person_id", "procedure_concept_id",
+             "procedure_date", "procedure_type_concept_id"]  # fmt: skip
+DOCUMENT = "00000000-0000-0000-0000-00000000d0c1"
 Conn = psycopg.Connection[tuple[object, ...]]
 
 
@@ -72,11 +75,12 @@ def test_reload_replaces_rows_and_tenants_stay_isolated(urls: tuple[str, str]) -
             "person": 2,
             "death": 1,
             "patient_identity": 2,
+            "biopsy_results": 0,
         }
         load_tenant(conn, "center_a", people("center_a", [1, 2, 3]), "b2")  # re-run
         load_tenant(conn, "center_b", people("center_b", [9]), "b2")
-        assert counts(conn, "center_a") == (3, 3, 6)  # no duplicates; 3 audit rows per load
-        assert counts(conn, "center_b") == (1, 1, 3)
+        assert counts(conn, "center_a") == (3, 3, 8)  # no duplicates; 4 audit rows per load
+        assert counts(conn, "center_b") == (1, 1, 4)
         assert counts(conn, None) == (0, 0, 0)  # no tenant set: nothing visible
 
 
@@ -105,3 +109,47 @@ def test_superuser_connection_is_refused(urls: tuple[str, str]) -> None:
     owner, _ = urls
     with psycopg.connect(owner, autocommit=True) as conn, pytest.raises(UnsafeLoadError):
         load_tenant(conn, "center_a", people("center_a", [1]), "b5")
+
+
+def add_approved_biopsy_result(owner: str) -> None:
+    """An approved document for center_a person 50's biopsy, with one TCMR condition row."""
+    with psycopg.connect(owner, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO app.document (document_id, tenant_id, sha256, source_path, workflow_id, "
+            "organ, status, person_id, procedure_occurrence_id) VALUES "
+            "(%s, 'center_a', repeat('a', 64), 'x.pdf', 'wf', 'kidney', 'approved', 50, 500)",
+            (DOCUMENT,),
+        )
+        conn.execute(
+            "INSERT INTO app.extracted_field (tenant_id, document_id, field, value, "
+            "passes_agree, confidence) VALUES ('center_a', %s, 'diagnosis', 'TCMR', true, 1)",
+            (DOCUMENT,),
+        )
+        conn.execute(
+            "INSERT INTO app.document_cdm_row (tenant_id, document_id, field, cdm_table, "
+            "concept_id, source_concept_id, source_value) VALUES "
+            "('center_a', %s, 'diagnosis', 'condition_occurrence', 4127550, 0, 'TCMR IA')",
+            (DOCUMENT,),
+        )
+
+
+def test_reviewed_biopsy_results_survive_a_reload(urls: tuple[str, str]) -> None:
+    owner, app = urls
+    tables = people("center_a", [50]) | {
+        "procedure_occurrence": TableRows(
+            PROCEDURE, [("center_a", 500, 50, 4322471, date(2024, 5, 6), 32817)]
+        )
+    }
+    with psycopg.connect(app, autocommit=True) as conn:
+        load_tenant(conn, "center_a", tables, "b7")
+    add_approved_biopsy_result(owner)
+    for batch in ("b8", "b9"):  # every reload restores the row, never duplicates it
+        with psycopg.connect(app, autocommit=True) as conn:
+            assert load_tenant(conn, "center_a", tables, batch)["biopsy_results"] == 1
+    with psycopg.connect(owner) as conn:
+        rows = conn.execute(
+            "SELECT person_id, condition_concept_id, condition_start_date, "
+            "condition_type_concept_id, condition_source_value FROM cdm.condition_occurrence "
+            "WHERE condition_occurrence_id >= 2100000000"
+        ).fetchall()
+    assert rows == [(50, 4127550, date(2024, 5, 6), 32858, "TCMR IA")]
