@@ -113,6 +113,7 @@ class Filters:
     organ: Organ | None = None
     donor_type: DonorType | None = None
     status: Status | None = None
+    cohort_id: str | None = None  # only members of this saved cohort
 
 
 @dataclass(frozen=True)
@@ -130,7 +131,9 @@ class Viewer:
 FILTERS = (
     "(CAST(:organ AS text) IS NULL OR f.organ = :organ) "
     "AND (CAST(:donor_type AS text) IS NULL OR f.donor_type = :donor_type) "
-    "AND (CAST(:status AS text) IS NULL OR f.status = :status)"
+    "AND (CAST(:status AS text) IS NULL OR f.status = :status) "
+    "AND (CAST(:cohort_id AS text) IS NULL OR f.person_id IN "
+    "(SELECT person_id FROM app.cohort_member WHERE cohort_id::text = :cohort_id))"
 )
 IDENTIFIED_SEARCH = (
     "(CAST(:q AS text) IS NULL OR i.mrn = :q OR i.given_name ILIKE :like "
@@ -156,15 +159,21 @@ def deidentified_query(select: str, tail: str = "") -> str:
     )
 
 
+def query_params(viewer: Viewer, filters: Filters) -> dict[str, object]:
+    """Bind parameters for the facts CTE, the filters and the pseudonym key."""
+    q = filters.q.strip() if filters.q else None
+    return dict(FACTS_PARAMS) | {
+        "organ": filters.organ, "donor_type": filters.donor_type, "status": filters.status,
+        "cohort_id": filters.cohort_id, "q": q, "like": f"%{q or ''}%",
+        "deid_key": viewer.deid_key,
+    }  # fmt: skip
+
+
 def list_patients(
     conn: Connection, viewer: Viewer, filters: Filters, limit: int, offset: int
 ) -> tuple[list[IdentifiedPatient] | list[DeidentifiedPatient], int]:
     """One page of patients and the total matching the filters."""
-    params = dict(FACTS_PARAMS) | {
-        "organ": filters.organ, "donor_type": filters.donor_type, "status": filters.status,
-        "q": filters.q.strip() if filters.q else None, "like": f"%{(filters.q or '').strip()}%",
-        "limit": limit, "offset": offset, "deid_key": viewer.deid_key,
-    }  # fmt: skip
+    params = query_params(viewer, filters) | {"limit": limit, "offset": offset}
     build = identified_query if viewer.identified else deidentified_query
     total = int(conn.execute(text(build("count(*)")), params).scalar_one())
     if viewer.identified:
@@ -206,8 +215,7 @@ def deidentified(row: Row[tuple[object, ...]], viewer: Viewer) -> DeidentifiedPa
 
 def find_person(conn: Connection, viewer: Viewer, patient_id: str) -> int | None:
     """The person_id behind a path id (person_id or pseudonym), or None if not in this tenant."""
-    params = dict(FACTS_PARAMS) | {"organ": None, "donor_type": None, "status": None,
-                                   "q": None, "like": "%", "deid_key": viewer.deid_key}  # fmt: skip
+    params = query_params(viewer, Filters())
     if viewer.identified:
         if not patient_id.isdigit():
             return None
@@ -224,9 +232,7 @@ def find_person(conn: Connection, viewer: Viewer, patient_id: str) -> int | None
 
 def patient_row(conn: Connection, viewer: Viewer, person_id: int) -> Row[tuple[object, ...]]:
     """The facts row (with identity or pseudonym) of one person."""
-    params = dict(FACTS_PARAMS) | {"organ": None, "donor_type": None, "status": None,
-                                   "q": None, "like": "%", "deid_key": viewer.deid_key,
-                                   "p": person_id}  # fmt: skip
+    params = query_params(viewer, Filters()) | {"p": person_id}
     if viewer.identified:
         query = identified_query(
             "f.*, i.mrn, i.given_name, i.family_name, i.birth_date", "AND f.person_id = :p"
