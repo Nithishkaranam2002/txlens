@@ -12,6 +12,7 @@ filter cannot tell them from a re-sent row, so one is removed. Such pairs are co
 """
 
 import argparse
+import csv
 import json
 from collections import defaultdict
 from collections.abc import Sequence
@@ -49,9 +50,13 @@ LAYER_TABLES = {
     "silver": ("patients", "encounters", "procedures", "conditions", "medications", "labs",
                "lab_duplicates", "notes", "quarantine"),
     "gold": ("person", "observation_period", "visit_occurrence", "condition_occurrence",
-             "drug_exposure", "measurement", "procedure_occurrence", "death", "note",
-             "cdm_source", "patient_identity", "lineage", "mapping_gaps"),
+             "observation", "drug_exposure", "measurement", "procedure_occurrence", "death", "note",
+             "cdm_source", "patient_identity", "note_phi_span", "lineage", "mapping_gaps"),
 }  # fmt: skip
+
+
+CONDITION_METHODS = ("code", "reviewed", "exact", "normalized", "fuzzy", "unmapped")
+REVIEW_CSV = "evals/reports/condition_mapping_review.csv"
 
 
 @dataclass(frozen=True)
@@ -406,12 +411,167 @@ def coverage(lake: Lake) -> list[tuple[str, str, str, int, int]]:
     return rows
 
 
-def postgres_counts(tenants: Sequence[str]) -> dict[tuple[str, str], int] | None:
-    """(tenant, table) -> rows in Postgres as the app role; None if Postgres is unavailable."""
+# A note leaks if it still holds its own patient's MRN, a name (whole word, any case) or the
+# birth date in any style the notes use. Same rule for gold (Spark) and Postgres (SQL).
+LEAK_SQL = """
+    position(lower(i.mrn) in lower(n.note_text)) > 0
+    OR (length(trim(i.given_name)) > 1
+        AND n.note_text ~* ('\\m' || trim(i.given_name) || '\\M'))
+    OR (length(trim(i.family_name)) > 1
+        AND n.note_text ~* ('\\m' || trim(i.family_name) || '\\M'))
+    OR position(to_char(i.birth_date, 'YYYY-MM-DD') in n.note_text) > 0
+    OR position(to_char(i.birth_date, 'MM/DD/YYYY') in n.note_text) > 0
+    OR position(to_char(i.birth_date, 'FMMM/FMDD/YY') in n.note_text) > 0
+"""
+
+
+def leaked(text: str, mrn: str, given: str, family: str, born: str) -> Column:
+    """True when a note text column still holds its patient's identifiers (see LEAK_SQL)."""
+
+    def word(name: str) -> str:
+        pattern = f"concat('(?i)\\\\b', trim({name}), '\\\\b')"
+        return f"(length(trim({name})) > 1 AND coalesce({text} rlike {pattern}, false))"
+
+    short = f"concat_ws('/', month({born}), dayofmonth({born}), date_format({born}, 'yy'))"
+    return F.expr(
+        f"instr(lower({text}), lower({mrn})) > 0 OR {word(given)} OR {word(family)} "
+        f"OR instr({text}, date_format({born}, 'yyyy-MM-dd')) > 0 "
+        f"OR instr({text}, date_format({born}, 'MM/dd/yyyy')) > 0 "
+        f"OR instr({text}, {short}) > 0"
+    )
+
+
+def check_note_deid(lake: Lake) -> Check:
+    """No gold note holds an identifier of its own patient."""
+    notes = lake.read("gold", "note").join(lake.read("gold", "patient_identity"), "person_id")
+    total = count(notes)
+    leaks = count(
+        notes.where(leaked("note_text", "mrn", "given_name", "family_name", "birth_date"))
+    )  # fmt: skip
+    return Check("notes: no identifier of the patient left in cdm.note text (gold)", 0, leaks,
+                 leaks == 0, f"{total:,} notes checked (MRN, names, birth date)")  # fmt: skip
+
+
+def postgres_note_leaks(tenants: Sequence[str]) -> int | None:
+    """Loaded notes that still hold an identifier from app.patient_identity (as the app role)."""
     try:
         import psycopg
 
-        from txlens_pipelines.load.postgres import LOAD_ORDER, database_url, schema_of
+        from txlens_pipelines.load.postgres import database_url
+
+        leaks = 0
+        with psycopg.connect(database_url(), autocommit=True, connect_timeout=3) as conn:
+            for tenant in tenants:
+                with conn.transaction():
+                    conn.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant,))
+                    row = conn.execute(
+                        "SELECT count(*) FROM cdm.note n JOIN app.patient_identity i "
+                        f"USING (person_id) WHERE {LEAK_SQL}"
+                    ).fetchone()
+                    leaks += int(str(row[0])) if row else 0
+        return leaks
+    except (ImportError, SystemExit, Exception) as error:  # no psycopg, no URL, no server
+        print(f"Postgres note check skipped: {error}")
+        return None
+
+
+def condition_methods(lake: Lake) -> list[tuple[str, dict[str, int], dict[str, int]]]:
+    """Per tenant: FHIR condition rows by mapping method, and by OMOP domain (mapped rows)."""
+    conditions = lake.read("silver", "conditions")
+    methods = conditions.groupBy("tenant_id", "mapping_method").count().collect()
+    domains = (
+        conditions.where(F.col("condition_concept_id") != 0)
+        .groupBy("tenant_id", "domain_id").count().collect()
+    )  # fmt: skip
+    tenants = sorted({r.tenant_id for r in methods})
+    return [
+        (tenant,
+         {r.mapping_method: int(r["count"]) for r in methods if r.tenant_id == tenant},
+         {r.domain_id: int(r["count"]) for r in domains if r.tenant_id == tenant})
+        for tenant in tenants
+    ]  # fmt: skip
+
+
+def render_conditions(
+    by_tenant: Sequence[tuple[str, dict[str, int], dict[str, int]]],
+) -> list[str]:
+    """Coverage of FHIR conditions with codes only (before Step 2.2) and with text matching,
+    rows per mapping method, and where mapped rows went (condition_occurrence/observation)."""
+    rows, method_rows = [], []
+    totals = {m: 0 for m in CONDITION_METHODS} | {"Condition": 0, "Observation": 0}
+    for tenant, methods, domains in [*by_tenant, ("**all**", {}, {})]:
+        if tenant == "**all**":
+            methods = {m: totals[m] for m in CONDITION_METHODS}
+            domains = {d: totals[d] for d in ("Condition", "Observation")}
+        else:
+            for key, value in (methods | domains).items():
+                totals[key] += value
+        total = sum(methods.values())
+        coded = methods.get("code", 0)
+        mapped = total - methods.get("unmapped", 0)
+        rows.append((tenant, total, coded, f"{coded / total:.1%}" if total else "-",
+                     mapped, f"{mapped / total:.1%}" if total else "-",
+                     domains.get("Condition", 0), domains.get("Observation", 0)))  # fmt: skip
+        method_rows.append((tenant, *(methods.get(m, 0) for m in CONDITION_METHODS)))
+    return [
+        "## Free-text conditions (Step 2.2)",
+        "",
+        "Every FHIR Condition, whichever OMOP table its concept's domain sends it to. "
+        "\"Codes only\" is what the pipeline mapped before Step 2.2; text matching adds the "
+        "reviewed map, exact name or synonym, normalized and fuzzy matches (fuzzy accepted at "
+        ">= 0.90 and only when type, acuity, side, grade, stage and numbers match exactly). "
+        f"Unmapped texts and their best suggestion are in `{REVIEW_CSV}`.",
+        "",
+        *table(["Tenant", "Conditions", "Codes only", "Coverage before", "Mapped now",
+                "Coverage now", "-> condition_occurrence", "-> observation"], rows),
+        "",
+        "Rows by mapping method:",
+        "",
+        *table(["Tenant", *CONDITION_METHODS], method_rows),
+        "",
+    ]  # fmt: skip
+
+
+def write_review_csv(lake: Lake, vocab_root: str, path: str) -> None:
+    """Unmapped condition texts with the matcher's suggestion, for a reviewer."""
+    spark = lake.spark
+    names = (
+        spark.read.option("sep", "\t").option("header", True).option("quote", "\u0000")
+        .csv(f"{vocab_root}/CONCEPT.csv")
+        .select(F.col("concept_id").cast("int").alias("suggested_concept_id"),
+                F.col("concept_name").alias("suggested_name"))
+    )  # fmt: skip
+    gaps = (
+        lake.read("gold", "mapping_gaps")
+        .where(F.col("omop_table") == "condition_occurrence")
+        .join(names, "suggested_concept_id", "left")
+        .orderBy(F.desc("rows"), "tenant_id", "source_value")
+        .collect()
+    )
+    with open(path, "w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["tenant_id", "source_value", "rows", "review_reason",
+                         "suggested_concept_id", "suggested_name", "suggestion_score"])  # fmt: skip
+        writer.writerows(
+            [g.tenant_id, g.source_value, g.rows, g.review_reason,
+             g.suggested_concept_id, g.suggested_name, g.suggestion_score]
+            for g in gaps
+        )  # fmt: skip
+
+
+def postgres_counts(tenants: Sequence[str]) -> dict[tuple[str, str], int] | None:
+    """(tenant, table) -> pipeline rows in Postgres as the app role; None if Postgres is
+    unavailable."""
+    try:
+        import psycopg
+
+        from txlens_pipelines.load.postgres import (
+            FIRST_APP_ROW_ID,
+            LOAD_ORDER,
+            database_url,
+            schema_of,
+        )
+        from txlens_pipelines.omop_schema import PRIMARY_KEYS
 
         result = {}
         with psycopg.connect(database_url(), autocommit=True, connect_timeout=3) as conn:
@@ -420,7 +580,10 @@ def postgres_counts(tenants: Sequence[str]) -> dict[tuple[str, str], int] | None
                     conn.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant,))
                     for table in LOAD_ORDER:
                         name = f"{schema_of(table)}.{table}"
-                        row = conn.execute(f"SELECT count(*) FROM {name}").fetchone()
+                        key = PRIMARY_KEYS.get(table, ())
+                        # Only the pipeline's rows: extraction results are copied back later.
+                        where = f" WHERE {key[0]} < {FIRST_APP_ROW_ID}" if key else ""
+                        row = conn.execute(f"SELECT count(*) FROM {name}{where}").fetchone()
                         result[(tenant, table)] = int(str(row[0])) if row else 0
         return result
     except (ImportError, SystemExit, Exception) as error:  # no psycopg, no URL, no server
@@ -458,6 +621,7 @@ def render(
     cover: list[tuple[str, str, str, int, int]],
     gaps: list[tuple[str, str, str, str, str, int]],
     maintenance: Sequence[MaintenanceGap] = (),
+    conditions: Sequence[tuple[str, dict[str, int], dict[str, int]]] = (),
 ) -> str:
     """The report as markdown."""
     passed = sum(c.passed for c in checks)
@@ -505,8 +669,8 @@ def render(
         + [(t, f, "**all**", m, n, f"**{m / n:.1%}**" if n else "-")
            for (t, f), (m, n) in totals.items()],
     )  # fmt: skip
+    out += ["", *(render_conditions(conditions) if conditions else [])]
     out += [
-        "",
         "## Mapping gaps (review queue, largest first)",
         "",
         *table(["Tenant", "Table", "Field", "Source value", "Reason", "Rows"], gaps),
@@ -540,8 +704,13 @@ def build_report(
     ]
     tenants = sorted(r.tenant_id for r in patients.select("tenant_id").distinct().collect())
     pg = postgres_counts(tenants) if postgres else None
+    checks.append(check_note_deid(lake))
     if pg is not None:
         checks.append(check_postgres(lake, pg))
+        leaks = postgres_note_leaks(tenants)
+        if leaks is not None:
+            checks.append(Check("notes: no identifier from app.patient_identity in cdm.note "
+                                "(Postgres)", 0, leaks, leaks == 0))  # fmt: skip
     reasons = [
         (r.entity, r.tenant_id, r.reason_code, int(r["count"]))
         for r in lake.read("silver", "quarantine")
@@ -553,7 +722,11 @@ def build_report(
         for r in lake.read("gold", "mapping_gaps").orderBy(F.desc("rows"), "source_value")
         .limit(25).collect()
     ]  # fmt: skip
-    report = render(checks, layer_counts(lake), reasons, coverage(lake), gaps, maintenance)
+    write_review_csv(lake, vocab_root, REVIEW_CSV)
+    report = render(
+        checks, layer_counts(lake), reasons, coverage(lake), gaps, maintenance,
+        condition_methods(lake),
+    )  # fmt: skip
     return report, checks
 
 

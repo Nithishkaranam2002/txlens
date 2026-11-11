@@ -54,6 +54,8 @@ CONCEPTS = [
     (4121617, "Condition", "SNOMED", "Disorder", "S", "233934000", "cardiac transplant failure"),
     (4127554, "Condition", "SNOMED", "Disorder", "S", "236583003", "failed renal transplant"),
     (2100000900, "Condition", "SNOMED", "Disorder", "", "TEST-OLD-ESRD", "outdated esrd code"),
+    (4059356, "Observation", "SNOMED", "Context-dependent", "", "161665007", "h/o renal tx"),
+    (1340204, "Observation", "OMOP Extension", "Context-dependent", "S", "OMOP5165859", "event"),
     (4132161, "Route", "SNOMED", "Qualifier Value", "S", "26643006", "oral"),
     (4171047, "Route", "SNOMED", "Qualifier Value", "S", "47625008", "intravenous"),
     (3000735, "Note", "LOINC", "Doc Kind", "S", "11506-3", "progress note"),
@@ -69,7 +71,8 @@ RELATIONSHIPS = [
     (19087946, 19136207, "Brand name of"),
     (19011227, 1703063, "Brand name of"),
 ]
-SYNONYMS = [(950637, "TEST ONLY - FK-506 synonym")]
+# Generic words, as a center would write them (no licensed vocabulary text).
+SYNONYMS = [(950637, "TEST ONLY - FK-506 synonym"), (316866, "Hypertension")]
 VALID = "19700101\t20991231"
 HEADER = (
     "concept_id\tconcept_name\tdomain_id\tvocabulary_id\tconcept_class_id\tstandard_concept\t"
@@ -95,6 +98,8 @@ def write_vocab(folder: Path) -> Path:
         "invalid_reason\n"
         + "".join(f"{a}\t{b}\t{r}\t19700101\t20991231\t\n" for a, b, r in RELATIONSHIPS)
         + "2100000900\t193782\tMaps to\t19700101\t20991231\t\n"
+        + "4059356\t1340204\tMaps to\t19700101\t20991231\t\n"
+        + "4059356\t4322471\tMaps to value\t19700101\t20991231\t\n"
     )
     (folder / "VOCABULARY.csv").write_text(
         "vocabulary_id\tvocabulary_name\tvocabulary_reference\tvocabulary_version\t"

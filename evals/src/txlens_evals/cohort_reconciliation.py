@@ -111,13 +111,11 @@ CASES = [
     Case("transplant in 2024 (whole year)",
          CohortRules(transplant_date=DateRange(start=date(2024, 1, 1), end=date(2024, 12, 31))),
          lambda t, p: p["transplant_date"].startswith("2024")),
+    # Exact since Step 2.2 mapped free-text conditions (it found 428 of 820 on codes only).
+    # Extra members would show family-history diabetes leaking in from note NLP.
     Case("any diabetes mellitus (73211009 and descendants)",
          CohortRules(condition_concept_ids=[DIABETES_MELLITUS]),
-         lambda t, p: p["diabetes"] == "true",
-         known_gap="Center B sends conditions as free text only, center C codes about half. "
-         "Uncoded conditions get concept 0 and are listed in the mapping-gaps report; text "
-         "mapping comes with clinical NLP (Phase 2). Where conditions are coded, the rule is "
-         "exact."),
+         lambda t, p: p["diabetes"] == "true"),
 ]  # fmt: skip
 
 

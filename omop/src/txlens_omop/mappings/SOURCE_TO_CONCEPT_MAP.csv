@@ -55,3 +55,13 @@ valgan	0	TXLENS_DRUG	clinical abbreviation 'valgan'	1703063	RxNorm	20261110	2099
 heart transplant - deceased donor	0	TXLENS_PROCEDURE	Heart transplant - deceased donor	4137127	SNOMED	20261110	20991231	
 kidney transplant - deceased donor	0	TXLENS_PROCEDURE	Kidney transplant - deceased donor	4021107	SNOMED	20261110	20991231	
 kidney transplant - living donor	0	TXLENS_PROCEDURE	Kidney transplant - living donor	4022805	SNOMED	20261110	20991231	
+type 2 diabetes	0	TXLENS_CONDITION	Type 2 diabetes	201826	SNOMED	20261111	20991231	
+history of prior kidney transplant	0	TXLENS_CONDITION	History of prior kidney transplant (via Maps to: History of event + Transplant of kidney)	4059356	SNOMED	20261111	20991231	
+kidney graft failure - chronic graft dysfunction	0	TXLENS_CONDITION	Kidney graft failure - chronic graft dysfunction (same concept center A codes)	4127554	SNOMED	20261111	20991231	
+kidney graft failure - rejection (abmr)	0	TXLENS_CONDITION	Kidney graft failure - rejection (ABMR) (same concept center A codes)	4127554	SNOMED	20261111	20991231	
+kidney graft failure - rejection (tcmr)	0	TXLENS_CONDITION	Kidney graft failure - rejection (TCMR) (same concept center A codes)	4127554	SNOMED	20261111	20991231	
+kidney graft failure - rejection (mixed)	0	TXLENS_CONDITION	Kidney graft failure - rejection (mixed) (same concept center A codes)	4127554	SNOMED	20261111	20991231	
+heart graft failure - chronic graft dysfunction	0	TXLENS_CONDITION	Heart graft failure - chronic graft dysfunction (same concept center A codes)	4121617	SNOMED	20261111	20991231	
+heart graft failure - rejection (abmr)	0	TXLENS_CONDITION	Heart graft failure - rejection (ABMR) (same concept center A codes)	4121617	SNOMED	20261111	20991231	
+heart graft failure - rejection (tcmr)	0	TXLENS_CONDITION	Heart graft failure - rejection (TCMR) (same concept center A codes)	4121617	SNOMED	20261111	20991231	
+heart graft failure - rejection (mixed)	0	TXLENS_CONDITION	Heart graft failure - rejection (mixed) (same concept center A codes)	4121617	SNOMED	20261111	20991231	

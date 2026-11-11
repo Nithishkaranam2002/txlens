@@ -2,7 +2,7 @@
 
 import argparse
 
-from txlens_pipelines.config import PipelineConfig
+from txlens_pipelines.config import PipelineConfig, deid_key_from_env
 from txlens_pipelines.pipeline import LAYER_FUNCTIONS, run
 from txlens_pipelines.runtime import LocalRuntime
 
@@ -27,7 +27,9 @@ def main(argv: list[str] | None = None) -> int:
     from txlens_pipelines.spark import build_spark_session
 
     args = parse_args(argv)
-    config = PipelineConfig(args.raw_root, args.vocab_root).only(args.tenant)
+    config = PipelineConfig(args.raw_root, args.vocab_root, deid_key=deid_key_from_env()).only(
+        args.tenant
+    )
     spark = build_spark_session("txlens-pipeline")
     try:
         runtime = LocalRuntime(spark, args.raw_root, args.vocab_root, args.lake_root)

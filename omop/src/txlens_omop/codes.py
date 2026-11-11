@@ -79,6 +79,35 @@ EXTRACTION_CODES = {
     ),
     ("SNOMED", "28944009"): ("cytomegalovirus infection", "Condition"),
 }
+# Concepts that free-text condition names (FHIR text, clinic notes) map to by name or synonym
+# (Step 2.2). The qualifier variants (type 1 diabetes, CKD stages, chronic rejection) are here
+# so the matcher can tell them apart instead of falling back to the nearest name.
+TEXT_CONDITION_CODES = {
+    ("SNOMED", "236407003"): ("IgA nephropathy", "Condition"),
+    ("SNOMED", "236403004"): ("focal segmental glomerulosclerosis", "Condition"),
+    ("SNOMED", "473392002"): ("hypertensive nephrosclerosis", "Condition"),
+    ("SNOMED", "127013003"): ("diabetic kidney disorder (diabetic nephropathy)", "Condition"),
+    ("SNOMED", "68815009"): ("SLE glomerulonephritis (lupus nephritis)", "Condition"),
+    ("SNOMED", "82525005"): ("multiple congenital kidney cysts (polycystic kidney disease)",
+                             "Condition"),
+    ("SNOMED", "399020009"): ("dilated cardiomyopathy", "Condition"),
+    ("SNOMED", "233873004"): ("hypertrophic cardiomyopathy", "Condition"),
+    ("SNOMED", "194849004"): ("ischemic myocardial dysfunction (ischemic cardiomyopathy)",
+                              "Condition"),
+    ("SNOMED", "161665007"): ("history of renal transplant (History of event + value)",
+                              "Observation"),
+    ("SNOMED", "46635009"): ("type 1 diabetes mellitus", "Condition"),
+    ("SNOMED", "433144002"): ("chronic kidney disease stage 3", "Condition"),
+    ("SNOMED", "431857002"): ("chronic kidney disease stage 4", "Condition"),
+    ("SNOMED", "236578006"): ("chronic rejection of renal transplant", "Condition"),
+    ("SNOMED", "426136000"): ("delayed renal graft function", "Condition"),
+    ("SNOMED", "386661006"): ("fever", "Condition"),
+    ("SNOMED", "267038008"): ("edema", "Condition"),
+    ("SNOMED", "267036007"): ("dyspnea", "Condition"),
+    ("SNOMED", "49650001"): ("dysuria", "Condition"),
+    ("SNOMED", "80313002"): ("palpitations", "Condition"),
+    ("SNOMED", "53741008"): ("coronary arteriosclerosis", "Condition"),
+}  # fmt: skip
 # TxLens local concepts (LOCAL_CONCEPT.csv, by concept_code) the extraction writes. They are
 # non-standard: OMOP rows get concept_id 0 and the local id as the source concept.
 EXTRACTION_LOCAL_CODES = {
@@ -157,9 +186,23 @@ def extraction_codes() -> list[CodeUse]:
     ]
 
 
+def text_condition_codes() -> list[CodeUse]:
+    """Condition concepts that free text (FHIR text, notes) maps to by name or synonym."""
+    return [
+        CodeUse(vocabulary, code, label, domain, "codes.py TEXT_CONDITION_CODES")
+        for (vocabulary, code), (label, domain) in TEXT_CONDITION_CODES.items()
+    ]
+
+
 def all_codes() -> list[CodeUse]:
-    """Generator codes, planned source codes, pipeline codes and extraction codes."""
-    return generator_codes() + planned_codes() + pipeline_codes() + extraction_codes()
+    """Generator, planned source, pipeline, extraction and text-condition codes."""
+    return (
+        generator_codes()
+        + planned_codes()
+        + pipeline_codes()
+        + extraction_codes()
+        + text_condition_codes()
+    )
 
 
 def uncoded_drugs() -> list[str]:

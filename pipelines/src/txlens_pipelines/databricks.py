@@ -72,11 +72,14 @@ def run_pipeline(
     catalog: str,
     layers: list[str] | None = None,
     tenants: list[str] | None = None,
+    deid_key: str = "",
 ) -> dict[str, dict[str, int]]:
-    """Run bronze -> silver -> gold (or a subset) on Unity Catalog."""
+    """Run bronze -> silver -> gold (or a subset) on Unity Catalog. Gold needs `deid_key` to
+    de-identify notes (the notebook reads it from the `txlens` secret scope)."""
     chosen = layers or list(LAYERS)
     if "load" in chosen:
         raise ValueError("the Postgres load runs locally only (make pipeline)")
     paths = VolumePaths(catalog)
     runtime = DatabricksRuntime(spark, paths.raw, paths.vocab, catalog)
-    return run(runtime, PipelineConfig(paths.raw, paths.vocab).only(tenants), chosen)
+    config = PipelineConfig(paths.raw, paths.vocab, deid_key=deid_key).only(tenants)
+    return run(runtime, config, chosen)

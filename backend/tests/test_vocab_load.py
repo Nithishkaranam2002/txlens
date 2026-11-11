@@ -259,6 +259,14 @@ def test_mapping_check_flags_each_problem(loaded: Conn) -> None:
     assert "TARGET NOT STANDARD" in wrong.problems
 
 
+def test_condition_mapping_may_target_a_concept_that_maps_to_one_standard(loaded: Conn) -> None:
+    def row(vocabulary: str) -> MappingRow:
+        return MappingRow("x", vocabulary, "test", B + 10, "ICD10CM")
+
+    assert check_mapping(loaded, row("TXLENS_CONDITION")).problems == ()
+    assert "TARGET NOT STANDARD" in check_mapping(loaded, row("TXLENS_PROCEDURE")).problems
+
+
 def test_local_concept_check_flags_each_problem(loaded: Conn) -> None:
     with loaded.transaction(force_rollback=True):
         loaded.execute(

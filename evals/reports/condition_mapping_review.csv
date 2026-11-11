@@ -1,0 +1,6 @@
+tenant_id,source_value,rows,review_reason,suggested_concept_id,suggested_name,suggestion_score
+center_b,diabetic nephropathy,3,low_score,201826,TEST ONLY - type 2 diabetes,0.4
+center_b,hypertensive nephrosclerosis,2,low_score,316866,TEST ONLY - hypertension,0.55
+center_b,hypertrophic cardiomyopathy,1,low_score,4121617,TEST ONLY - cardiac transplant failure,0.381
+center_c,diabetic nephropathy,1,low_score,201826,TEST ONLY - type 2 diabetes,0.4
+center_c,focal segmental glomerulosclerosis,1,low_score,4127554,TEST ONLY - failed renal transplant,0.328

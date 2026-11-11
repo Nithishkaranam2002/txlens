@@ -144,6 +144,10 @@ BUNDLES: dict[str, list[dict[str, object]]] = {
         },
         {"resourceType": "Condition", "id": "pb-c1", "subject": subject("pb"),
          "code": coded(SNOMED, None, "Hypertension")},
+        {"resourceType": "Condition", "id": "pb-c2", "subject": subject("pb"),
+         "code": coded(SNOMED, None, "History of prior kidney transplant")},
+        {"resourceType": "Condition", "id": "pb-c3", "subject": subject("pb"),
+         "code": coded(SNOMED, None, "Hypertensive crisis")},
         encounter("pb", "E-B-1", "clinic", "2023-09-23"),
         med("pb", "RX-B-1", "Prograf", None, "2023-08-28", "prograf 3.5mg oral bid"),
         med("pb", "RX-B-2", "tacro", None, "2023-08-28", "tacro 3mg oral bid"),
@@ -184,8 +188,8 @@ def note_text(tenant: str) -> str:
         else ("TRANSPLANT CLINIC NOTE")
     )
     return (
-        f"{title}\nSome Center\nPatient: Doe, Jane    MRN: {MRNS[tenant]}    DOB: 01/02/1970\n"
-        f"Date of service: {NOTE_DATES[tenant]}\n\nHPI: stable.\n"
+        f"{title}\nSome Center\nPatient: Quorrin, Ysolde    MRN: {MRNS[tenant]}    "
+        f"DOB: 01/02/1970\nDate of service: {NOTE_DATES[tenant]}\n\nHPI: stable.\n"
     )
 
 

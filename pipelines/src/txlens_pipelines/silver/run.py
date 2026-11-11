@@ -90,7 +90,7 @@ def run_silver(runtime: Runtime, config: PipelineConfig) -> dict[str, int]:
     )
     w.write(
         conditions.TABLE,
-        *conditions.build(fhir, pat),
+        *conditions.build(fhir, pat, vocab),
         s.Conditions,
         ["tenant_id", "condition_source_id"],
     )

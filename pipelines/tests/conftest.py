@@ -62,6 +62,8 @@ def built(spark: "SparkSession", tmp_path_factory: pytest.TempPathFactory) -> "L
     runtime = LocalRuntime(
         spark, str(write_raw(root / "raw")), str(write_vocab(root / "vocab")), str(root / "lake")
     )
-    config = PipelineConfig(runtime.raw_root, runtime.vocab_root, max_quarantine_rate=1.0)
+    config = PipelineConfig(
+        runtime.raw_root, runtime.vocab_root, max_quarantine_rate=1.0, deid_key="test-key"
+    )
     run(runtime, config, ["bronze", "silver", "gold"])
     return runtime

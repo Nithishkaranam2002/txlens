@@ -12,6 +12,7 @@ from txlens_omop.codes import (
     generator_codes,
     pipeline_codes,
     planned_codes,
+    text_condition_codes,
     uncoded_drugs,
 )
 from txlens_omop.mappings import (
@@ -51,7 +52,15 @@ def test_planned_icd10cm_codes_are_included() -> None:
         + len(planned_codes())
         + len(pipeline_codes())
         + len(extraction_codes())
+        + len(text_condition_codes())
     )
+
+
+def test_text_condition_codes_include_the_qualifier_variants() -> None:
+    codes = {c.code: c.expected_domain for c in text_condition_codes()}
+    for code in ("46635009", "433144002", "431857002", "236578006"):
+        assert codes[code] == "Condition"
+    assert codes["161665007"] == "Observation"  # history of renal transplant
 
 
 def test_new_step_1_4_codes_are_checked() -> None:

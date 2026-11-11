@@ -91,12 +91,47 @@ def test_open_orders_run_to_the_extract_date_or_death(built: LocalRuntime) -> No
     assert {r.source_release_date for r in sources} == {date(2025, 6, 30)}
 
 
-def test_conditions_from_codes_only_and_dated(built: LocalRuntime) -> None:
+def test_conditions_from_codes_and_text_and_dated(built: LocalRuntime) -> None:
     rows = {r.condition_source_value: r for r in gold(built, "condition_occurrence")}
     assert rows["46177005"].condition_concept_id == 193782
     assert rows["46177005"].condition_start_date == date(2024, 1, 5)  # dated at transplant
     assert rows["236583003"].condition_start_date == date(2025, 1, 1)  # graft failure onset
-    assert rows["Hypertension"].condition_concept_id == 0  # uncoded: text kept, concept 0
+    assert rows["Hypertension"].condition_concept_id == 316866  # uncoded, mapped by synonym
+    assert rows["Hypertensive crisis"].condition_concept_id == 0  # text kept, concept 0
+    assert "History of prior kidney transplant" not in rows  # routed to observation
+
+
+def test_observation_domain_conditions_go_to_observation(built: LocalRuntime) -> None:
+    (row,) = gold(built, "observation")
+    assert row.observation_source_value == "History of prior kidney transplant"
+    assert (row.observation_concept_id, row.value_as_concept_id) == (1340204, 4322471)
+    assert row.observation_source_concept_id == 4059356
+    assert row.observation_date == date(2023, 8, 28)  # dated at transplant
+
+
+def test_note_text_is_de_identified_with_a_replacement_list(built: LocalRuntime) -> None:
+    from txlens_pipelines.deid_notes import Replacement, reidentify
+
+    ids = {r.mrn: r.person_id for r in gold(built, "patient_identity")}
+    note = next(r for r in gold(built, "note") if r.person_id == ids["A1"])
+    for identifier in ("Quorrin", "Ysolde", "A1 ", "01/02/1970", "2024-02-01"):
+        assert identifier not in note.note_text
+    assert "MRN: [MRN]" in note.note_text
+    spans = [r for r in gold(built, "note_phi_span") if r.note_id == note.note_id]
+    assert {s.kind for s in spans} == {"name", "mrn", "date"}
+    restored = reidentify(note.note_text, [
+        Replacement(s.deid_start, s.deid_end, s.orig_start, s.orig_end, s.kind, s.original)
+        for s in spans
+    ])  # fmt: skip
+    assert "Patient: Quorrin, Ysolde    MRN: A1    DOB: 01/02/1970" in restored
+
+
+def test_gold_notes_need_the_deid_key(built: LocalRuntime) -> None:
+    from txlens_pipelines.gold.notes import MissingDeidKeyError, deidentified_notes
+
+    silver = built.read("silver", "notes")
+    with pytest.raises(MissingDeidKeyError):
+        deidentified_notes(silver, built.read("silver", "patients"), silver, "")
 
 
 def test_procedures_transplants_and_biopsies(built: LocalRuntime) -> None:
@@ -144,6 +179,7 @@ def test_death_notes_and_observation_periods(built: LocalRuntime) -> None:
     ]
     notes = {r.person_id: r for r in gold(built, "note")}
     assert notes[ids["A1"]].note_class_concept_id == 3000735
+    assert notes[ids["A1"]].note_date == date(2024, 2, 1)  # the column keeps the real date
     assert notes[ids["A1"]].visit_occurrence_id is not None
     assert notes[ids["730000063"]].visit_occurrence_id is None
     periods = {r.person_id: r for r in gold(built, "observation_period")}
@@ -164,11 +200,17 @@ def test_lineage_links_omop_rows_to_bronze_rows(built: LocalRuntime) -> None:
     ]
 
 
+def test_mapping_gaps_carry_the_condition_suggestion(built: LocalRuntime) -> None:
+    (gap,) = [r for r in gold(built, "mapping_gaps") if r.source_value == "Hypertensive crisis"]
+    assert (gap.suggested_concept_id, gap.review_reason) == (316866, "low_score")
+    assert 0 < gap.suggestion_score < 0.9
+
+
 def test_mapping_gaps_list_every_unmapped_source_value(built: LocalRuntime) -> None:
     gaps = {(r.omop_table, r.source_value, r.reason) for r in gold(built, "mapping_gaps")}
     assert gaps == {
         ("drug_exposure", "Xyzumab", "unmapped_drug"),
-        ("condition_occurrence", "Hypertension", "unmapped"),
+        ("condition_occurrence", "Hypertensive crisis", "unmapped"),
         ("measurement", "DSAMFI", "no_standard_concept"),
         ("measurement", "MFI", "no_standard_unit"),
         ("measurement", "XYZ / Mystery test", "quarantined_unmapped_code"),
@@ -179,7 +221,9 @@ def test_mapping_gaps_list_every_unmapped_source_value(built: LocalRuntime) -> N
 @pytest.mark.slow  # the end-to-end test also checks re-runs
 def test_rerun_is_idempotent(built: LocalRuntime) -> None:
     before = {t: sorted(map(tuple, gold(built, t))) for t in ("person", "measurement")}
-    config = PipelineConfig(built.raw_root, built.vocab_root, max_quarantine_rate=1.0)
+    config = PipelineConfig(
+        built.raw_root, built.vocab_root, max_quarantine_rate=1.0, deid_key="test-key"
+    )
     run(built, config, LAYERS)
     after = {t: sorted(map(tuple, gold(built, t))) for t in ("person", "measurement")}
     assert after == before

@@ -1,4 +1,5 @@
-"""FHIR Condition -> silver.conditions: the SNOMED code when the center sent one, plus text.
+"""FHIR Condition -> silver.conditions: code and text, mapped to a standard concept and domain
+(condition_normalize.py).
 
 Problem-list conditions carry no date in these feeds; gold dates them at the transplant (when
 the problem list was documented). Graft failure carries its onset date.
@@ -17,7 +18,9 @@ from txlens_pipelines.silver.common import (
     fhir_resources,
     patient_reference,
 )
+from txlens_pipelines.silver.condition_normalize import normalize_conditions
 from txlens_pipelines.silver.encounters import known_patient, unknown_patient_rule
+from txlens_pipelines.vocab import Vocabulary
 
 TABLE = "conditions"
 SCHEMA = (
@@ -26,7 +29,9 @@ SCHEMA = (
 )
 
 
-def build(bronze_fhir: DataFrame, patients: DataFrame) -> tuple[DataFrame, DataFrame]:
+def build(
+    bronze_fhir: DataFrame, patients: DataFrame, vocab: Vocabulary
+) -> tuple[DataFrame, DataFrame]:
     """(clean conditions, rows for quarantine)."""
     rows = fhir_resources(bronze_fhir, "Condition", SCHEMA)
     parsed = rows.select(
@@ -52,4 +57,4 @@ def build(bronze_fhir: DataFrame, patients: DataFrame) -> tuple[DataFrame, DataF
         ),
     ]
     good, bad = apply_rules(known_patient(parsed, patients), rules)
-    return good.drop("patient_known", "onset_source"), bad
+    return normalize_conditions(good.drop("patient_known", "onset_source"), vocab), bad

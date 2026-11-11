@@ -29,7 +29,9 @@ def build(spark: SparkSession, root: Path, patients: int) -> tuple[LocalRuntime,
         spark, str(root / "data" / "raw"), str(root / "vocab"), str(root / "lake")
     )
     # Small samples can exceed 5% bad rows by chance; the limit is tested elsewhere.
-    config = PipelineConfig(runtime.raw_root, runtime.vocab_root, max_quarantine_rate=0.25)
+    config = PipelineConfig(
+        runtime.raw_root, runtime.vocab_root, max_quarantine_rate=0.25, deid_key="test-key"
+    )
     run(runtime, config, LAYERS)
     return runtime, Lake(spark, runtime.lake_root, None)
 
@@ -62,7 +64,9 @@ def test_generated_data_reconciles_and_reruns_are_idempotent(
     assert not failed, report
     before = ids(runtime)
     counts = {t: runtime.read("gold", t).count() for t in ("person", "measurement", "note")}
-    config = PipelineConfig(runtime.raw_root, runtime.vocab_root, max_quarantine_rate=0.25)
+    config = PipelineConfig(
+        runtime.raw_root, runtime.vocab_root, max_quarantine_rate=0.25, deid_key="test-key"
+    )
     run(runtime, config, LAYERS)
     assert ids(runtime) == before
     assert {t: runtime.read("gold", t).count() for t in counts} == counts

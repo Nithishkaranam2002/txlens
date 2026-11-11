@@ -4,7 +4,8 @@ Two files, in Athena's tab-separated format, ship with this package (they are ou
 not licensed vocabulary):
 
 - `SOURCE_TO_CONCEPT_MAP.csv`: lab local codes and test-name variants -> LOINC, clinical
-  drug abbreviations -> RxNorm ingredient, and uncoded transplant procedure texts -> SNOMED.
+  drug abbreviations -> RxNorm ingredient, uncoded transplant procedure texts -> SNOMED, and
+  free-text condition names -> SNOMED (Condition, or Observation for "history of" texts).
   Each row was checked by a person; `make vocab-check` re-checks every target against the
   loaded vocabulary.
 - `LOCAL_CONCEPT.csv`: TxLens local concepts (id >= 2,000,000,000, non-standard) for things no
@@ -23,13 +24,18 @@ STCM_FILE = "SOURCE_TO_CONCEPT_MAP.csv"
 LOCAL_CONCEPT_FILE = "LOCAL_CONCEPT.csv"
 LOCAL_VOCABULARY = "TxLens"
 LOCAL_CONCEPT_MIN = 2_000_000_000
-# Our source vocabularies and the OMOP domain their targets must have.
+# Our source vocabularies and the OMOP domains their (standard) targets may have.
 SOURCE_VOCABULARIES = {
-    "TXLENS_LAB_NAME": "Measurement",
-    "TXLENS_LAB_CODE": "Measurement",
-    "TXLENS_DRUG": "Drug",
-    "TXLENS_PROCEDURE": "Procedure",
+    "TXLENS_LAB_NAME": ("Measurement",),
+    "TXLENS_LAB_CODE": ("Measurement",),
+    "TXLENS_DRUG": ("Drug",),
+    "TXLENS_PROCEDURE": ("Procedure",),
+    "TXLENS_CONDITION": ("Condition", "Observation"),
 }
+# Source vocabularies whose target may be a non-standard concept that "Maps to" exactly one
+# standard concept (plus "Maps to value"): a "history of" text needs the pair History of event
+# + Transplant of kidney, which one target_concept_id cannot hold.
+VIA_MAPS_TO = frozenset({"TXLENS_CONDITION"})
 
 
 @dataclass(frozen=True)

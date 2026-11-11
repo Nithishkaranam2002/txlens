@@ -51,9 +51,28 @@ identifiers.
   the scanner works.
 - Cohort rules are evaluated on true dates; researchers see shifted output. Whole-year
   granularity limits what the rules reveal.
-- `cdm.note.note_text` still contains identifiers (the generated note header names the
-  patient). The API never returns it. The Phase 2 NLP step must treat it as PHI.
+- ~~`cdm.note.note_text` still contains identifiers.~~ Closed in Step 2.2, see the addendum.
 - Re-identification risk is reduced, not zero: rare combinations (age band + organ + donor
   type + status) can still be distinctive. Formal k-anonymity checks are future work.
 - Losing `DEID_HMAC_KEY` breaks the link to earlier pseudonyms. Leaking it lets someone
   recompute pseudonyms from person ids, so it is a secret like `JWT_SECRET`.
+
+## Addendum (Step 2.2): de-identified note text
+- Gold now writes only a de-identified copy of each note to `cdm.note.note_text`
+  (`pipelines/src/txlens_pipelines/deid_notes.py`, run as a Spark UDF):
+  - the patient's names become HMAC-chosen surrogate names;
+  - MRNs and long ids become `[MRN]`/`[ID]`;
+  - dates are moved by this patient's `date_shift_days`, in their original style, using the
+    same key, so a data steward sees one consistent calendar;
+  - ages of 90 and over become "90+";
+  - phone numbers, e-mail and street addresses become tags.
+- The replaced spans go to `app.note_phi_span`: offsets in both texts, the kind of
+  identifier, and the original words. The table is RLS-bound, and only the clinician path
+  reads it, to show a sentence as written. The identified text stays in the lake
+  (bronze/silver) and never enters Postgres.
+- `make pipeline-report` checks every gold note, and every loaded `cdm.note` row, against its
+  patient's MRN, names (whole words, any case) and birth date in each style the notes use.
+  Result: 0 of 12,505 notes leak.
+- Limits: only this patient's own names are known. A relative's or clinician's name in free
+  text would stay, and the synthetic notes have none, so this is not measured. Real notes
+  need an NER-based de-identifier as a second layer (ADR 0014).

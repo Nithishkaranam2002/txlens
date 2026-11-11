@@ -12,6 +12,7 @@ from txlens_pipelines.gold import tables as t
 from txlens_pipelines.gold.concepts import concept_id
 from txlens_pipelines.gold.conform import check_omop_contract, conform
 from txlens_pipelines.gold.gaps import mapping_gaps
+from txlens_pipelines.gold.notes import deidentified_notes, phi_span_rows
 from txlens_pipelines.ids import assign_ids
 from txlens_pipelines.omop_schema import PRIMARY_KEYS
 from txlens_pipelines.quality import QUARANTINE
@@ -118,24 +119,23 @@ def run_gold(runtime: Runtime, config: PipelineConfig) -> dict[str, int]:
     visits = w.with_ids(t.visit_rows(silver("encounters"), persons), "visit_occurrence")
     w.write("visit_occurrence", visits)
     procedures = silver("procedures")
+    transplants = procedures.where("kind = 'transplant'")
+    conditions = silver("conditions")
     builders = {
         "drug_exposure": t.drug_rows(silver("medications"), persons, vocab, extracted),
         "measurement": t.measurement_rows(silver("labs"), persons, visits, vocab),
-        "condition_occurrence": t.condition_rows(
-            silver("conditions"), persons, procedures.where("kind = 'transplant'"), vocab
-        ),
+        "condition_occurrence": t.condition_rows(conditions, persons, transplants),
+        "observation": t.observation_rows(conditions, persons, transplants),
         "procedure_occurrence": t.procedure_rows(procedures, persons, visits, vocab),
-        "note": t.note_rows(
-            silver("notes"),
-            persons,
-            visits,
-            concept_id(vocab, *NOTE_CLASS),
-            concept_id(vocab, *NOTE_LANGUAGE),
-            ENCODING_UTF8,
-        ),
     }
     for table, rows in builders.items():
         w.write(table, w.with_ids(rows, table))
+    deid = deidentified_notes(silver("notes"), silver("patients"), persons, config.deid_key)
+    note_class = concept_id(vocab, *NOTE_CLASS)
+    language = concept_id(vocab, *NOTE_LANGUAGE)
+    notes = w.with_ids(t.note_rows(deid, visits, note_class, language, ENCODING_UTF8), "note")
+    w.write("note", notes)
+    w.write_extra("note_phi_span", phi_span_rows(notes))
     w.write("death", t.death_rows(persons))
     events = [
         event_dates(w.written["visit_occurrence"], "visit_start_date"),
@@ -143,6 +143,7 @@ def run_gold(runtime: Runtime, config: PipelineConfig) -> dict[str, int]:
         event_dates(w.written["measurement"], "measurement_date"),
         event_dates(w.written["procedure_occurrence"], "procedure_date"),
         event_dates(w.written["condition_occurrence"], "condition_start_date"),
+        event_dates(w.written["observation"], "observation_date"),
     ]
     periods = t.observation_period_rows(persons, events)
     w.write("observation_period", w.with_ids(periods, "observation_period"))
@@ -153,5 +154,5 @@ def run_gold(runtime: Runtime, config: PipelineConfig) -> dict[str, int]:
         lineage = lineage.unionByName(frame)
     w.write_extra("lineage", lineage)
     quarantine = runtime.read_tenants(*QUARANTINE, w.tenants)
-    w.write_extra("mapping_gaps", mapping_gaps(w.written, quarantine))
+    w.write_extra("mapping_gaps", mapping_gaps(w.written, quarantine, conditions))
     return w.counts

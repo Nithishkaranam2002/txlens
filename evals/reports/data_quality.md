@@ -2,7 +2,7 @@
 
 Generated 2026-11-11 by `make pipeline-report` (evals/src/txlens_evals/pipeline_reconciliation.py). Synthetic data only.
 
-**Reconciliation: 13 of 13 checks passed.**
+**Reconciliation: 15 of 15 checks passed.**
 
 ## Reconciliation with the ground truth
 
@@ -20,7 +20,9 @@ Generated 2026-11-11 by `make pipeline-report` (evals/src/txlens_evals/pipeline_
 | medications: continuous maintenance immunosuppression per the generator's protocol (active patients, transplant to extract 2026-09-30) | 1,853 | 1,853 | PASS | 0 patients with gaps (0 patient-drug gaps); see section below |
 | duplicates: every injected duplicate removed, nothing else | 4,885 | 4,886 | PASS | missed 0; 1 extra, of which 1 are identical genuine results |
 | quarantine: exactly the rows with an injected bad date or missing value | 3,686 | 3,686 | PASS | missed 0, extra 0 |
-| postgres: cdm + identity row counts equal gold, per tenant and table | 303,682 | 303,682 | PASS | 33 (tenant, table) pairs compared |
+| notes: no identifier of the patient left in cdm.note text (gold) | 0 | 0 | PASS | 12,505 notes checked (MRN, names, birth date) |
+| postgres: cdm + identity row counts equal gold, per tenant and table | 420,640 | 420,640 | PASS | 39 (tenant, table) pairs compared |
+| notes: no identifier from app.patient_identity in cdm.note (Postgres) | 0 | 0 | PASS |  |
 
 ## Maintenance immunosuppression
 
@@ -48,7 +50,8 @@ Every active patient is covered on every day.
 | gold | person | 2,000 |
 | gold | observation_period | 2,000 |
 | gold | visit_occurrence | 13,918 |
-| gold | condition_occurrence | 4,504 |
+| gold | condition_occurrence | 4,355 |
+| gold | observation | 149 |
 | gold | drug_exposure | 22,234 |
 | gold | measurement | 240,945 |
 | gold | procedure_occurrence | 3,508 |
@@ -56,8 +59,9 @@ Every active patient is covered on every day.
 | gold | note | 12,505 |
 | gold | cdm_source | 3 |
 | gold | patient_identity | 2,000 |
+| gold | note_phi_span | 116,958 |
 | gold | lineage | 301,679 |
-| gold | mapping_gaps | 46 |
+| gold | mapping_gaps | 11 |
 
 ## Quarantine reasons
 
@@ -86,9 +90,9 @@ Every active patient is covered on every day.
 | drug_exposure | route_concept_id | center_a | 8,873 | 8,873 | 100.0% |
 | drug_exposure | route_concept_id | center_b | 7,666 | 7,666 | 100.0% |
 | drug_exposure | route_concept_id | center_c | 5,695 | 5,695 | 100.0% |
-| condition_occurrence | condition_concept_id | center_a | 1,705 | 1,780 | 95.8% |
-| condition_occurrence | condition_concept_id | center_b | 0 | 1,569 | 0.0% |
-| condition_occurrence | condition_concept_id | center_c | 529 | 1,155 | 45.8% |
+| condition_occurrence | condition_concept_id | center_a | 1,705 | 1,716 | 99.4% |
+| condition_occurrence | condition_concept_id | center_b | 1,512 | 1,521 | 99.4% |
+| condition_occurrence | condition_concept_id | center_c | 1,112 | 1,118 | 99.5% |
 | procedure_occurrence | procedure_concept_id | center_a | 1,414 | 1,414 | 100.0% |
 | procedure_occurrence | procedure_concept_id | center_b | 1,188 | 1,188 | 100.0% |
 | procedure_occurrence | procedure_concept_id | center_c | 906 | 906 | 100.0% |
@@ -96,8 +100,28 @@ Every active patient is covered on every day.
 | measurement | unit_concept_id | **all** | 232,339 | 240,945 | **96.4%** |
 | drug_exposure | drug_concept_id | **all** | 22,234 | 22,234 | **100.0%** |
 | drug_exposure | route_concept_id | **all** | 22,234 | 22,234 | **100.0%** |
-| condition_occurrence | condition_concept_id | **all** | 2,234 | 4,504 | **49.6%** |
+| condition_occurrence | condition_concept_id | **all** | 4,329 | 4,355 | **99.4%** |
 | procedure_occurrence | procedure_concept_id | **all** | 3,508 | 3,508 | **100.0%** |
+
+## Free-text conditions (Step 2.2)
+
+Every FHIR Condition, whichever OMOP table its concept's domain sends it to. "Codes only" is what the pipeline mapped before Step 2.2; text matching adds the reviewed map, exact name or synonym, normalized and fuzzy matches (fuzzy accepted at >= 0.90 and only when type, acuity, side, grade, stage and numbers match exactly). Unmapped texts and their best suggestion are in `evals/reports/condition_mapping_review.csv`.
+
+| Tenant | Conditions | Codes only | Coverage before | Mapped now | Coverage now | -> condition_occurrence | -> observation |
+|---|---|---|---|---|---|---|---|
+| center_a | 1,780 | 1,705 | 95.8% | 1,769 | 99.4% | 1,705 | 64 |
+| center_b | 1,569 | 0 | 0.0% | 1,560 | 99.4% | 1,512 | 48 |
+| center_c | 1,155 | 529 | 45.8% | 1,149 | 99.5% | 1,112 | 37 |
+| **all** | 4,504 | 2,234 | 49.6% | 4,478 | 99.4% | 4,329 | 149 |
+
+Rows by mapping method:
+
+| Tenant | code | reviewed | exact | normalized | fuzzy | unmapped |
+|---|---|---|---|---|---|---|
+| center_a | 1,705 | 64 | 0 | 0 | 0 | 11 |
+| center_b | 0 | 369 | 1,191 | 0 | 0 | 9 |
+| center_c | 529 | 157 | 463 | 0 | 0 | 6 |
+| **all** | 2,234 | 590 | 1,654 | 0 | 0 | 26 |
 
 ## Mapping gaps (review queue, largest first)
 
@@ -110,21 +134,7 @@ Every active patient is covered on every day.
 | center_c | measurement | measurement_concept_id | DSAMFI | no_standard_concept | 2,212 |
 | center_c | measurement | unit_concept_id | MFI | no_standard_unit | 2,212 |
 | center_a | measurement | measurement_concept_id | DSA MFI | no_standard_concept | 520 |
-| center_b | condition_occurrence | condition_concept_id | Hypertension | unmapped | 500 |
 | center_b | measurement | measurement_concept_id | DSA max | no_standard_concept | 457 |
-| center_b | condition_occurrence | condition_concept_id | Type 2 diabetes | unmapped | 290 |
-| center_c | condition_occurrence | condition_concept_id | Hypertension | unmapped | 196 |
-| center_b | condition_occurrence | condition_concept_id | diabetic nephropathy | unmapped | 195 |
-| center_c | condition_occurrence | condition_concept_id | Type 2 diabetes | unmapped | 102 |
-| center_b | condition_occurrence | condition_concept_id | lupus nephritis | unmapped | 94 |
-| center_b | condition_occurrence | condition_concept_id | hypertensive nephrosclerosis | unmapped | 83 |
-| center_b | condition_occurrence | condition_concept_id | IgA nephropathy | unmapped | 74 |
-| center_b | condition_occurrence | condition_concept_id | polycystic kidney disease | unmapped | 74 |
-| center_b | condition_occurrence | condition_concept_id | focal segmental glomerulosclerosis | unmapped | 73 |
-| center_a | condition_occurrence | condition_concept_id | History of prior kidney transplant | unmapped | 64 |
-| center_c | condition_occurrence | condition_concept_id | diabetic nephropathy | unmapped | 63 |
-| center_b | condition_occurrence | condition_concept_id | History of prior kidney transplant | unmapped | 48 |
-| center_c | condition_occurrence | condition_concept_id | History of prior kidney transplant | unmapped | 37 |
-| center_c | condition_occurrence | condition_concept_id | polycystic kidney disease | unmapped | 37 |
-| center_b | condition_occurrence | condition_concept_id | hypertrophic cardiomyopathy | unmapped | 35 |
-| center_c | condition_occurrence | condition_concept_id | hypertensive nephrosclerosis | unmapped | 34 |
+| center_a | condition_occurrence | condition_concept_id | History of prior heart transplant | unmapped | 11 |
+| center_b | condition_occurrence | condition_concept_id | History of prior heart transplant | unmapped | 9 |
+| center_c | condition_occurrence | condition_concept_id | History of prior heart transplant | unmapped | 6 |

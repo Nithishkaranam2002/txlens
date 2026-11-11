@@ -49,3 +49,24 @@ def test_maintenance_check_counts_patients_and_names_the_protocol() -> None:
     assert "Real-world protocols vary, e.g. steroid-free" in report
     assert "| center_a | A1 | prednisone | 30 |" in report
     assert "Every active patient is covered" in render([], [], [], [], [])
+
+
+def test_condition_section_compares_codes_only_with_text_matching() -> None:
+    from txlens_evals.pipeline_reconciliation import render_conditions
+
+    lines = "\n".join(
+        render_conditions(
+            [
+                ("center_a", {"code": 9, "unmapped": 1}, {"Condition": 9}),
+                (
+                    "center_b",
+                    {"exact": 6, "reviewed": 3, "unmapped": 1},
+                    {"Condition": 8, "Observation": 1},
+                ),
+            ]
+        )
+    )
+    assert "| center_a | 10 | 9 | 90.0% | 9 | 90.0% | 9 | 0 |" in lines
+    assert "| center_b | 10 | 0 | 0.0% | 9 | 90.0% | 8 | 1 |" in lines
+    assert "| **all** | 20 | 9 | 45.0% | 18 | 90.0% | 17 | 1 |" in lines
+    assert "| center_b | 0 | 3 | 6 | 0 | 0 | 1 |" in lines

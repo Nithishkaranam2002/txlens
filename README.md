@@ -103,7 +103,7 @@ described in [omop/README.md](omop/README.md). Tests use a fake TEST ONLY fixtur
 From [evals/reports/data_quality.md](evals/reports/data_quality.md), produced by
 `make pipeline-report` on the default dataset (2,000 patients, 3 centers):
 
-- **Reconciliation with the ground truth: 12 of 12 checks pass.** These include every one of
+- **Reconciliation with the ground truth: 13 of 13 checks pass.** These include every one of
   240,945 clean lab results matching row by row in standard units, all 65 deaths, and Postgres
   row counts equal to gold for every tenant and table.
 - **Medications normalized to the right RxNorm ingredient: 100.0%** (22,234 orders, including
@@ -111,8 +111,13 @@ From [evals/reports/data_quality.md](evals/reports/data_quality.md), produced by
 - **Bad rows quarantined: 3,686**, exactly the rows with an injected bad date or missing value.
   **Duplicates removed: 4,886** (all 4,885 injected, plus 1 explained identical pair).
 - **Mapping coverage:** drugs, routes and procedures 100.0%; measurements 96.4% (DSA MFI has no
-  standard LOINC); conditions 49.6% (center B sends conditions as uncoded text; note NLP comes
-  later).
+  standard LOINC).
+- **FHIR conditions mapped: 99.4%** (4,478 of 4,504), up from 49.6% with codes only. Free text
+  such as "IgA nephropathy" goes through a reviewed map, exact name or synonym, normalized and
+  fuzzy matching, with no LLM. A match is never accepted if type, acuity, side, grade, stage or
+  a number differs. 149 "history of prior kidney transplant" rows go to `observation`, as
+  their concept's domain requires. The 26 left ("history of prior heart transplant": SNOMED
+  has no such concept) are on the review list, `evals/reports/condition_mapping_review.csv`.
 
 How it works: [pipelines/README.md](pipelines/README.md) and
 [ADR 0006](docs/adr/0006-medallion-pipeline.md). Running it on Databricks:
@@ -146,12 +151,11 @@ Design: [ADR 0007](docs/adr/0007-auth-jwt-cookies.md),
 Cohort results from [evals/reports/cohort_rules.md](evals/reports/cohort_rules.md), produced
 by `make cohort-report` on the pipeline-loaded database (2,000 patients):
 
-- **7 of 7 cohort rules match the ground truth exactly**, member by member. For example,
+- **8 of 8 cohort rules match the ground truth exactly**, member by member. For example,
   **198 kidney patients with dd-cfDNA ≥ 1% within 365 days of transplant**, 620 living-donor
   and 1,082 deceased-donor kidney transplants.
-- **Known gap:** conditions sent as free text (all of center B, about half of center C) are
-  not mapped yet. A "diabetes mellitus and descendants" rule therefore finds 428 of 820
-  patients, all of them correct. It is exact for center A, which codes its conditions.
+- **Diabetes mellitus and descendants: 820 of 820 patients** (was 428 when only coded
+  conditions were mapped; center B sends only free text).
 
 ## Surveillance worklist
 

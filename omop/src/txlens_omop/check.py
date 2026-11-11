@@ -16,6 +16,7 @@ from txlens_omop.mappings import (
     LOCAL_CONCEPT_MIN,
     LOCAL_VOCABULARY,
     SOURCE_VOCABULARIES,
+    VIA_MAPS_TO,
     MappingRow,
 )
 from txlens_omop.vocab import Concept, find_concept, get_concept, ingredients_for_name, maps_to
@@ -88,8 +89,9 @@ class MappingCheck:
 
 
 def check_mapping(conn: Connection, row: MappingRow) -> MappingCheck:
-    """The target exists, is valid, has the right vocabulary and domain, and is standard
-    (or is one of our non-standard local concepts)."""
+    """The target exists, is valid, has the right vocabulary and domain, and is standard (or is
+    one of our non-standard local concepts, or, for VIA_MAPS_TO vocabularies, "Maps to" exactly
+    one standard concept of an allowed domain)."""
     target = get_concept(conn, row.target_concept_id)
     if target is None:
         return MappingCheck(row, None, ("TARGET NOT FOUND",))
@@ -100,12 +102,18 @@ def check_mapping(conn: Connection, row: MappingRow) -> MappingCheck:
         problems.append(
             f"VOCABULARY IS {target.vocabulary_id}, ROW SAYS {row.target_vocabulary_id}"
         )
-    expected = SOURCE_VOCABULARIES.get(row.source_vocabulary_id)
-    if target.domain_id != expected:
-        problems.append(f"WRONG DOMAIN ({target.domain_id}, expected {expected})")
+    expected = SOURCE_VOCABULARIES.get(row.source_vocabulary_id, ())
+    standard = [target]
     is_local = target.vocabulary_id == LOCAL_VOCABULARY and target.concept_id >= LOCAL_CONCEPT_MIN
     if not target.is_standard and not is_local:
-        problems.append("TARGET NOT STANDARD")
+        mapped = maps_to(conn, target.concept_id) if row.source_vocabulary_id in VIA_MAPS_TO else []
+        if len(mapped) == 1:
+            standard = mapped
+        else:
+            problems.append("TARGET NOT STANDARD")
+    for concept in standard:
+        if concept.domain_id not in expected:
+            problems.append(f"WRONG DOMAIN ({concept.domain_id}, expected {'/'.join(expected)})")
     return MappingCheck(row, target, tuple(problems))
 
 

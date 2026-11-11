@@ -92,6 +92,14 @@ You only do Steps 4 to 6 once (or again when you regenerate data).
 
 You can run it from the notebook (simplest) or as a job (Step 8).
 
+Gold de-identifies the clinical notes. It needs the same key as `DEID_HMAC_KEY` in your
+`.env`, stored once as a Databricks secret (with the Databricks CLI):
+
+```
+databricks secrets create-scope txlens
+databricks secrets put-secret txlens deid_hmac_key
+```
+
 1. Open `txlens/pipelines/databricks/notebooks/01_run_pipeline`.
 2. Widgets: **Catalog** = `workspace`, **Layers** = `bronze,silver,gold`, **Tenants** = empty
    (all three centers).

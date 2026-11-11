@@ -4,7 +4,8 @@ Plain dataclasses (no extra dependencies), so the same code runs on Databricks, 
 PySpark, Delta Lake and pandera are available.
 """
 
-from dataclasses import dataclass, field
+import os
+from dataclasses import dataclass, field, replace
 from uuid import uuid4
 
 # Each tenant owns the id range [ordinal * ID_RANGE, (ordinal + 1) * ID_RANGE). OMOP ids are
@@ -45,6 +46,9 @@ class PipelineConfig:
     # A table whose share of quarantined rows is above this fails the run (contract violation).
     max_quarantine_rate: float = 0.05
     batch_id: str = field(default_factory=new_batch_id)
+    # HMAC key for note de-identification (surrogate names, date shifts); the backend's
+    # DEID_HMAC_KEY, so shifted dates agree with what data stewards see in the API.
+    deid_key: str = field(default="", repr=False)
 
     def tenant(self, tenant_id: str) -> Tenant:
         """The tenant with this id."""
@@ -57,10 +61,9 @@ class PipelineConfig:
         """A copy limited to some tenants (all when None)."""
         if not tenant_ids:
             return self
-        return PipelineConfig(
-            self.raw_root,
-            self.vocab_root,
-            tuple(self.tenant(t) for t in tenant_ids),
-            self.max_quarantine_rate,
-            self.batch_id,
-        )
+        return replace(self, tenants=tuple(self.tenant(t) for t in tenant_ids))
+
+
+def deid_key_from_env() -> str:
+    """DEID_HMAC_KEY from the environment ("" when unset; gold then refuses to build notes)."""
+    return os.environ.get("DEID_HMAC_KEY", "")

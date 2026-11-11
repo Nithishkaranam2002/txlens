@@ -20,12 +20,16 @@ dbutils.widgets.text("tenants", "", "Tenants (empty = all)")
 catalog = dbutils.widgets.get("catalog")
 layers = [x.strip() for x in dbutils.widgets.get("layers").split(",") if x.strip()]
 tenants = [x.strip() for x in dbutils.widgets.get("tenants").split(",") if x.strip()]
+# Note de-identification key (same value as DEID_HMAC_KEY in .env), from a secret scope:
+#   databricks secrets create-scope txlens
+#   databricks secrets put-secret txlens deid_hmac_key
+deid_key = dbutils.secrets.get("txlens", "deid_hmac_key")
 
 # COMMAND ----------
 
 from txlens_pipelines.databricks import run_pipeline
 
-results = run_pipeline(spark, catalog, layers, tenants or None)
+results = run_pipeline(spark, catalog, layers, tenants or None, deid_key)
 for layer, counts in results.items():
     print(layer, counts)
 

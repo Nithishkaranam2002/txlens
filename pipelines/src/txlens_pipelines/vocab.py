@@ -52,7 +52,9 @@ def load_vocabulary(runtime: Runtime) -> Vocabulary:
         )
     )
     synonym = read_athena(runtime, "CONCEPT_SYNONYM.csv").select(
-        F.col("concept_id").cast("int").alias("concept_id"), "concept_synonym_name"
+        F.col("concept_id").cast("int").alias("concept_id"),
+        "concept_synonym_name",
+        F.col("language_concept_id").cast("int").alias("language_concept_id"),
     )
     stcm = (
         read_athena(runtime, "SOURCE_TO_CONCEPT_MAP.csv")

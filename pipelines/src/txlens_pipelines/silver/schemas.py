@@ -54,6 +54,16 @@ class Conditions(Lineage):
     snomed_code: StringType = pa.Field(nullable=True)
     source_text: StringType = pa.Field(nullable=True)
     onset_date: DateType = pa.Field(nullable=True)
+    condition_concept_id: IntegerType = pa.Field(nullable=False)
+    value_concept_id: IntegerType = pa.Field(nullable=True)
+    domain_id: StringType = pa.Field(nullable=False, isin=["Condition", "Observation"])
+    source_concept_id: IntegerType = pa.Field(nullable=False)
+    mapping_method: StringType = pa.Field(
+        nullable=False, isin=["code", "reviewed", "exact", "normalized", "fuzzy", "unmapped"]
+    )
+    mapping_confidence: DoubleType = pa.Field(nullable=True)
+    suggested_concept_id: IntegerType = pa.Field(nullable=True)
+    review_reason: StringType = pa.Field(nullable=True)
 
 
 class Medications(Lineage):

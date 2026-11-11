@@ -186,35 +186,57 @@ def measurement_rows(
     )  # fmt: skip
 
 
-def condition_rows(
-    conditions: DataFrame, persons: DataFrame, transplants: DataFrame, vocab: Vocabulary
-) -> DataFrame:
-    """One condition per coded or uncoded FHIR Condition (uncoded: concept 0, text kept).
+def problem_list_dates(conditions: DataFrame, transplants: DataFrame) -> DataFrame:
+    """Conditions with their date: the onset date, else the first transplant date.
 
     Problem-list entries carry no date: they are dated at the transplant, when the problem
     list was documented. Graft failure has its own onset date.
     """
-    snomed = code_lookup(vocab, "SNOMED").select(
-        F.col("concept_code").alias("snomed_code"),
-        F.col("source_concept_id").alias("source_id"),
-        F.col("standard_concept_id").alias("standard_id"),
-    )
     tx_date = transplants.groupBy("tenant_id", "patient_source_id").agg(
         F.min("procedure_date").alias("transplant_date")
     )
+    return conditions.join(tx_date, ["tenant_id", "patient_source_id"], "left").withColumn(
+        "event_date", F.coalesce("onset_date", "transplant_date")
+    )
+
+
+def condition_rows(conditions: DataFrame, persons: DataFrame, transplants: DataFrame) -> DataFrame:
+    """FHIR conditions whose concept is in the Condition domain (unmapped ones too: concept 0,
+    text kept). Mapping happened in silver (condition_normalize.py)."""
     return (
-        with_person(conditions, persons)
-        .join(tx_date, ["tenant_id", "patient_source_id"], "left")
-        .join(snomed, "snomed_code", "left")
+        with_person(problem_list_dates(conditions, transplants), persons)
+        .where(F.col("domain_id") == "Condition")
         .select(
             *LINEAGE,
             natural_key("tenant_id", "condition_source_id").alias("natural_key"),
             "person_id",
-            F.coalesce("standard_id", F.lit(0)).alias("condition_concept_id"),
-            F.coalesce("onset_date", "transplant_date").alias("condition_start_date"),
+            "condition_concept_id",
+            F.col("event_date").alias("condition_start_date"),
             F.lit(TYPE_PROBLEM_LIST).alias("condition_type_concept_id"),
             F.coalesce("snomed_code", "source_text").alias("condition_source_value"),
-            F.coalesce("source_id", F.lit(0)).alias("condition_source_concept_id"),
+            F.col("source_concept_id").alias("condition_source_concept_id"),
+        )
+    )
+
+
+def observation_rows(
+    conditions: DataFrame, persons: DataFrame, transplants: DataFrame
+) -> DataFrame:
+    """FHIR conditions whose standard concept is in the Observation domain, such as "History of
+    prior kidney transplant" -> History of event with value Transplant of kidney."""
+    return (
+        with_person(problem_list_dates(conditions, transplants), persons)
+        .where(F.col("domain_id") == "Observation")
+        .select(
+            *LINEAGE,
+            natural_key("tenant_id", "condition_source_id").alias("natural_key"),
+            "person_id",
+            F.col("condition_concept_id").alias("observation_concept_id"),
+            F.col("event_date").alias("observation_date"),
+            F.lit(TYPE_PROBLEM_LIST).alias("observation_type_concept_id"),
+            F.col("value_concept_id").alias("value_as_concept_id"),
+            F.coalesce("snomed_code", "source_text").alias("observation_source_value"),
+            F.col("source_concept_id").alias("observation_source_concept_id"),
         )
     )
 
@@ -289,31 +311,28 @@ def death_rows(persons: DataFrame) -> DataFrame:
 
 def note_rows(
     notes: DataFrame,
-    persons: DataFrame,
     visits: DataFrame,
     note_class_id: int,
     language_id: int,
     encoding_id: int,
 ) -> DataFrame:
-    """One note per clinical note file (full text; NLP comes later)."""
+    """One note per clinical note file. `notes` is already de-identified (gold/notes.py) and
+    keeps its `phi_spans` column for the replacement table."""
     visit_ids = visits.select("tenant_id", "encounter_source_id", "visit_occurrence_id")
-    return (
-        with_person(notes, persons)
-        .join(visit_ids, ["tenant_id", "encounter_source_id"], "left")
-        .select(
-            *LINEAGE,
-            natural_key("tenant_id", "note_source_id").alias("natural_key"),
-            "person_id",
-            "note_date",
-            F.lit(TYPE_NOTE).alias("note_type_concept_id"),
-            F.lit(note_class_id).alias("note_class_concept_id"),
-            F.col("note_title"),
-            F.col("note_text"),
-            F.lit(encoding_id).alias("encoding_concept_id"),
-            F.lit(language_id).alias("language_concept_id"),
-            "visit_occurrence_id",
-            F.col("note_source_id").alias("note_source_value"),
-        )
+    return notes.join(visit_ids, ["tenant_id", "encounter_source_id"], "left").select(
+        *LINEAGE,
+        natural_key("tenant_id", "note_source_id").alias("natural_key"),
+        "person_id",
+        "note_date",
+        F.lit(TYPE_NOTE).alias("note_type_concept_id"),
+        F.lit(note_class_id).alias("note_class_concept_id"),
+        F.col("note_title"),
+        F.col("note_text"),
+        F.lit(encoding_id).alias("encoding_concept_id"),
+        F.lit(language_id).alias("language_concept_id"),
+        "visit_occurrence_id",
+        F.col("note_source_id").alias("note_source_value"),
+        "phi_spans",
     )
 
 

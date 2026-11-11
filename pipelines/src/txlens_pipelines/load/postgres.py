@@ -1,7 +1,8 @@
 """Load one tenant's gold rows into Postgres, as the non-superuser app role.
 
 OMOP tables go to `cdm`; the patient identifiers (MRN, name, birth date) go to
-`app.patient_identity`, which only the clinician API path reads.
+`app.patient_identity`, and the identifiers replaced in de-identified notes to
+`app.note_phi_span`. Only the clinician API path reads those two.
 
 Row-Level Security stays on: the session is the app login (never a superuser, never
 BYPASSRLS) with `app.tenant_id` set. Postgres does not allow COPY FROM into a table with
@@ -30,6 +31,7 @@ LOAD_ORDER = (
     "observation_period",
     "visit_occurrence",
     "condition_occurrence",
+    "observation",
     "drug_exposure",
     "measurement",
     "procedure_occurrence",
@@ -37,12 +39,16 @@ LOAD_ORDER = (
     "note",
     "cdm_source",
     "patient_identity",
+    "note_phi_span",
 )
 # Tables outside the OMOP schema.
-APP_TABLES = {"patient_identity"}
+APP_TABLES = {"patient_identity", "note_phi_span"}
 # Conditions and measurements extracted from biopsy reports live in app tables (the document
 # workflow's source of truth) and are copied back into cdm after every reload.
 BIOPSY_RESULTS = "biopsy_results"
+# Ids from here up belong to rows the backend copies back (extraction results), not to the
+# pipeline: tenant id ranges end below it (20 tenants x 100,000,000).
+FIRST_APP_ROW_ID = 2_100_000_000
 
 
 class UnsafeLoadError(RuntimeError):
