@@ -147,6 +147,12 @@ def test_clinician_timeline_has_every_event(client: TestClient, api_data: Datase
     assert timeline["drugs"] and timeline["conditions"]
     # Biopsy results come from pathology documents (document extraction); none yet.
     assert all(p["result"] is None for p in timeline["procedures"])
+    # Open orders are "ongoing" (no end date); closed orders keep their real end date.
+    orders = [m for m in api_data.truth("medications") if m["patient_id"] == row["patient_id"]]
+    assert sorted((d["start_date"], d["end_date"] or "") for d in timeline["drugs"]) == sorted(
+        (m["start_date"], m["end_date"]) for m in orders
+    )
+    assert any(d["end_date"] is None for d in timeline["drugs"])
 
 
 def test_researcher_timeline_shifts_every_date_by_the_same_days(

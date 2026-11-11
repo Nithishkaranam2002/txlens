@@ -489,7 +489,8 @@ experiencer flags).
 - **A Temporal workflow**:
   - `make worker` runs the worker;
   - `make surveillance-schedule` creates the nightly run (02:00 UTC);
-  - `make surveillance-run AS_OF=2025-06-30` runs any date.
+  - `make surveillance-run` runs as of the data extract date (the demo default since
+    Step 1.7); `AS_OF=YYYY-MM-DD` runs any other date.
 - **A small oncology cohort** in the generator (`data/oncology/`), run by the same engine
   with a different YAML file.
 - **An evaluation** (`make surveillance-report` → `evals/reports/surveillance.md`) that
@@ -755,3 +756,32 @@ experiencer flags).
    also drives the review dialog with the keyboard. The tests found real bugs: a chart
    wrapper marked as an image that contained buttons, and a search box pointing at a list
    that did not exist yet. A manual screen-reader check is still on the to-do list.
+
+### Fix: open medication orders and the OMOP end date (after Step 1.7)
+- **What went wrong**: the patient page showed maintenance drugs "ending" on the day they
+  started (mycophenolate 18 Jan 2025 – 18 Jan 2025). The generator was right: those orders
+  were still active, so they had no end date. The gold layer filled the missing end with the
+  start date, and the API showed that date as a real stop.
+- **The OMOP convention**: `drug_exposure_end_date` is required (NOT NULL), so an ETL must
+  infer it when the source has none. It can use the days supply, a refill pattern, or for an
+  order still active at extraction, a sensible date such as the extract date. It also keeps
+  the source's own end date (or NULL) in `verbatim_end_date`, so consumers can tell a real
+  stop from an inferred one.
+  - Filling in the start date makes every long-term drug look like a single dose. Any query
+    like "on tacrolimus at day 365" then gives the wrong answer.
+- **Our rule now**:
+  - an open order runs to the extract date (`raw/extract.json`, written with the feeds), or
+    to the death date if that is earlier;
+  - `verbatim_end_date` stays NULL;
+  - the API shows NULL as "ongoing";
+  - `cdm_source.source_release_date` is the extract date too.
+- **How we would catch it next time**: `make pipeline-report` now checks that every active
+  patient has tacrolimus, mycophenolate and prednisone on every day from transplant to the
+  extract date. This is the generator's protocol. Real centers differ (for example
+  steroid-free regimens), so this is a consistency check for our synthetic data, not a
+  clinical rule.
+- **Interview question**: *"A drug has no end date in the source. What do you put in OMOP?"*
+  The field is required, so infer it: from the days supply if you have it; for an order that
+  was still active, from the extract date (capped at death). Keep the source value in
+  `verbatim_end_date`, and write the rule down. Never copy the start date for a chronic drug:
+  that silently says the patient stopped it.

@@ -11,6 +11,8 @@ def test_cli_writes_data_and_summary(tmp_path: Path, capsys: pytest.CaptureFixtu
     manifest = json.loads((tmp_path / "manifest.json").read_text())
     assert manifest["n_patients"] == 5
     assert manifest["pdfs"] is False
+    extract = json.loads((tmp_path / "raw" / "extract.json").read_text())
+    assert extract == {"extract_date": manifest["data_cutoff"]}
     out = capsys.readouterr().out
     assert "Patients by center/organ" in out
     assert "Total size on disk" in out

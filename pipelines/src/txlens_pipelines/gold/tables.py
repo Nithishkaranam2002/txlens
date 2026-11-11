@@ -5,6 +5,8 @@ and the bronze lineage columns. Standard concepts come from codes the centers se
 reviewed source_to_concept_map; anything unmapped gets concept 0 and keeps its source value.
 """
 
+from datetime import date
+
 from pyspark.sql import Column, DataFrame
 from pyspark.sql import functions as F
 
@@ -88,14 +90,24 @@ def visit_by_day(visits: DataFrame) -> DataFrame:
     ).agg(F.min("visit_occurrence_id").alias("visit_occurrence_id"))
 
 
-def drug_rows(meds: DataFrame, persons: DataFrame, vocab: Vocabulary) -> DataFrame:
-    """One drug_exposure per order (end date = start when the order has none)."""
+def drug_rows(
+    meds: DataFrame, persons: DataFrame, vocab: Vocabulary, extract_date: date
+) -> DataFrame:
+    """One drug_exposure per order.
+
+    OMOP requires an end date. An order with none was still active when the source was
+    extracted, so it runs to the extract date (or to death, if earlier); verbatim_end_date
+    stays NULL, which tells consumers the order was open.
+    """
     rxnorm = code_lookup(vocab, "RxNorm").select(
         F.col("concept_code").alias("rxnorm_code"), F.col("source_concept_id").alias("rx_source")
     )
     routes = route_lookup(meds, vocab)
+    deaths = persons.select("tenant_id", "person_id", "death_date")
+    still_active_until = F.least(F.coalesce("death_date", F.lit(extract_date)), F.lit(extract_date))
     return (
         with_person(meds, persons)
+        .join(deaths, ["tenant_id", "person_id"], "left")
         .join(rxnorm, "rxnorm_code", "left")
         .withColumn("route_key", F.lower(F.trim("route")))
         .join(routes, "route_key", "left")
@@ -105,7 +117,9 @@ def drug_rows(meds: DataFrame, persons: DataFrame, vocab: Vocabulary) -> DataFra
             "person_id",
             "drug_concept_id",
             F.col("start_date").alias("drug_exposure_start_date"),
-            F.coalesce("end_date", "start_date").alias("drug_exposure_end_date"),
+            F.coalesce("end_date", F.greatest("start_date", still_active_until)).alias(
+                "drug_exposure_end_date"
+            ),
             F.col("end_date").alias("verbatim_end_date"),
             F.lit(TYPE_PRESCRIPTION).alias("drug_type_concept_id"),
             F.col("sig_text").alias("sig"),

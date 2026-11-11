@@ -108,8 +108,19 @@ def generate(
     finally:
         feeds.close()
         truth.close()
+    write_extract_info(config, raw)
     write_manifest(config, out_dir, summary, pdfs=pdfs, note_text=note_text)
     return summary
+
+
+def write_extract_info(config: GeneratorConfig, raw: Path) -> None:
+    """raw/extract.json: the date the source systems were extracted (the data cutoff).
+
+    Real feeds carry their extraction date; the pipeline needs it to close orders that are
+    still active (OMOP requires a drug_exposure end date).
+    """
+    info = {"extract_date": config.data_cutoff.isoformat()}
+    (raw / "extract.json").write_text(json.dumps(info), encoding="utf-8")
 
 
 def write_pdfs(

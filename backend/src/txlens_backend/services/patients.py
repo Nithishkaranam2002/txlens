@@ -61,7 +61,7 @@ class Lab(BaseModel):
 
 
 class Drug(BaseModel):
-    """One drug exposure."""
+    """One drug exposure; end_date is None while the order is still active (ongoing)."""
 
     start_date: date
     end_date: date | None
@@ -260,7 +260,8 @@ def timeline(conn: Connection, viewer: Viewer, person_id: int) -> Timeline:
         drugs=[
             Drug(
                 start_date=r.drug_exposure_start_date + move,
-                end_date=r.drug_exposure_end_date + move if r.drug_exposure_end_date else None,
+                # NULL verbatim end: still active when the source was extracted ("ongoing").
+                end_date=r.verbatim_end_date + move if r.verbatim_end_date else None,
                 concept_id=r.drug_concept_id,
                 drug=r.concept_name or r.drug_source_value,
             )

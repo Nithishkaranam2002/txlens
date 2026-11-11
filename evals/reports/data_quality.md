@@ -1,8 +1,8 @@
 # Data-quality report: medallion pipeline
 
-Generated 2026-11-10 by `make pipeline-report` (evals/src/txlens_evals/pipeline_reconciliation.py). Synthetic data only.
+Generated 2026-11-11 by `make pipeline-report` (evals/src/txlens_evals/pipeline_reconciliation.py). Synthetic data only.
 
-**Reconciliation: 12 of 12 checks passed.**
+**Reconciliation: 13 of 13 checks passed.**
 
 ## Reconciliation with the ground truth
 
@@ -17,9 +17,16 @@ Generated 2026-11-10 by `make pipeline-report` (evals/src/txlens_evals/pipeline_
 | medications: one drug_exposure per order | 22,234 | 22,234 | PASS | 0 orders missing |
 | medications: normalized to the right RxNorm ingredient | 22,234 | 22,234 | PASS | 100.0% correct |
 | medications: dose and start date | 22,234 | 22,234 | PASS |  |
+| medications: continuous maintenance immunosuppression per the generator's protocol (active patients, transplant to extract 2026-09-30) | 1,853 | 1,853 | PASS | 0 patients with gaps (0 patient-drug gaps); see section below |
 | duplicates: every injected duplicate removed, nothing else | 4,885 | 4,886 | PASS | missed 0; 1 extra, of which 1 are identical genuine results |
 | quarantine: exactly the rows with an injected bad date or missing value | 3,686 | 3,686 | PASS | missed 0, extra 0 |
 | postgres: cdm + identity row counts equal gold, per tenant and table | 303,682 | 303,682 | PASS | 33 (tenant, table) pairs compared |
+
+## Maintenance immunosuppression
+
+Checked against the generator's protocol (tacrolimus + mycophenolate + prednisone for both organs). Real-world protocols vary, e.g. steroid-free or steroid-withdrawal regimens, belatacept or mTOR inhibitors, so this is a synthetic-data consistency check, not a clinical rule.
+
+Every active patient is covered on every day.
 
 ## Rows per layer
 

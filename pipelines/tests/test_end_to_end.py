@@ -13,7 +13,7 @@ from testvocab import write_vocab
 
 from txlens_datagen.config import GeneratorConfig
 from txlens_datagen.generate import generate
-from txlens_evals.pipeline_reconciliation import Lake, build_report
+from txlens_evals.pipeline_reconciliation import Lake, build_report, read_extract_date
 from txlens_pipelines.config import PipelineConfig
 from txlens_pipelines.pipeline import run
 from txlens_pipelines.runtime import LocalRuntime
@@ -51,7 +51,12 @@ def test_generated_data_reconciles_and_reruns_are_idempotent(
 ) -> None:
     runtime, lake = build(spark, root, 12)
     report, checks = build_report(
-        spark, lake, str(root / "data" / "ground_truth"), runtime.vocab_root, postgres=False
+        spark,
+        lake,
+        str(root / "data" / "ground_truth"),
+        runtime.vocab_root,
+        postgres=False,
+        extracted=read_extract_date(runtime.raw_root),
     )
     failed = [c for c in checks if not c.passed]
     assert not failed, report
@@ -71,6 +76,11 @@ def test_ids_survive_new_patients_and_longer_files(spark: SparkSession, root: Pa
     assert len(after) > len(before)
     assert {k: after[k] for k in before} == before  # every old key kept its id
     _, checks = build_report(
-        spark, lake, str(root / "data" / "ground_truth"), runtime.vocab_root, postgres=False
+        spark,
+        lake,
+        str(root / "data" / "ground_truth"),
+        runtime.vocab_root,
+        postgres=False,
+        extracted=read_extract_date(runtime.raw_root),
     )
     assert all(c.passed for c in checks)

@@ -73,12 +73,20 @@ def vocabulary_version(runtime: Runtime) -> str:
     return str(row.vocabulary_version) if row else "unknown"
 
 
-def cdm_source_rows(runtime: Runtime, config: PipelineConfig) -> DataFrame:
-    """One cdm_source row per tenant."""
+def extract_date(runtime: Runtime) -> date:
+    """When the source systems were extracted (raw/extract.json, written with the feeds)."""
+    row = runtime.spark.read.option("multiLine", True).json(runtime.raw("extract.json")).first()
+    if row is None or not row["extract_date"]:
+        raise ValueError("raw/extract.json has no extract_date")
+    return date.fromisoformat(str(row["extract_date"]))
+
+
+def cdm_source_rows(runtime: Runtime, config: PipelineConfig, extracted: date) -> DataFrame:
+    """One cdm_source row per tenant (source_release_date = the extract date)."""
     today = date.today()
     version = vocabulary_version(runtime)
     rows = [
-        (x.tenant_id, x.name, x.tenant_id, "TxLens (synthetic data)", today, today, "5.4",
+        (x.tenant_id, x.name, x.tenant_id, "TxLens (synthetic data)", extracted, today, "5.4",
          CDM_V543, version)
         for x in config.tenants
     ]  # fmt: skip
@@ -98,6 +106,7 @@ def event_dates(df: DataFrame, column: str) -> DataFrame:
 def run_gold(runtime: Runtime, config: PipelineConfig) -> dict[str, int]:
     """Build every gold table for the configured tenants; returns row counts."""
     vocab: Vocabulary = load_vocabulary(runtime)
+    extracted = extract_date(runtime)
     w = GoldWriter(runtime, config)
 
     def silver(name: str) -> DataFrame:
@@ -110,7 +119,7 @@ def run_gold(runtime: Runtime, config: PipelineConfig) -> dict[str, int]:
     w.write("visit_occurrence", visits)
     procedures = silver("procedures")
     builders = {
-        "drug_exposure": t.drug_rows(silver("medications"), persons, vocab),
+        "drug_exposure": t.drug_rows(silver("medications"), persons, vocab, extracted),
         "measurement": t.measurement_rows(silver("labs"), persons, visits, vocab),
         "condition_occurrence": t.condition_rows(
             silver("conditions"), persons, procedures.where("kind = 'transplant'"), vocab
@@ -137,7 +146,7 @@ def run_gold(runtime: Runtime, config: PipelineConfig) -> dict[str, int]:
     ]
     periods = t.observation_period_rows(persons, events)
     w.write("observation_period", w.with_ids(periods, "observation_period"))
-    w.write("cdm_source", cdm_source_rows(runtime, config))
+    w.write("cdm_source", cdm_source_rows(runtime, config, extracted))
 
     lineage = w.lineage[0]
     for frame in w.lineage[1:]:

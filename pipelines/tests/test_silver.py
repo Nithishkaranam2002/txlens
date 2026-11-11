@@ -116,6 +116,7 @@ def test_drugs_are_normalized_without_substring_matching(built: LocalRuntime) ->
     }
     assert meds == {
         "RX-A-1": (950637, "rxnorm_code"),
+        "RX-A-2": (19003999, "rxnorm_code"),
         "RX-B-1": (950637, "brand"),  # Prograf -> Brand name of -> tacrolimus
         "RX-B-2": (950637, "reviewed_map"),  # tacro
         "RX-B-3": (19003999, "reviewed_map"),  # reviewed map beats the exact name match

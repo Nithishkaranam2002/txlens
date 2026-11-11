@@ -168,11 +168,17 @@ def load(conn: Connection, data: Dataset) -> None:
             "unit_source_value": lab["unit"], "measurement_source_value": lab["lab"]}
         for lab in data.truth("labs")
     ), "measurement_id"))  # fmt: skip
+    # Like the pipeline: an open order runs to the extract date (or death); verbatim stays NULL.
+    deaths = {o["patient_id"]: date.fromisoformat(o["death_date"])
+              for o in data.truth("outcomes") if o["death_date"]}  # fmt: skip
+    cutoff = GeneratorConfig().data_cutoff
     insert(conn, "cdm.drug_exposure", numbered((
         who(m["patient_id"]) | {
             "drug_concept_id": DRUGS.get(m["rxnorm"], 0),
             "drug_exposure_start_date": date.fromisoformat(m["start_date"]),
-            "drug_exposure_end_date": date.fromisoformat(m["end_date"] or m["start_date"]),
+            "drug_exposure_end_date": date.fromisoformat(m["end_date"]) if m["end_date"]
+            else min(deaths.get(m["patient_id"], cutoff), cutoff),
+            "verbatim_end_date": date.fromisoformat(m["end_date"]) if m["end_date"] else None,
             "drug_type_concept_id": 32838, "drug_source_value": m["drug"]}
         for m in data.truth("medications")
     ), "drug_exposure_id"))  # fmt: skip

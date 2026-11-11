@@ -77,6 +77,20 @@ def test_drugs_and_routes(built: LocalRuntime) -> None:
     assert rows["Prograf"].sig == "prograf 3.5mg oral bid"
 
 
+def test_open_orders_run_to_the_extract_date_or_death(built: LocalRuntime) -> None:
+    ids = person_ids(built)
+    mmf = {(r.person_id, r.drug_exposure_start_date): r for r in gold(built, "drug_exposure")
+           if r.drug_source_value == "68149"}  # fmt: skip
+    alive = mmf[(ids["730000063"], date(2022, 5, 1))]
+    assert (alive.drug_exposure_end_date, alive.verbatim_end_date) == (date(2025, 6, 30), None)
+    died = mmf[(ids["A1"], date(2024, 3, 1))]  # died 2025-03-01, before the extract
+    assert (died.drug_exposure_end_date, died.verbatim_end_date) == (date(2025, 3, 1), None)
+    closed = next(r for r in gold(built, "drug_exposure") if r.drug_source_value == "42316")
+    assert closed.verbatim_end_date == closed.drug_exposure_end_date == date(2024, 2, 5)
+    sources = gold(built, "cdm_source")
+    assert {r.source_release_date for r in sources} == {date(2025, 6, 30)}
+
+
 def test_conditions_from_codes_only_and_dated(built: LocalRuntime) -> None:
     rows = {r.condition_source_value: r for r in gold(built, "condition_occurrence")}
     assert rows["46177005"].condition_concept_id == 193782

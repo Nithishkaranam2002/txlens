@@ -50,9 +50,16 @@ def subject(pid: str) -> dict[str, str]:
 
 
 def med(
-    pid: str, order: str, text: str, code: str | None, start: str, sig: str | None = None
+    pid: str,
+    order: str,
+    text: str,
+    code: str | None,
+    start: str,
+    sig: str | None = None,
+    end: str | None = "2024-02-05",
 ) -> dict[str, object]:
-    """A MedicationRequest; structured dose unless a free-text `sig` is given."""
+    """A MedicationRequest; structured dose unless a free-text `sig` is given; end=None is an
+    order still active at extraction."""
     dosage: dict[str, object] = (
         {"text": sig}
         if sig
@@ -70,7 +77,7 @@ def med(
         "medicationCodeableConcept": coded(RXNORM, code, text),
         "authoredOn": start,
         "dosageInstruction": [dosage],
-        "dispenseRequest": {"validityPeriod": {"start": start, "end": "2024-02-05"}},
+        "dispenseRequest": {"validityPeriod": {"start": start, **({"end": end} if end else {})}},
     }
 
 
@@ -117,6 +124,7 @@ BUNDLES: dict[str, list[dict[str, object]]] = {
         encounter("pa", "E-A-1", "clinic", "2024-02-01"),
         encounter("pa", "E-A-2", "biopsy", "2024-03-01"),
         med("pa", "RX-A-1", "tacro", "42316", "2024-01-05"),
+        med("pa", "RX-A-2", "MMF", "68149", "2024-03-01", end=None),  # open, ends at death
     ],
     "center_b": [
         {
@@ -161,7 +169,7 @@ BUNDLES: dict[str, list[dict[str, object]]] = {
             "performedDateTime": "2022-05-01",
         },
         encounter("pc", "E-C-1", "admission", "2022-06-09"),
-        med("pc", "RX-C-1", "MMF", "68149", "2022-05-01"),
+        med("pc", "RX-C-1", "MMF", "68149", "2022-05-01", end=None),  # still active
         med("pnobody", "RX-C-2", "MMF", "68149", "2022-05-01"),  # unknown patient
     ],
 }  # fmt: skip
@@ -181,6 +189,9 @@ def note_text(tenant: str) -> str:
     )
 
 
+EXTRACT_DATE = "2025-06-30"
+
+
 def write_raw(root: Path) -> Path:
     """A raw folder like data/raw with a few rows per source and center."""
     (root / "labs").mkdir(parents=True, exist_ok=True)
@@ -195,4 +206,5 @@ def write_raw(root: Path) -> Path:
     (root / "notes" / "center_c" / "N-000002-001.txt").write_text(
         note_text("center_c").replace("730000063", "000")  # unknown patient
     )
+    (root / "extract.json").write_text(json.dumps({"extract_date": EXTRACT_DATE}))
     return root

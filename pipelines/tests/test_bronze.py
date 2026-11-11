@@ -27,7 +27,7 @@ def test_lab_rows_keep_raw_values_and_exact_row_numbers(
     runtime: LocalRuntime, config: PipelineConfig
 ) -> None:
     added = run_bronze(runtime, config)
-    assert added == {"lab_rows": 16, "fhir_resources": 22, "note_files": 4, "pdf_index": 3}
+    assert added == {"lab_rows": 16, "fhir_resources": 23, "note_files": 4, "pdf_index": 3}
     rows = {(r.tenant_id, r.source_row): r for r in runtime.read("bronze", "lab_rows").collect()}
     second = rows[("center_a", 2)]
     assert second.source_file == "labs/center_a_labs.csv"

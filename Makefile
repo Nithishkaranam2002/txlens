@@ -69,7 +69,12 @@ worker: ## Run the Temporal worker that executes surveillance runs (needs `make 
 surveillance-schedule: ## Create/update the nightly surveillance schedule (02:00 UTC)
 	uv run txlens-surveillance schedule
 
-surveillance-run: ## Run surveillance for every center now (AS_OF=YYYY-MM-DD replays a date)
+# The demo runs "as of" the synthetic data's extract date (data cutoff), so the worklist shows
+# the latest results; `make surveillance-run AS_OF=YYYY-MM-DD` replays any other date.
+EXTRACT_DATE = $(shell python3 -c "import json; print(json.load(open('data/raw/extract.json'))['extract_date'])" 2>/dev/null)
+AS_OF ?= $(EXTRACT_DATE)
+
+surveillance-run: ## Run surveillance for every center as of the data extract date (AS_OF=... to override)
 	uv run txlens-surveillance run $(if $(AS_OF),--as-of $(AS_OF))
 
 prune-login-attempts: ## Delete login attempts older than 30 days (logins also do this)

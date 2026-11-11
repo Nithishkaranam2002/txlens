@@ -77,7 +77,8 @@ make seed-users     # one demo user per role per center, e.g. clinician.center_a
 make api            # API at http://localhost:8000 (interactive docs: /docs)
 make cohort-report  # cohort rules vs ground truth -> evals/reports/cohort_rules.md
 make worker         # Temporal worker for surveillance runs (keep it running)
-make surveillance-run AS_OF=2025-06-30  # run surveillance for every center as of a date
+make surveillance-run  # surveillance for every center as of the data cutoff (2026-09-30);
+                       # AS_OF=YYYY-MM-DD replays another date
 make surveillance-schedule  # nightly run at 02:00 UTC
 make surveillance-report    # replay vs ground truth -> evals/reports/surveillance.md
 

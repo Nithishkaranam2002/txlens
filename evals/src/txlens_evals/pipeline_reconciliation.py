@@ -2,8 +2,9 @@
 
 `make pipeline-report` (Spark container) writes evals/reports/data_quality.md with:
 counts per layer, quarantine reasons, mapping coverage, mapping gaps, and reconciliation checks
-(patients, deaths, labs row by row in standard units, medications, duplicates removed, bad rows
-quarantined, Postgres vs gold). Every number in the README's data-quality section comes from it.
+(patients, deaths, labs row by row in standard units, medications, maintenance
+immunosuppression coverage, duplicates removed, bad rows quarantined, Postgres vs gold).
+Every number in the README's data-quality section comes from it.
 
 Known, explained differences are reported as such, never hidden: the generator sometimes
 writes two genuinely identical lab rows (same patient, test, time and value); an exact-duplicate
@@ -11,9 +12,11 @@ filter cannot tell them from a re-sent row, so one is removed. Such pairs are co
 """
 
 import argparse
+import json
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from pyspark.sql import Column, DataFrame, SparkSession
@@ -24,6 +27,15 @@ from pyspark.sql import functions as F
 TOLERANCE = {"creatinine": 0.006, "dd_cfdna": 1e-6}
 DEFAULT_TOLERANCE = 0.05
 BAD_ROW_ISSUES = ("bad_date", "missing_value")
+# Maintenance immunosuppression per the generator's protocol: every kidney and heart patient
+# stays on tacrolimus + mycophenolate + prednisone (RxNorm ingredient codes).
+MAINTENANCE = {"tacrolimus": "42316", "mycophenolate mofetil": "68149", "prednisone": "8640"}
+PROTOCOL_NOTE = (
+    "Checked against the generator's protocol (tacrolimus + mycophenolate + prednisone for "
+    "both organs). Real-world protocols vary, e.g. steroid-free or steroid-withdrawal regimens, "
+    "belatacept or mTOR inhibitors, so this is a synthetic-data consistency check, not a "
+    "clinical rule."
+)
 COVERAGE = (
     ("measurement", "measurement_concept_id"),
     ("measurement", "unit_concept_id"),
@@ -248,6 +260,86 @@ def check_medications(lake: Lake, meds: DataFrame, vocab_root: str) -> list[Chec
     ]  # fmt: skip
 
 
+def uncovered_days(spans: Sequence[tuple[date, date]], start: date, end: date) -> int:
+    """Days in [start, end] (inclusive) that no span [from, to] covers."""
+    covered: set[date] = set()
+    for first, last in spans:
+        day = max(first, start)
+        while day <= min(last, end):
+            covered.add(day)
+            day += timedelta(days=1)
+    return (end - start).days + 1 - len(covered)
+
+
+@dataclass(frozen=True)
+class MaintenanceGap:
+    """An active patient without continuous coverage by one maintenance drug."""
+
+    tenant_id: str
+    mrn: str
+    drug: str
+    uncovered_days: int
+
+
+def maintenance_gaps(
+    lake: Lake, patients: DataFrame, outcomes: DataFrame, vocab_root: str, extracted: date
+) -> tuple[int, list[MaintenanceGap]]:
+    """(active patients, their gaps): every patient alive with a working graft at the extract
+    must have each maintenance drug on every day from transplant to the extract date."""
+    spark = patients.sparkSession
+    active = (
+        patients.join(outcomes, "patient_id")
+        .where(F.col("death_date").isNull() & F.col("graft_loss_date").isNull())
+        .select("tenant_id", "mrn", F.to_date("transplant_date").alias("transplant_date"))
+    )
+    codes = {code: drug for drug, code in MAINTENANCE.items()}
+    concepts = (
+        spark.read.option("sep", "\t").option("header", True).option("quote", "\u0000")
+        .csv(f"{vocab_root}/CONCEPT.csv")
+        .where(F.col("vocabulary_id") == "RxNorm")
+        .where(F.col("concept_code").isin(*codes))
+        .select(F.col("concept_id").cast("int").alias("drug_concept_id"),
+                F.col("concept_code").alias("rxnorm"))
+    )  # fmt: skip
+    person = persons_by_mrn(lake).select("tenant_id", "person_id", "mrn")
+    exposures = (
+        lake.read("gold", "drug_exposure").join(concepts, "drug_concept_id")
+        .join(person, ["tenant_id", "person_id"])
+        .select("tenant_id", "mrn", "rxnorm", "drug_exposure_start_date", "drug_exposure_end_date")
+    )  # fmt: skip
+    spans: dict[tuple[str, str, str], list[tuple[date, date]]] = defaultdict(list)
+    for r in exposures.collect():
+        spans[(r.tenant_id, r.mrn, r.rxnorm)].append(
+            (r.drug_exposure_start_date, r.drug_exposure_end_date)
+        )
+    people = active.collect()
+    gaps = [
+        MaintenanceGap(p.tenant_id, p.mrn, drug, missing)
+        for p in people
+        for code, drug in codes.items()
+        if (missing := uncovered_days(spans[(p.tenant_id, p.mrn, code)], p.transplant_date,
+                                      extracted))
+    ]  # fmt: skip
+    return len(people), gaps
+
+
+def check_maintenance(n_active: int, gaps: Sequence[MaintenanceGap], extracted: date) -> Check:
+    """Every active patient covered by all maintenance drugs up to the extract date."""
+    without = len({(g.tenant_id, g.mrn) for g in gaps})
+    return Check(
+        "medications: continuous maintenance immunosuppression per the generator's protocol "
+        f"(active patients, transplant to extract {extracted.isoformat()})",
+        n_active, n_active - without, without == 0,
+        f"{without} patients with gaps ({len(gaps)} patient-drug gaps); see section below",
+    )  # fmt: skip
+
+
+def read_extract_date(raw_root: str) -> date:
+    """The source extract date the generator wrote next to the raw feeds."""
+    info = json.loads(Path(raw_root, "extract.json").read_text(encoding="utf-8"))
+    return date.fromisoformat(info["extract_date"])
+
+
 def check_duplicates(lake: Lake, issues: DataFrame, labs_truth: DataFrame) -> Check:
     """Removed lines = injected duplicates, plus explained identical genuine pairs."""
     injected = issues.where("issue = 'duplicate'").select(
@@ -365,6 +457,7 @@ def render(
     reasons: list[tuple[str, str, str, int]],
     cover: list[tuple[str, str, str, int, int]],
     gaps: list[tuple[str, str, str, str, str, int]],
+    maintenance: Sequence[MaintenanceGap] = (),
 ) -> str:
     """The report as markdown."""
     passed = sum(c.passed for c in checks)
@@ -381,6 +474,14 @@ def render(
         *table(["Check", "Expected", "Actual", "Result", "Note"],
                [(c.name, c.expected, c.actual, "PASS" if c.passed else "FAIL", c.note)
                 for c in checks]),
+        "",
+        "## Maintenance immunosuppression",
+        "",
+        PROTOCOL_NOTE,
+        "",
+        *(table(["Tenant", "MRN", "Drug", "Uncovered days"],
+                [(g.tenant_id, g.mrn, g.drug, g.uncovered_days) for g in maintenance[:25]])
+          if maintenance else ["Every active patient is covered on every day."]),
         "",
         "## Rows per layer",
         "",
@@ -415,17 +516,25 @@ def render(
 
 
 def build_report(
-    spark: SparkSession, lake: Lake, truth_dir: str, vocab_root: str, postgres: bool
+    spark: SparkSession,
+    lake: Lake,
+    truth_dir: str,
+    vocab_root: str,
+    postgres: bool,
+    extracted: date,
 ) -> tuple[str, list[Check]]:
     """Run every check and render the report."""
     patients = read_truth(spark, truth_dir, "patients")
+    outcomes = read_truth(spark, truth_dir, "outcomes")
+    n_active, maintenance = maintenance_gaps(lake, patients, outcomes, vocab_root, extracted)
     labs_truth = read_truth(spark, truth_dir, "labs")
     issues = read_truth(spark, truth_dir, "lab_feed_issues")
     checks = [
         *check_patients(lake, patients),
-        check_deaths(lake, patients, read_truth(spark, truth_dir, "outcomes")),
+        check_deaths(lake, patients, outcomes),
         *check_labs(lake, labs_truth, issues),
         *check_medications(lake, read_truth(spark, truth_dir, "medications"), vocab_root),
+        check_maintenance(n_active, maintenance, extracted),
         check_duplicates(lake, issues, labs_truth),
         check_quarantine(lake, issues),
     ]
@@ -444,7 +553,8 @@ def build_report(
         for r in lake.read("gold", "mapping_gaps").orderBy(F.desc("rows"), "source_value")
         .limit(25).collect()
     ]  # fmt: skip
-    return render(checks, layer_counts(lake), reasons, coverage(lake), gaps), checks
+    report = render(checks, layer_counts(lake), reasons, coverage(lake), gaps, maintenance)
+    return report, checks
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -453,6 +563,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--lake-root", default="lake")
     parser.add_argument("--ground-truth", default="data/ground_truth")
     parser.add_argument("--vocab-root", default="omop/vocab_subset")
+    parser.add_argument("--raw-root", default="data/raw")
     parser.add_argument("--out", default="evals/reports/data_quality.md")
     parser.add_argument("--no-postgres", action="store_true")
     args = parser.parse_args(argv)
@@ -462,7 +573,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         report, checks = build_report(
             spark, Lake(spark, args.lake_root, None), args.ground_truth, args.vocab_root,
-            postgres=not args.no_postgres,
+            postgres=not args.no_postgres, extracted=read_extract_date(args.raw_root),
         )  # fmt: skip
     finally:
         spark.stop()

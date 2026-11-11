@@ -4,7 +4,16 @@ import pytest
 
 pytest.importorskip("pyspark", reason="the report module imports PySpark")
 
-from txlens_evals.pipeline_reconciliation import Check, render, table
+from datetime import date
+
+from txlens_evals.pipeline_reconciliation import (
+    Check,
+    MaintenanceGap,
+    check_maintenance,
+    render,
+    table,
+    uncovered_days,
+)
 
 
 def test_table_formats_numbers_with_separators() -> None:
@@ -19,3 +28,24 @@ def test_report_counts_passed_checks_and_totals_coverage() -> None:
     assert "**Reconciliation: 1 of 2 checks passed.**" in report
     assert "| two | 2 | 1 | FAIL | 1 missing |" in report
     assert "| measurement | unit_concept_id | **all** | 10 | 20 | **50.0%** |" in report
+
+
+def test_uncovered_days_joins_back_to_back_dose_steps() -> None:
+    steps = [(date(2025, 1, 1), date(2025, 1, 31)), (date(2025, 2, 1), date(2025, 3, 31))]
+    assert uncovered_days(steps, date(2025, 1, 1), date(2025, 3, 31)) == 0
+    assert uncovered_days(steps, date(2025, 1, 1), date(2025, 4, 2)) == 2  # ends too early
+    assert uncovered_days([], date(2025, 1, 1), date(2025, 1, 10)) == 10
+    gap = [(date(2025, 1, 1), date(2025, 1, 10)), (date(2025, 1, 13), date(2025, 1, 20))]
+    assert uncovered_days(gap, date(2025, 1, 1), date(2025, 1, 20)) == 2
+
+
+def test_maintenance_check_counts_patients_and_names_the_protocol() -> None:
+    gaps = [MaintenanceGap("center_a", "A1", "prednisone", 30),
+            MaintenanceGap("center_a", "A1", "tacrolimus", 5)]  # fmt: skip
+    check = check_maintenance(10, gaps, date(2026, 9, 30))
+    assert (check.expected, check.actual, check.passed) == (10, 9, False)
+    assert "per the generator's protocol" in check.name
+    report = render([check], [], [], [], [], gaps)
+    assert "Real-world protocols vary, e.g. steroid-free" in report
+    assert "| center_a | A1 | prednisone | 30 |" in report
+    assert "Every active patient is covered" in render([], [], [], [], [])
