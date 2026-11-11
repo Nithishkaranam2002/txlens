@@ -9,6 +9,9 @@ from collections.abc import Callable, Iterator
 
 import psycopg
 import pytest
+from api_dataset import Dataset
+from api_dataset import build as build_dataset
+from api_dataset import load as load_dataset
 from api_testutils import API_TENANTS, BASE_URL, PASSWORDS
 from db_testutils import (
     SEED_ORDER,
@@ -90,7 +93,7 @@ def as_app() -> AsApp:
 @pytest.fixture(scope="session")
 def app_login() -> Iterator[tuple[str, str]]:
     """A test login user in txlens_app (cluster-wide role): (user, password)."""
-    user, password = f"txlens_api_test_{os.getpid()}", "test-only-password"
+    user, password = f"txlens_app_fixture_{os.getpid()}", "test-only-password"
     with admin_connection() as admin:
         ensure_login_role(admin, user, password)
     try:
@@ -158,8 +161,17 @@ def api_owner(api_database: str) -> Iterator[Engine]:
 
 
 @pytest.fixture(scope="session")
+def api_data(api_owner: Engine, tmp_path_factory: pytest.TempPathFactory) -> Dataset:
+    """Generated synthetic patients, loaded into the API database (vocabulary, cdm, identity)."""
+    data = build_dataset(tmp_path_factory.mktemp("api_data"))
+    with api_owner.begin() as conn:
+        load_dataset(conn, data)
+    return data
+
+
+@pytest.fixture(scope="session")
 def api_app(
-    api_database: str, app_login: tuple[str, str], api_settings: Settings
+    api_database: str, api_data: Dataset, app_login: tuple[str, str], api_settings: Settings
 ) -> Iterator[FastAPI]:
     """The app on the API database, with one demo user per role per center."""
     eng = login_engine(api_database, app_login)
