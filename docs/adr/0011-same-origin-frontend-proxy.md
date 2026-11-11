@@ -56,5 +56,10 @@ rate-limit defences.
   in flight, the browser can drop the rotated cookie and replay the old token. A 30-second
   reuse grace period (ADR 0007) now returns the same replacement in that case, instead of
   revoking every session.
+- Logout clears the query cache, so mounted queries refetch and get 401s. The 401 redirect is
+  switched off once logout starts; before that fix, a slow `/login` load let it win and send
+  the next user to `/login?next=<previous page>`. Login also follows `?next=` only when the
+  new role may use that page, else it goes to the role's home (`landingFor` in
+  `lib/roles.ts`).
 - Next 16 keeps visited routes mounted but hidden (`<Activity>`). Tests and landmarks must
   use the visible `main`, and there is now only one element with `id="main"`.

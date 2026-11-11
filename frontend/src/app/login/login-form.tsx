@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { isApiError } from "@/lib/api/errors";
 import { safeNext, useLogin } from "@/lib/auth";
-import { asRole, homeFor } from "@/lib/roles";
+import { asRole, landingFor } from "@/lib/roles";
 
 /** A login failure in words a user can act on. */
 export function loginErrorMessage(error: unknown): string {
@@ -35,7 +35,7 @@ export function LoginForm() {
     event.preventDefault();
     login.mutate(
       { username, password },
-      { onSuccess: (me) => router.replace(next ?? homeFor(asRole(me.role))) },
+      { onSuccess: (me) => router.replace(landingFor(asRole(me.role), next)) },
     );
   };
 

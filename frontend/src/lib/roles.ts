@@ -49,3 +49,17 @@ export function navFor(role: Role | null) {
 export function homeFor(role: Role | null): Route {
   return navFor(role)[0]?.href ?? "/admin";
 }
+
+/** The area a signed-in page belongs to, or null for a path outside every area. */
+export function areaOf(path: string): Area | null {
+  const segment = path.split(/[/?#]/)[1];
+  return segment === "worklist" || segment === "cohorts" || segment === "patients" || segment === "admin"
+    ? segment
+    : null;
+}
+
+/** Where to go after login: the requested page if this role may use it, else the role's home. */
+export function landingFor(role: Role | null, next: Route | null): Route {
+  const area = next && areaOf(next);
+  return area && can(role, area) ? next : homeFor(role);
+}

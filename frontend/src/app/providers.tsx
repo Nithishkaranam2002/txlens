@@ -6,10 +6,11 @@ import { useState, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { isApiError } from "@/lib/api/errors";
+import { isLoggingOut } from "@/lib/auth";
 
 /** Session over (the one refresh attempt failed): go to /login and come back afterwards. */
 function onError(error: unknown) {
-  if (!isApiError(error, 401) || window.location.pathname === "/login") return;
+  if (!isApiError(error, 401) || isLoggingOut() || window.location.pathname === "/login") return;
   const next = encodeURIComponent(window.location.pathname);
   // A full page load (not router.push) drops every cached response, patient data included.
   // eslint-disable-next-line @next/next/no-location-assign-relative-destination

@@ -8,6 +8,13 @@ import { asRole, type Me, type Role } from "@/lib/roles";
 
 export const meKey = ["me"] as const;
 
+let loggingOut = false;
+
+/** True once logout has started. Until the page reloads, a 401 means "logged out", not "expired". */
+export function isLoggingOut(): boolean {
+  return loggingOut;
+}
+
 /** The logged-in user. A 401 (after one refresh attempt) sends the browser to /login. */
 export function useMe() {
   return useQuery({
@@ -42,6 +49,9 @@ export function useLogout() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async () => {
+      // Queries refetched after the cookies are gone get 401s; they must not send the next
+      // user to this user's page (/login?next=...).
+      loggingOut = true;
       await api.POST("/auth/logout");
     },
     onSettled: () => {

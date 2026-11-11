@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { asRole, can, homeFor, navFor, seesIdentifiers } from "./roles";
+import type { Route } from "next";
+
+import { asRole, can, homeFor, landingFor, navFor, seesIdentifiers } from "./roles";
 
 describe("role navigation", () => {
   it.each([
@@ -25,5 +27,21 @@ describe("role navigation", () => {
     expect(can("admin", "patients")).toBe(false);
     expect(asRole("superuser")).toBeNull();
     expect(navFor(null)).toEqual([]);
+  });
+});
+
+describe("landing page after login", () => {
+  it.each([
+    ["clinician", "/worklist?severity=high", "/worklist?severity=high"],
+    ["clinician", "/patients/42", "/patients/42"],
+    ["researcher", "/cohorts/7", "/cohorts/7"],
+    ["admin", "/worklist", "/admin"],
+    ["researcher", "/worklist", "/cohorts"],
+    ["data_steward", "/cohorts", "/worklist"],
+    ["clinician", "/admin", "/worklist"],
+    ["clinician", "/", "/worklist"],
+    ["admin", null, "/admin"],
+  ] as const)("%s with next=%s goes to %s", (role, next, expected) => {
+    expect(landingFor(role, next as Route | null)).toBe(expected);
   });
 });

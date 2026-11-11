@@ -19,6 +19,11 @@ export function seed(): Seed {
 
 export async function login(page: Page, role: Role, tenant = "center_a") {
   await page.goto("/login");
+  await signIn(page, role, tenant);
+}
+
+/** Fill in the login form already on screen (keeping any ?next= in its URL). */
+export async function signIn(page: Page, role: Role, tenant = "center_a") {
   await page.getByLabel("User name").fill(`${role}.${tenant}`);
   await page.getByLabel("Password").fill(seed().passwords[role]);
   await page.getByRole("button", { name: "Sign in" }).click();
