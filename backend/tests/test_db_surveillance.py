@@ -130,7 +130,7 @@ def test_database_path_and_replay_path_give_the_same_flags(
         for person_id, series in load_series(api_tx, config, LATER).items():
             from_db |= {(person_id, f.rule_id, f.evidence_key)
                         for f in evaluate(config, series, LATER)}  # fmt: skip
-        patients = csv_source.load(api_data.root / "ground_truth", config, skip_feed_issues=False)
+        patients = csv_source.load(api_data.root / "ground_truth", config)
         for patient_id, patient in patients.items():
             if patient.tenant_id == TENANT:
                 person_id = api_data.persons[patient_id][1]

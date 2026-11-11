@@ -7,7 +7,7 @@ give the same flags as the database path. Expected files in `root`:
   data) and the anchor date column named by the config (e.g. `transplant_date`);
 - `labs.csv`: patient_id, collected_at, lab (= marker key), value;
 - optional `outcomes.csv`: death_date, graft_loss_date or recurrence_date end surveillance;
-- optional `lab_feed_issues.csv`: labs the pipeline cannot load (see `skip_feed_issues`).
+- optional `lab_feed_issues.csv`: labs the pipeline cannot load (see `unloadable_lab_ids`).
 """
 
 import csv
@@ -51,18 +51,20 @@ def end_dates(root: Path) -> dict[str, date]:
     return ends
 
 
+def unloadable_lab_ids(root: Path) -> frozenset[str]:
+    """Labs whose raw feed row the pipeline quarantines, so they never reach the database."""
+    issues = rows(root / "lab_feed_issues.csv")
+    return frozenset(r["lab_id"] for r in issues if r["issue"] in UNLOADABLE_ISSUES)
+
+
 def load(
-    root: Path, config: SurveillanceConfig, *, skip_feed_issues: bool
+    root: Path, config: SurveillanceConfig, *, skip_lab_ids: frozenset[str] = frozenset()
 ) -> dict[str, CsvPatient]:
     """Series for every patient in the config's program, keyed by patient id.
 
-    `skip_feed_issues=True` leaves out labs the pipeline cannot load, so the result matches
-    what a pipeline-loaded database holds.
+    Labs in `skip_lab_ids` are left out, e.g. `unloadable_lab_ids(root)` to match what a
+    pipeline-loaded database holds.
     """
-    skipped = (
-        {r["lab_id"] for r in rows(root / "lab_feed_issues.csv") if r["issue"] in UNLOADABLE_ISSUES}
-        if skip_feed_issues else set()
-    )  # fmt: skip
     patients = {
         r["patient_id"]: r for r in rows(root / "patients.csv")
         if r.get("program", r.get("organ")) == config.program
@@ -73,7 +75,7 @@ def load(
     )
     for lab in rows(root / "labs.csv"):
         wanted = lab["patient_id"] in patients and lab["lab"] in config.markers
-        if wanted and lab["value"] and lab.get("lab_id") not in skipped:
+        if wanted and lab["value"] and lab.get("lab_id") not in skip_lab_ids:
             at = datetime.fromisoformat(lab["collected_at"])
             values[lab["patient_id"]][lab["lab"]].append(
                 (at, Observation(at.date(), float(lab["value"])))

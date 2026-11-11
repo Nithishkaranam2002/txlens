@@ -94,7 +94,7 @@ def test_oncology_cohort_from_csv_is_flagged_before_recurrence(tmp_path: Path) -
     """End to end: generated oncology CSVs -> CSV source -> the unchanged engine."""
     generate_oncology(replace(OncologyConfig(), n_patients=80), 42, tmp_path)
     oncology = load_configs()["oncology_tumor_dna"]
-    patients = csv_source.load(tmp_path / "oncology", oncology, skip_feed_issues=False)
+    patients = csv_source.load(tmp_path / "oncology", oncology)
     assert len(patients) == 80
     with (tmp_path / "oncology" / "outcomes.csv").open() as f:
         recurrences = {r["patient_id"]: date.fromisoformat(r["recurrence_date"])
