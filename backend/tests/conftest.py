@@ -216,3 +216,49 @@ def api_tx(api_owner: Engine, api_app: FastAPI) -> Iterator[Connection]:
         conn.execute(text("DELETE FROM app.surveillance_run"))
         yield conn
         transaction.rollback()
+
+
+@pytest.fixture(autouse=True)
+def no_real_llm_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test may reach a paid model: real LiteLLM completions fail; inject a fake instead."""
+    import litellm
+
+    def refuse(*_: object, **__: object) -> None:
+        raise AssertionError("a test tried to call a real LLM; inject a fake completion")
+
+    monkeypatch.setattr(litellm, "completion", refuse)
+    monkeypatch.setattr(litellm, "acompletion", refuse)
+
+
+@pytest.fixture(scope="session")
+def documents_database() -> Iterator[str]:
+    """A separate migrated database with committed tenants, for document workflow tests."""
+    url = create_database("documents")
+    try:
+        migrate(url)
+        owner = create_engine(url, poolclass=pool.NullPool)
+        with owner.begin() as conn:
+            for tenant in ("center_a", "center_b"):
+                conn.execute(
+                    text("INSERT INTO app.tenant (tenant_id, name) VALUES (:t, :t)"), {"t": tenant}
+                )
+        owner.dispose()
+        yield url
+    finally:
+        drop_database(url)
+
+
+@pytest.fixture(scope="session")
+def documents_owner(documents_database: str) -> Iterator[Engine]:
+    """Owner engine for the documents database (for setup and checks only)."""
+    eng = create_engine(documents_database, poolclass=pool.NullPool)
+    yield eng
+    eng.dispose()
+
+
+@pytest.fixture(scope="session")
+def documents_engine(documents_database: str, app_login: tuple[str, str]) -> Iterator[Engine]:
+    """App-login engine for the documents database (RLS applies)."""
+    eng = login_engine(documents_database, app_login)
+    yield eng
+    eng.dispose()

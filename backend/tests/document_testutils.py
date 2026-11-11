@@ -1,9 +1,12 @@
 """Helpers for document tests: render scanned-looking report PDFs with chosen lines."""
 
+import json
 import os
 import shutil
 from pathlib import Path
+from typing import Any
 
+import litellm
 import pytest
 
 from txlens_datagen.rand import rng_for
@@ -44,3 +47,34 @@ def require_tesseract() -> None:
         if os.environ.get("CI"):
             pytest.fail("tesseract is not installed (CI installs tesseract-ocr)")
         pytest.skip("tesseract is not installed (brew install tesseract)")
+
+
+def finding(value: Any, line: int | None = None, quote: str | None = None) -> dict[str, Any]:
+    """One field of a model answer (no evidence when line is None)."""
+    evidence = None if line is None else {"line": line, "quote": quote or str(value)}
+    return {"value": value, "evidence": evidence}
+
+
+class FakeCompletion:
+    """Stands in for litellm.completion: records each request, answers with JSON content."""
+
+    def __init__(self, *answers: dict[str, Any], prompt_tokens: int = 1500) -> None:
+        self.answers = list(answers)
+        self.calls: list[dict[str, Any]] = []
+        self.prompt_tokens = prompt_tokens
+
+    def __call__(self, **kwargs: Any) -> litellm.ModelResponse:
+        self.calls.append(kwargs)
+        answer = self.answers[min(len(self.calls), len(self.answers)) - 1]
+        return litellm.ModelResponse(
+            model="gpt-6-luna",
+            choices=[{"index": 0, "finish_reason": "stop",
+                      "message": {"role": "assistant", "content": json.dumps(answer)}}],
+            usage={"prompt_tokens": self.prompt_tokens, "completion_tokens": 400,
+                   "total_tokens": self.prompt_tokens + 400},
+        )  # fmt: skip
+
+    def schema_fields(self, call: int) -> list[str]:
+        """Field names of the schema sent in a call, in order."""
+        schema = self.calls[call]["response_format"]["json_schema"]["schema"]
+        return list(schema["properties"])
