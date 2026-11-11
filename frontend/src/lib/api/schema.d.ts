@@ -56,7 +56,8 @@ export interface paths {
         /**
          * Swap the refresh cookie for new access and refresh cookies
          * @description Rotate the refresh token. Re-use of an already-rotated token revokes all of the user's
-         *     sessions (a sign that the token was stolen).
+         *     sessions (a sign that the token was stolen), except within a short grace period after
+         *     the rotation, which returns the replacement (a reload or a second tab raced the refresh).
          */
         post: operations["refresh_auth_refresh_post"];
         delete?: never;
@@ -505,7 +506,7 @@ export interface components {
         };
         /**
          * Drug
-         * @description One drug exposure.
+         * @description One drug exposure; end_date is None while the order is still active (ongoing).
          */
         Drug: {
             /** Concept Id */

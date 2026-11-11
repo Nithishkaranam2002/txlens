@@ -430,7 +430,7 @@
         "type": "object"
       },
       "Drug": {
-        "description": "One drug exposure.",
+        "description": "One drug exposure; end_date is None while the order is still active (ongoing).",
         "properties": {
           "concept_id": {
             "title": "Concept Id",
@@ -2371,7 +2371,7 @@
     },
     "/auth/refresh": {
       "post": {
-        "description": "Rotate the refresh token. Re-use of an already-rotated token revokes all of the user's\nsessions (a sign that the token was stolen).",
+        "description": "Rotate the refresh token. Re-use of an already-rotated token revokes all of the user's\nsessions (a sign that the token was stolen), except within a short grace period after\nthe rotation, which returns the replacement (a reload or a second tab raced the refresh).",
         "operationId": "refresh_auth_refresh_post",
         "parameters": [
           {
