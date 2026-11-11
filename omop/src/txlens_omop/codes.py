@@ -107,6 +107,8 @@ TEXT_CONDITION_CODES = {
     ("SNOMED", "49650001"): ("dysuria", "Condition"),
     ("SNOMED", "80313002"): ("palpitations", "Condition"),
     ("SNOMED", "53741008"): ("coronary arteriosclerosis", "Condition"),
+    ("SNOMED", "213148006"): ("transplanted organ rejection", "Condition"),
+    ("SNOMED", "1085381000119108"): ("cytomegalovirus viremia", "Condition"),
 }  # fmt: skip
 # TxLens local concepts (LOCAL_CONCEPT.csv, by concept_code) the extraction writes. They are
 # non-standard: OMOP rows get concept_id 0 and the local id as the source concept.

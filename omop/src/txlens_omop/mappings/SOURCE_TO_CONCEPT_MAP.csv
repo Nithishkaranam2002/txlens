@@ -65,3 +65,72 @@ heart graft failure - chronic graft dysfunction	0	TXLENS_CONDITION	Heart graft f
 heart graft failure - rejection (abmr)	0	TXLENS_CONDITION	Heart graft failure - rejection (ABMR) (same concept center A codes)	4121617	SNOMED	20261111	20991231	
 heart graft failure - rejection (tcmr)	0	TXLENS_CONDITION	Heart graft failure - rejection (TCMR) (same concept center A codes)	4121617	SNOMED	20261111	20991231	
 heart graft failure - rejection (mixed)	0	TXLENS_CONDITION	Heart graft failure - rejection (mixed) (same concept center A codes)	4121617	SNOMED	20261111	20991231	
+dm2	0	TXLENS_NOTE_ABBREV	Clinic-note term: dm2	201826	SNOMED	20261111	20991231	
+t2dm	0	TXLENS_NOTE_ABBREV	Clinic-note term: t2dm	201826	SNOMED	20261111	20991231	
+type 2 diabetes	0	TXLENS_NOTE_ABBREV	Clinic-note term: type 2 diabetes	201826	SNOMED	20261111	20991231	
+htn	0	TXLENS_NOTE_ABBREV	Clinic-note term: htn	316866	SNOMED	20261111	20991231	
+esrd	0	TXLENS_NOTE_ABBREV	Clinic-note term: esrd	193782	SNOMED	20261111	20991231	
+end-stage heart failure	0	TXLENS_NOTE_ABBREV	Clinic-note term: end-stage heart failure	316139	SNOMED	20261111	20991231	
+advanced heart failure	0	TXLENS_NOTE_ABBREV	Clinic-note term: advanced heart failure	316139	SNOMED	20261111	20991231	
+cad	0	TXLENS_NOTE_ABBREV	Clinic-note term: cad	317576	SNOMED	20261111	20991231	
+pkd	0	TXLENS_NOTE_ABBREV	Clinic-note term: pkd	4220238	SNOMED	20261111	20991231	
+cmv viremia	0	TXLENS_NOTE_ABBREV	Clinic-note term: cmv viremia	45757222	SNOMED	20261111	20991231	
+cmv infection	0	TXLENS_NOTE_ABBREV	Clinic-note term: cmv infection	440032	SNOMED	20261111	20991231	
+bk nephropathy	0	TXLENS_NOTE_ABBREV	Clinic-note term: bk nephropathy	37017585	SNOMED	20261111	20991231	
+bkvan	0	TXLENS_NOTE_ABBREV	Clinic-note term: bkvan	37017585	SNOMED	20261111	20991231	
+polyomavirus nephropathy	0	TXLENS_NOTE_ABBREV	Clinic-note term: polyomavirus nephropathy	37017585	SNOMED	20261111	20991231	
+atn	0	TXLENS_NOTE_ABBREV	Clinic-note term: atn	444044	SNOMED	20261111	20991231	
+acute tubular injury	0	TXLENS_NOTE_ABBREV	Clinic-note term: acute tubular injury	444044	SNOMED	20261111	20991231	
+dgf	0	TXLENS_NOTE_ABBREV	Clinic-note term: dgf	4138908	SNOMED	20261111	20991231	
+delayed graft function	0	TXLENS_NOTE_ABBREV	Clinic-note term: delayed graft function	4138908	SNOMED	20261111	20991231	
+rejection	0	TXLENS_NOTE_ABBREV	Clinic-note term: rejection	4309320	SNOMED	20261111	20991231	
+fevers	0	TXLENS_NOTE_ABBREV	Clinic-note term: fevers	437663	SNOMED	20261111	20991231	
+le edema	0	TXLENS_NOTE_ABBREV	Clinic-note term: le edema	433595	SNOMED	20261111	20991231	
+sob	0	TXLENS_NOTE_ABBREV	Clinic-note term: sob	312437	SNOMED	20261111	20991231	
+kidney:acute rejection	0	TXLENS_NOTE_ABBREV	Clinic-note term: kidney:acute rejection	4128371	SNOMED	20261111	20991231	
+heart:acute rejection	0	TXLENS_NOTE_ABBREV	Clinic-note term: heart:acute rejection	4202285	SNOMED	20261111	20991231	
+kidney:tcmr	0	TXLENS_NOTE_ABBREV	Clinic-note term: kidney:tcmr	4128371	SNOMED	20261111	20991231	
+kidney:acute t-cell mediated rejection	0	TXLENS_NOTE_ABBREV	Clinic-note term: kidney:acute t-cell mediated rejection	4128371	SNOMED	20261111	20991231	
+heart:acr	0	TXLENS_NOTE_ABBREV	Clinic-note term: heart:acr	4202285	SNOMED	20261111	20991231	
+heart:acute cellular rejection	0	TXLENS_NOTE_ABBREV	Clinic-note term: heart:acute cellular rejection	4202285	SNOMED	20261111	20991231	
+abmr	0	TXLENS_NOTE_ABBREV	Clinic-note term: abmr	37472871	SNOMED	20261111	20991231	
+amr	0	TXLENS_NOTE_ABBREV	Clinic-note term: amr	37472871	SNOMED	20261111	20991231	
+antibody-mediated rejection	0	TXLENS_NOTE_ABBREV	Clinic-note term: antibody-mediated rejection	37472871	SNOMED	20261111	20991231	
+borderline changes	0	TXLENS_NOTE_ABBREV	Clinic-note term: borderline changes	2000000002	TxLens	20261111	20991231	
+borderline rejection	0	TXLENS_NOTE_ABBREV	Clinic-note term: borderline rejection	2000000002	TxLens	20261111	20991231	
+heart:mild acr	0	TXLENS_NOTE_ABBREV	Clinic-note term: heart:mild acr	2000000002	TxLens	20261111	20991231	
+heart:mild acute cellular rejection	0	TXLENS_NOTE_ABBREV	Clinic-note term: heart:mild acute cellular rejection	2000000002	TxLens	20261111	20991231	
+mixed rejection	0	TXLENS_NOTE_ABBREV	Clinic-note term: mixed rejection	4309320	SNOMED	20261111	20991231	
+mixed tcmr/abmr	0	TXLENS_NOTE_ABBREV	Clinic-note term: mixed tcmr/abmr	4309320	SNOMED	20261111	20991231	
+mixed acr/amr	0	TXLENS_NOTE_ABBREV	Clinic-note term: mixed acr/amr	4309320	SNOMED	20261111	20991231	
+ktx	0	TXLENS_NOTE_ABBREV	Clinic-note term: ktx	4322471	SNOMED	20261111	20991231	
+kidney tx	0	TXLENS_NOTE_ABBREV	Clinic-note term: kidney tx	4322471	SNOMED	20261111	20991231	
+ddkt	0	TXLENS_NOTE_ABBREV	Clinic-note term: ddkt	4021107	SNOMED	20261111	20991231	
+deceased donor ktx	0	TXLENS_NOTE_ABBREV	Clinic-note term: deceased donor ktx	4021107	SNOMED	20261111	20991231	
+deceased donor kidney tx	0	TXLENS_NOTE_ABBREV	Clinic-note term: deceased donor kidney tx	4021107	SNOMED	20261111	20991231	
+ldkt	0	TXLENS_NOTE_ABBREV	Clinic-note term: ldkt	4022805	SNOMED	20261111	20991231	
+living donor ktx	0	TXLENS_NOTE_ABBREV	Clinic-note term: living donor ktx	4022805	SNOMED	20261111	20991231	
+living donor kidney tx	0	TXLENS_NOTE_ABBREV	Clinic-note term: living donor kidney tx	4022805	SNOMED	20261111	20991231	
+oht	0	TXLENS_NOTE_ABBREV	Clinic-note term: oht	4137127	SNOMED	20261111	20991231	
+heart tx	0	TXLENS_NOTE_ABBREV	Clinic-note term: heart tx	4137127	SNOMED	20261111	20991231	
+orthotopic heart transplant	0	TXLENS_NOTE_ABBREV	Clinic-note term: orthotopic heart transplant	4137127	SNOMED	20261111	20991231	
+kidney:biopsy	0	TXLENS_NOTE_ABBREV	Clinic-note term: kidney:biopsy	1244937	SNOMED	20261111	20991231	
+heart:biopsy	0	TXLENS_NOTE_ABBREV	Clinic-note term: heart:biopsy	4308808	SNOMED	20261111	20991231	
+kidney:prior transplant	0	TXLENS_NOTE_ABBREV	Clinic-note term: kidney:prior transplant	4322471	SNOMED	20261111	20991231	
+heart:prior transplant	0	TXLENS_NOTE_ABBREV	Clinic-note term: heart:prior transplant	4137127	SNOMED	20261111	20991231	
+cr	0	TXLENS_NOTE_ABBREV	Clinic-note term: cr	3016723	LOINC	20261111	20991231	
+scr	0	TXLENS_NOTE_ABBREV	Clinic-note term: scr	3016723	LOINC	20261111	20991231	
+creat	0	TXLENS_NOTE_ABBREV	Clinic-note term: creat	3016723	LOINC	20261111	20991231	
+creatinine	0	TXLENS_NOTE_ABBREV	Clinic-note term: creatinine	3016723	LOINC	20261111	20991231	
+egfr	0	TXLENS_NOTE_ABBREV	Clinic-note term: egfr	1619025	LOINC	20261111	20991231	
+gfr	0	TXLENS_NOTE_ABBREV	Clinic-note term: gfr	1619025	LOINC	20261111	20991231	
+tacro trough	0	TXLENS_NOTE_ABBREV	Clinic-note term: tacro trough	46236053	LOINC	20261111	20991231	
+fk level	0	TXLENS_NOTE_ABBREV	Clinic-note term: fk level	46236053	LOINC	20261111	20991231	
+tac level	0	TXLENS_NOTE_ABBREV	Clinic-note term: tac level	46236053	LOINC	20261111	20991231	
+tacrolimus trough	0	TXLENS_NOTE_ABBREV	Clinic-note term: tacrolimus trough	46236053	LOINC	20261111	20991231	
+dd-cfdna	0	TXLENS_NOTE_ABBREV	Clinic-note term: dd-cfdna	3966008	LOINC	20261111	20991231	
+donor-derived cfdna	0	TXLENS_NOTE_ABBREV	Clinic-note term: donor-derived cfdna	3966008	LOINC	20261111	20991231	
+cfdna	0	TXLENS_NOTE_ABBREV	Clinic-note term: cfdna	3966008	LOINC	20261111	20991231	
+dsa	0	TXLENS_NOTE_ABBREV	Clinic-note term: dsa	2000000001	TxLens	20261111	20991231	
+kidney:prior tx	0	TXLENS_NOTE_ABBREV	Clinic-note term: kidney:prior tx	4322471	SNOMED	20261111	20991231	
+heart:prior tx	0	TXLENS_NOTE_ABBREV	Clinic-note term: heart:prior tx	4137127	SNOMED	20261111	20991231	

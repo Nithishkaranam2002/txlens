@@ -6,7 +6,7 @@ SEED ?= 42
 VOCAB_SOURCE ?= omop/athena
 N_PATIENTS ?= 2000
 
-.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run prune-login-attempts cohort-report surveillance-report biopsy-report ocr-report vocab-load vocab-load-local vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
+.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run prune-login-attempts notes-report cohort-report surveillance-report biopsy-report ocr-report vocab-load vocab-load-local vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -103,6 +103,9 @@ spark-build: ## Build the Spark runner image (Python 3.12 + Java 17 + PySpark + 
 
 pipeline: ## Run bronze -> silver -> gold -> Postgres load in the Spark container (LAYERS=...)
 	$(SPARK_RUN) python -m txlens_pipelines $(if $(LAYERS),--layers $(LAYERS))
+
+notes-report: ## Note NLP vs ground truth -> evals/reports/notes_nlp.md (ARGS="--llm --max-cost 1")
+	uv run python -m txlens_evals.notes_nlp $(ARGS)
 
 cohort-report: ## Cohort rules on the loaded database vs ground truth -> evals/reports/cohort_rules.md
 	uv run python -m txlens_evals.cohort_reconciliation

@@ -24,6 +24,10 @@ constraint-dependencies = [
     "markdown-it-py<4.3",
     "regex<2026.11",
     "typer<0.28",
+    # medspaCy (Step 2.2, added 2026-11-11): these releases were under two weeks old
+    "smart-open<=9.0.0",
+    "srsly<=2.5.5",
+    "loguru<0.8",
     # docling group
     "torch<=2.14.1",
     "torchvision<=0.29.1",
@@ -97,9 +101,10 @@ explicit_package_bases = true
 # PySpark (and pandera, which the pipelines use with it) is only installed inside the Spark
 # container and in CI.
 [[tool.mypy.overrides]]
-# docling is an opt-in group (absent in CI); pytesseract and langfuse 2.x ship no type information.
+# docling is an opt-in group (absent in CI); pytesseract, langfuse 2.x and medspaCy ship no
+# type information.
 module = ["pyspark.*", "delta.*", "pandera.*", "docling.*", "docling_core.*", "pytesseract.*",
-          "langfuse.*"]
+          "langfuse.*", "medspacy.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

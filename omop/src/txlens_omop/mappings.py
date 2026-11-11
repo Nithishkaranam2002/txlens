@@ -5,7 +5,8 @@ not licensed vocabulary):
 
 - `SOURCE_TO_CONCEPT_MAP.csv`: lab local codes and test-name variants -> LOINC, clinical
   drug abbreviations -> RxNorm ingredient, uncoded transplant procedure texts -> SNOMED, and
-  free-text condition names -> SNOMED (Condition, or Observation for "history of" texts).
+  free-text condition names -> SNOMED (Condition, or Observation for "history of" texts), and
+  clinic-note terms and abbreviations for the note NLP.
   Each row was checked by a person; `make vocab-check` re-checks every target against the
   loaded vocabulary.
 - `LOCAL_CONCEPT.csv`: TxLens local concepts (id >= 2,000,000,000, non-standard) for things no
@@ -31,6 +32,9 @@ SOURCE_VOCABULARIES = {
     "TXLENS_DRUG": ("Drug",),
     "TXLENS_PROCEDURE": ("Procedure",),
     "TXLENS_CONDITION": ("Condition", "Observation"),
+    # Clinic-note terms and abbreviations (Cr, tacro, DGF, KTx). A source code may start with
+    # "kidney:" or "heart:" when the term means different concepts per transplanted organ.
+    "TXLENS_NOTE_ABBREV": ("Condition", "Drug", "Measurement", "Procedure"),
 }
 # Source vocabularies whose target may be a non-standard concept that "Maps to" exactly one
 # standard concept (plus "Maps to value"): a "history of" text needs the pair History of event

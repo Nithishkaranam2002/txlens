@@ -10,6 +10,7 @@ dependencies = [
     "instructor>=1.17,<2",
     "langfuse>=2.60,<3",
     "litellm==1.106.5",
+    "medspacy==1.3.1",
     "psycopg[binary]>=3.2",
     "pydantic-settings>=2.10",
     "pyjwt>=2.10",
@@ -21,6 +22,7 @@ dependencies = [
     "temporalio>=1.9,<1.36",
     "txlens-datagen",
     "txlens-omop",
+    "txlens-pipelines",
     "uvicorn[standard]>=0.32",
 ]
 
@@ -43,3 +45,4 @@ packages = ["src/txlens_backend"]
 [tool.uv.sources]
 txlens-datagen = { workspace = true }
 txlens-omop = { workspace = true }
+txlens-pipelines = { workspace = true }

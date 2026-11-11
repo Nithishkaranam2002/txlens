@@ -20,7 +20,7 @@ Pure Python (no Spark), so it is unit-tested directly and runs inside a UDF on D
 import hashlib
 import hmac
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -230,7 +230,7 @@ def deidentify(text: str, identity: Identity, names: tuple[str, str], shift: int
     return Deidentified("".join(parts), tuple(spans))
 
 
-def reidentify(text: str, spans: tuple[Replacement, ...] | list[Replacement],
+def reidentify(text: str, spans: Sequence[Replacement],
                start: int = 0) -> str:  # fmt: skip
     """`text` (a de-identified slice beginning at `start`) with the original words put back."""
     out, cursor = [], start
@@ -244,7 +244,7 @@ def reidentify(text: str, spans: tuple[Replacement, ...] | list[Replacement],
     return "".join(out)
 
 
-def to_original_offset(spans: tuple[Replacement, ...] | list[Replacement], offset: int) -> int:
+def to_original_offset(spans: Sequence[Replacement], offset: int) -> int:
     """Where de-identified offset `offset` falls in the original text."""
     delta = 0
     for s in sorted(spans, key=lambda s: s.deid_start):

@@ -8,13 +8,13 @@ real cost replaces the reservation, also when the call fails.
 from dataclasses import dataclass
 from typing import Any
 
+from pydantic import BaseModel
 from sqlalchemy import Engine
 
 from txlens_backend.db import tenant_transaction
 from txlens_backend.documents import cache
 from txlens_backend.documents.budget import Budget
 from txlens_backend.documents.llm import (
-    PROMPT_VERSION,
     CallMeta,
     ExtractionFailedError,
     Extractor,
@@ -53,13 +53,30 @@ def run_pass(
     file_sha256: str,
 ) -> PassOutcome:
     """Run (or reuse) one extraction pass over the minimized report."""
-    document = document_block(sent)
-    key = cache.cache_key(file_sha256, PROMPT_VERSION, extractor.model, variant, document)
+    return guarded_pass(
+        engine, tenant_id, extractor, budget, SCHEMAS[organ], document_block(sent), variant,
+        file_sha256,
+    )  # fmt: skip
+
+
+def guarded_pass(
+    engine: Engine,
+    tenant_id: str,
+    extractor: Extractor,
+    budget: Budget,
+    schema: type[BaseModel],
+    document: str,
+    variant: Variant,
+    file_sha256: str,
+) -> PassOutcome:
+    """Any schema over any document block: cache, budget reservation, model, settlement."""
+    version = extractor.prompt.version
+    key = cache.cache_key(file_sha256, version, extractor.model, variant, document)
     with tenant_transaction(engine, tenant_id) as conn:
         hit = cache.get(conn, key)
     if hit is not None:
         return PassOutcome(
-            variant, extractor.model, PROMPT_VERSION, hit.response, None,
+            variant, extractor.model, version, hit.response, None,
             hit.input_tokens, hit.output_tokens, 0.0, 0, True,
         )  # fmt: skip
     reserved = max_call_cost(extractor.model, document)
@@ -67,13 +84,13 @@ def run_pass(
     spent = 0.0
     try:
         answer, usage = extractor.extract(
-            SCHEMAS[organ], document, variant, CallMeta(file_sha256, budget.batch_id)
+            schema, document, variant, CallMeta(file_sha256, budget.batch_id)
         )
         spent = usage.cost_usd
     except ExtractionFailedError as error:
         spent = error.usage.cost_usd
         return PassOutcome(
-            variant, extractor.model, PROMPT_VERSION, None, str(error),
+            variant, extractor.model, version, None, str(error),
             error.usage.input_tokens, error.usage.output_tokens, spent,
             error.usage.latency_ms, False,
         )  # fmt: skip
@@ -82,8 +99,8 @@ def run_pass(
     response = answer.model_dump(mode="json")
     stored = cache.CachedAnswer(response, usage.input_tokens, usage.output_tokens, spent)
     with tenant_transaction(engine, tenant_id) as conn:
-        cache.put(conn, key, extractor.model, PROMPT_VERSION, stored)
+        cache.put(conn, key, extractor.model, version, stored)
     return PassOutcome(
-        variant, extractor.model, PROMPT_VERSION, response, None,
+        variant, extractor.model, version, response, None,
         usage.input_tokens, usage.output_tokens, spent, usage.latency_ms, False,
     )  # fmt: skip

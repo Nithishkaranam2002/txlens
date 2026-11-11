@@ -1,4 +1,4 @@
-"""The one LLM interface for biopsy extraction: LiteLLM + Instructor, two independent passes.
+"""The one LLM interface (biopsy extraction, note fallback): LiteLLM + Instructor.
 
 - LiteLLM is the only way out to a model: OpenAI by default ("openai/gpt-6-luna"), or a local
   model ("ollama/llama3.1:8b") with no other code change.
@@ -62,6 +62,18 @@ SYSTEM: dict[Variant, str] = {
 }
 
 
+@dataclass(frozen=True)
+class Prompt:
+    """A versioned prompt: the version keys the cache and tags every trace."""
+
+    version: str
+    system: dict[Variant, str]
+    name: str  # trace name prefix ("biopsy", "notes")
+
+
+BIOPSY = Prompt(PROMPT_VERSION, SYSTEM, "biopsy")
+
+
 class LlmNotConfiguredError(RuntimeError):
     """A paid model has no known price, so the budget could not be enforced."""
 
@@ -123,6 +135,7 @@ class Extractor(Protocol):
     """Reads a document block into a schema. Tests use a fake; production uses LiteLLM."""
 
     model: str
+    prompt: Prompt
 
     def extract(
         self, schema: type[T], document: str, variant: Variant, meta: CallMeta
@@ -189,8 +202,10 @@ class LiteLlmExtractor:
         api_base: str | None = None,
         completion: Callable[..., Any] | None = None,
         tracer: Tracer | None = None,
+        prompt: Prompt = BIOPSY,
     ) -> None:
         self.model = model
+        self.prompt = prompt
         self.tracer = tracer
         self.reasoning_effort = reasoning_effort
         self.timeout_seconds = timeout_seconds
@@ -209,7 +224,7 @@ class LiteLlmExtractor:
         client = instructor.from_litellm(self.completion, mode=self.mode)
         client.on("completion:response", lambda response: count(usage, response))
         messages: list[Any] = [
-            {"role": "system", "content": SYSTEM[variant]},
+            {"role": "system", "content": self.prompt.system[variant]},
             {"role": "user", "content": document},
         ]
         started, began = time.monotonic(), datetime.now(UTC)
@@ -256,7 +271,7 @@ class LiteLlmExtractor:
                 meta.batch_id,
                 variant,
                 self.model,
-                PROMPT_VERSION,
+                self.prompt.version,
                 messages,
                 output,
                 error,
@@ -265,6 +280,7 @@ class LiteLlmExtractor:
                 usage.cost_usd,
                 began,
                 datetime.now(UTC),
+                self.prompt.name,
             )
         )
 
@@ -278,7 +294,9 @@ def count(usage: Usage, response: Any) -> None:
         usage.cost_usd += float(litellm.completion_cost(completion_response=response))
 
 
-def make_extractor(settings: Settings, variant: Variant) -> LiteLlmExtractor:
+def make_extractor(
+    settings: Settings, variant: Variant, prompt: Prompt = BIOPSY
+) -> LiteLlmExtractor:
     """The configured model for a pass (pass B may use a second model)."""
     model = (
         settings.llm_model_pass_b
@@ -293,4 +311,5 @@ def make_extractor(settings: Settings, variant: Variant) -> LiteLlmExtractor:
         timeout_seconds=settings.llm_timeout_seconds,
         api_base=settings.ollama_base_url,
         tracer=tracer_for(settings),
+        prompt=prompt,
     )

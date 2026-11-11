@@ -1,4 +1,4 @@
-"""Langfuse traces of extraction passes, written with the Langfuse v2 SDK.
+"""Langfuse traces of LLM passes (biopsy extraction, note fallback), with the Langfuse v2 SDK.
 
 The local Langfuse server is v2 (ADR 0002). LiteLLM 1.106's own Langfuse callback needs the
 v4 SDK (and a server that accepts OpenTelemetry), so passes are recorded here instead: one
@@ -35,6 +35,7 @@ class TracedCall:
     cost_usd: float
     started: datetime
     ended: datetime
+    name: str = "biopsy"  # the prompt's trace name
 
 
 class Tracer(Protocol):
@@ -63,7 +64,7 @@ class LangfuseTracer:
         }
         try:
             trace = self.client.trace(
-                name="biopsy-extraction",
+                name=f"{call.name}-extraction",
                 session_id=call.batch_id,
                 metadata=metadata,
                 tags=[call.prompt_version, f"pass-{call.variant}"],
@@ -71,7 +72,7 @@ class LangfuseTracer:
                 output=call.output,
             )
             trace.generation(
-                name=f"biopsy-pass-{call.variant}",
+                name=f"{call.name}-pass-{call.variant}",
                 model=call.model,
                 input=call.messages,
                 output=call.output,
