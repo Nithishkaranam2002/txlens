@@ -46,12 +46,16 @@ OUT = Path(__file__).parents[2] / "frontend" / "e2e" / ".seed.json"
 
 
 def recreate_database(owner_url: str) -> str:
-    """Drop and create the e2e database; returns its owner URL."""
+    """Drop, create and migrate the e2e database; returns its owner URL."""
     with psycopg.connect(libpq_url(owner_url), autocommit=True) as admin:
         admin.execute(f'DROP DATABASE IF EXISTS "{DATABASE}" WITH (FORCE)')
         admin.execute(f'CREATE DATABASE "{DATABASE}"')
-        ensure_login_role(admin, *LOGIN)
-    return make_url(owner_url).set(database=DATABASE).render_as_string(hide_password=False)
+    url = make_url(owner_url).set(database=DATABASE).render_as_string(hide_password=False)
+    migrate(url)  # creates the txlens_app group role on a fresh server
+    with psycopg.connect(libpq_url(url), autocommit=True) as conn:
+        ensure_login_role(conn, *LOGIN)
+        ensure_tenants(conn, center_tenants())
+    return url
 
 
 def facts(owner: Engine, deid_key: str) -> dict[str, object]:
@@ -86,10 +90,7 @@ def facts(owner: Engine, deid_key: str) -> dict[str, object]:
 def seed(settings: Settings) -> str:
     """Build the e2e database and write the seed file; returns the database's owner URL."""
     url = recreate_database(settings.database_url.get_secret_value())
-    migrate(url)
     owner = create_engine(url, poolclass=pool.NullPool)
-    with psycopg.connect(libpq_url(url), autocommit=True) as conn:
-        ensure_tenants(conn, center_tenants())
     with tempfile.TemporaryDirectory() as folder, owner.begin() as conn:
         load(conn, build(Path(folder)))
     app = create_engine(
