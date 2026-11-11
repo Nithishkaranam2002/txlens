@@ -6,7 +6,7 @@ SEED ?= 42
 VOCAB_SOURCE ?= omop/athena
 N_PATIENTS ?= 2000
 
-.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run prune-login-attempts cohort-report surveillance-report vocab-load vocab-load-local vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
+.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run prune-login-attempts cohort-report surveillance-report biopsy-report vocab-load vocab-load-local vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -109,6 +109,9 @@ cohort-report: ## Cohort rules on the loaded database vs ground truth -> evals/r
 
 surveillance-report: ## Replay surveillance day by day vs ground truth -> evals/reports/surveillance.md
 	uv run python -m txlens_evals.surveillance_replay
+
+biopsy-report: ## Biopsy PDFs through OCR + LLM extraction vs ground truth -> evals/reports/biopsy_extraction.md (paid LLM calls, cached)
+	uv run python -m txlens_evals.biopsy_extraction
 
 pipeline-report: ## Reconcile gold/Postgres with data/ground_truth -> evals/reports/data_quality.md
 	$(SPARK_RUN) python -m txlens_evals.pipeline_reconciliation
