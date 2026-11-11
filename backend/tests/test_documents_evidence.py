@@ -20,6 +20,7 @@ LINES = (
     "- Polyomavirus (BK) nephropathy, SV40 immunostain positive.",
     "ACR grade (ISHLT 2004): 2R",
     "pAMR grade (ISHLT 2013): pAMR 1 (I+)",
+    "Pathologic antibody-mediated rejection: pAMRO (negative).",
 )
 
 
@@ -62,6 +63,7 @@ def check(field: str, value: Any, line: int, quote: str) -> evidence.VerifiedFie
         ("additional_finding", "BK_nephropathy", 7, "Polyomavirus (BK) nephropathy"),
         ("acr_grade", "2R", 8, "ACR grade (ISHLT 2004): 2R"),
         ("pamr_grade", "pAMR 1 (I+)", 9, "pAMR 1 (I+)"),
+        ("pamr_grade", "pAMR 0", 10, "pAMRO"),  # space lost, 0 read as O
     ],
 )
 def test_values_backed_by_ocr_text_are_kept(field: str, value: Any, line: int, quote: str) -> None:

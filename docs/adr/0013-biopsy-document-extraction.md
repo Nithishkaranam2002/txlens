@@ -23,7 +23,7 @@ wording; `make ocr-report`, evals/reports/ocr.md)
 | Tesseract, 400 dpi render + denoise (Step 2.1 start) | 65.2% | 80.1% |
 | 300 dpi render + deskew + denoise | 70.4% | 79.6% |
 | … + Otsu / adaptive binarization | 58.5% / 46.3% | 76.4% / 66.9% |
-| … + whitelist re-reads of score and grade tokens (**chosen**) | 79.2% | **96.7%** |
+| … + whitelist re-reads of score and grade tokens (**chosen**) | 79.2% | **97.1%** |
 | Docling with Tesseract inside (30 reports, 120 dpi) | 61.7% | not measured |
 
 **Structured output**
@@ -123,7 +123,7 @@ wording; `make ocr-report`, evals/reports/ocr.md)
   rather than being guessed.
 - The whitelist re-reads use knowledge of this report template (its anchors and token
   shapes). Real pathology reports come from many templates; each would need its anchors,
-  and the 96.7% is not a claim about real scans.
+  and the 97.1% is not a claim about real scans.
 - The two passes use the same model with different prompts. Their agreement is a useful
   signal, but not independent evidence. `LLM_MODEL_PASS_B` can name a second model for
   stronger independence, at about twice the cost.

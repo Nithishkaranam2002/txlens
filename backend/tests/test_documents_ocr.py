@@ -149,6 +149,7 @@ def score_line(*tokens: str) -> list[Word]:
         (["vO", "gO"], ["v0", "g0"], ["v0", "g0"]),  # valid re-reads replace look-alikes
         (["i2", "cvO"], ["12", "cv"], ["i2", "cvO"]),  # invalid re-reads keep the first reading
         (["vO", "gO"], ["v0g0"], ["vO", "gO"]),  # split differently: first reading kept
+        (["ptc3", "ci1"], ["ptc2", "ci1"], ["ptc3", "ci1"]),  # a valid first reading stays
     ],
 )
 def test_rereads_only_replace_words_with_valid_tokens(
@@ -158,3 +159,4 @@ def test_rereads_only_replace_words_with_valid_tokens(
     monkeypatch.setattr(ocr, "tesseract_words", lambda _image, _config: second)
     line = ocr.apply_rereads(Image.new("L", (200, 40), 255), score_line(*first))
     assert [w.text for w in line[3:]] == expected
+    assert {w.confidence for w in line[3:]} == {0.9}  # first reading's confidence kept

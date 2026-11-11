@@ -41,6 +41,7 @@ FINDING_WORDS = {
 }
 SCORE_PREFIXES = {label.lower() for label in SCORE_LABELS.values()}
 LEADING_JUNK = re.compile(r"^[^A-Za-z0-9]+")
+PAMR = re.compile(r"pAMR\s*([0-3OoDd])", re.IGNORECASE)
 TRAILING_JUNK = re.compile(r"[^A-Za-z0-9|!]+$")
 
 
@@ -116,8 +117,12 @@ def value_in_quote(field: str, value: Any, quote: str) -> bool:
     if field == "acr_grade":
         return any(acr(w) == value for w in words)
     if field == "pamr_grade":
-        digit = value.split()[1]
-        return has_words(quote, ("pamr",)) and any(bare(w).startswith(digit) for w in words)
+        # "pAMR 0", or as OCR may read it: "pAMRO", "pAMR O".
+        found = PAMR.search(quote)
+        if found is None:
+            return False
+        digit = found[1].lower()
+        return bool(DIGIT_LOOKALIKES.get(digit, digit) == value.split()[1])
     if field == "diagnosis":
         return has_words(quote, DIAGNOSIS_WORDS[value])
     if field == "additional_finding":

@@ -7,7 +7,7 @@ Two engines produce the same `OcrResult`:
 - Tesseract (default): renders each page at 300 dpi, straightens it, removes speckles with a
   median filter and reads words with `image_to_data`, which gives a confidence per word. Then
   score and grade tokens after known anchors ("scores:", "Banff grade", ...) are read a second
-  time allowing only the characters such a token can contain ("vO" -> "v0"). This read 96.7%
+  time allowing only the characters such a token can contain ("vO" -> "v0"). This read 97.1%
   of key tokens exactly on 100 reports (`make ocr-report`, evals/reports/ocr.md).
 - Docling (`OCR_ENGINE=docling`, opt-in dependency group): layout-aware conversion with
   Tesseract inside. On our one-column reports it read as many key tokens as plain Tesseract,
@@ -33,7 +33,7 @@ POINTS_PER_INCH = 72
 DEFAULT_SETTINGS = OcrSettings()
 # Second reading of tokens whose characters are known: (the line contains, anchor word,
 # characters allowed in the words after it, how many words (None = to the line end), what a
-# valid token looks like). A word is replaced only by a valid re-read.
+# valid token looks like). Only invalid first readings are replaced, by valid re-reads.
 REREADS = (
     ("banff lesion", "scores", "itvgpc0123", None, re.compile(r"(i|t|v|g|ptc|ci|ct|cv)[0-3]")),
     ("capillaries", "capillaries", "C4d0123", 1, re.compile(r"C4d[0-3]")),
@@ -134,8 +134,8 @@ def tesseract_words(image: Image.Image, config: str) -> list[list[Word]]:
 def reread(
     image: Image.Image, words: list[Word], allowed: str, valid: re.Pattern[str]
 ) -> list[Word]:
-    """The same words read again as one line with only the allowed characters; a word is
-    replaced only when its re-read is a valid token."""
+    """The same words read again as one line with only the allowed characters. A word is
+    replaced only when its first reading is not a valid token and its re-read is."""
     x0, y0, x1, y1 = union(w.bbox for w in words)
     pad = (y1 - y0) / 2
     box = (max(x0 - pad, 0), max(y0 - pad, 0), x1 + pad, y1 + pad)
@@ -145,13 +145,14 @@ def reread(
         return words  # the re-read split differently: keep the first reading
     chosen = []
     for first, again in zip(words, found, strict=True):
-        if not valid.fullmatch(again.text):
+        if valid.fullmatch(first.text) or not valid.fullmatch(again.text):
             chosen.append(first)
             continue
+        # The constrained re-read only fixes look-alike characters; Tesseract's confidence for
+        # it is not meaningful (often 0), so the word keeps its first reading's confidence.
         x0, y0, x1, y1 = again.bbox
-        chosen.append(
-            Word(again.text, (x0 + box[0], y0 + box[1], x1 + box[0], y1 + box[1]), again.confidence)
-        )
+        box_again = (x0 + box[0], y0 + box[1], x1 + box[0], y1 + box[1])
+        chosen.append(Word(again.text, box_again, first.confidence))
     return chosen
 
 
