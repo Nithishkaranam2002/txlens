@@ -1,13 +1,17 @@
 """Engine: priority scoring, evidence keys, replay, and reuse on the oncology config."""
 
+import csv
 from dataclasses import replace
 from datetime import date, timedelta
+from pathlib import Path
 
 from surveillance_testutils import config, day, series
 
+from txlens_backend.surveillance import csv_source
 from txlens_backend.surveillance.config import Severity, load_configs
 from txlens_backend.surveillance.engine import change_days, evaluate, priority, replay
 from txlens_backend.surveillance.model import Observation, PatientSeries
+from txlens_datagen.oncology import OncologyConfig, generate_oncology
 
 WEIGHTS = {Severity.HIGH: 10.0, Severity.MEDIUM: 4.0, Severity.LOW: 1.0}
 
@@ -84,3 +88,21 @@ def test_same_engine_runs_the_oncology_config() -> None:
     assert {f.rule_id for f in rising} == {"tumor_dna_rising"}
     missed = evaluate(oncology, patient([0.0]), as_of + timedelta(days=200))
     assert {f.rule_id for f in missed} == {"tumor_dna_overdue"}
+
+
+def test_oncology_cohort_from_csv_is_flagged_before_recurrence(tmp_path: Path) -> None:
+    """End to end: generated oncology CSVs -> CSV source -> the unchanged engine."""
+    generate_oncology(replace(OncologyConfig(), n_patients=80), 42, tmp_path)
+    oncology = load_configs()["oncology_tumor_dna"]
+    patients = csv_source.load(tmp_path / "oncology", oncology, skip_feed_issues=False)
+    assert len(patients) == 80
+    with (tmp_path / "oncology" / "outcomes.csv").open() as f:
+        recurrences = {r["patient_id"]: date.fromisoformat(r["recurrence_date"])
+                       for r in csv.DictReader(f) if r["recurrence_date"]}  # fmt: skip
+    caught = 0
+    for patient_id, recurrence in recurrences.items():
+        series = patients[patient_id].series
+        assert series.end_date == recurrence
+        days = replay(oncology, series, series.anchor_date, recurrence)
+        caught += any(f.rule_id == "tumor_dna_detected" for _, flags in days for f in flags)
+    assert caught >= len(recurrences) // 3

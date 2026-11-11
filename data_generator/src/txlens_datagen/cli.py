@@ -6,6 +6,7 @@ from pathlib import Path
 
 from txlens_datagen.config import GeneratorConfig
 from txlens_datagen.generate import Summary, generate
+from txlens_datagen.oncology import OncologyConfig, generate_oncology
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -17,6 +18,10 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--out", type=Path, default=Path("data"))
     parser.add_argument("--no-pdfs", action="store_true", help="skip pathology PDFs")
     parser.add_argument("--no-note-text", action="store_true", help="skip clinical note text")
+    parser.add_argument(
+        "--n-oncology", type=int, default=OncologyConfig().n_patients,
+        help="size of the small oncology cohort (0 = none)",
+    )  # fmt: skip
     return parser.parse_args(argv)
 
 
@@ -49,6 +54,12 @@ def main(argv: list[str] | None = None) -> int:
     summary = generate(config, args.out, pdfs=not args.no_pdfs, note_text=not args.no_note_text)
     print(f"Generated {config.n_patients} synthetic patients (seed {config.seed}) in {args.out}/")
     print(format_summary(summary))
+    if args.n_oncology:
+        oncology = replace(OncologyConfig(), n_patients=args.n_oncology)
+        records = generate_oncology(oncology, config.seed, args.out)
+        recurrences = sum(r.outcome.recurrence_date is not None for r in records)
+        print(f"Oncology cohort: {len(records)} patients, {recurrences} recurrences "
+              f"({args.out}/oncology/)")  # fmt: skip
     return 0
 
 

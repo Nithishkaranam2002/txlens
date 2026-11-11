@@ -16,6 +16,7 @@ Rng = np.random.Generator
 STREAM_PATIENT = 0
 STREAM_FEED = 1
 STREAM_PDF = 2
+STREAM_ONCOLOGY = 3
 
 
 def rng_for(seed: int, *keys: int) -> Rng:

@@ -6,7 +6,7 @@ give the same flags as the database path. Expected files in `root`:
 - `patients.csv`: patient_id, tenant_id, the program (`program`, or `organ` for transplant
   data) and the anchor date column named by the config (e.g. `transplant_date`);
 - `labs.csv`: patient_id, collected_at, lab (= marker key), value;
-- optional `outcomes.csv`: death_date and/or graft_loss_date end surveillance;
+- optional `outcomes.csv`: death_date, graft_loss_date or recurrence_date end surveillance;
 - optional `lab_feed_issues.csv`: labs the pipeline cannot load (see `skip_feed_issues`).
 """
 
@@ -19,6 +19,8 @@ from pathlib import Path
 from txlens_backend.surveillance.config import SurveillanceConfig
 from txlens_backend.surveillance.model import Observation, PatientSeries
 
+# Outcome columns that end surveillance (whichever comes first).
+END_COLUMNS = ("death_date", "graft_loss_date", "recurrence_date")
 # Labs whose raw feed row is unusable, so they never reach the database.
 UNLOADABLE_ISSUES = frozenset({"bad_date", "missing_value"})
 
@@ -40,11 +42,10 @@ def rows(path: Path) -> list[dict[str, str]]:
 
 
 def end_dates(root: Path) -> dict[str, date]:
-    """Earliest of death and graft loss per patient."""
+    """Earliest end of surveillance per patient."""
     ends: dict[str, date] = {}
     for row in rows(root / "outcomes.csv"):
-        found = [date.fromisoformat(row[c]) for c in ("death_date", "graft_loss_date")
-                 if row.get(c)]  # fmt: skip
+        found = [date.fromisoformat(row[c]) for c in END_COLUMNS if row.get(c)]
         if found:
             ends[row["patient_id"]] = min(found)
     return ends
