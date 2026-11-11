@@ -464,3 +464,128 @@ experiencer flags).
    answers. A script runs each rule on the real database and compares members by center and
    MRN. All 7 rules match exactly, for example 198 kidney patients with dd-cfDNA ≥ 1% in the
    first year.
+
+## Phase 1, Step 1.6 — Surveillance engine and clinician worklist
+
+### What was built
+- **A disease-agnostic surveillance engine** (`backend/src/txlens_backend/surveillance/`).
+  Rules live in versioned YAML files: `kidney.yaml`, `heart.yaml` and
+  `oncology_tumor_dna.yaml`. The engine checks:
+  - **schedule adherence**: tests due at months 1, 2, 3, 4, 6, 9 and 12, then quarterly,
+    ±14 days;
+  - **dd-cfDNA over threshold**: kidney 0.5% "watch" and 1.0% "high"; heart 0.2%;
+  - **dd-cfDNA rising**: 2 rises in a row, or a doubling;
+  - **creatinine up 25% or eGFR down 30%** from the patient's own recent baseline;
+  - **tacrolimus outside its target range** for the time since transplant;
+  - **a new positive DSA**.
+- **Flags** with a rule id, severity, plain-English reason and evidence (each value and its
+  date), stored in `app.surveillance_flag` with Row-Level Security. Clinicians move a flag
+  new → acknowledged → resolved, and every change is audited.
+- **API**:
+  - `GET /worklist`: clinicians identified; data stewards de-identified; researchers and
+    admins get 403.
+  - `GET /patients/{id}/flags`
+  - `POST /flags/{id}/acknowledge` and `POST /flags/{id}/resolve`
+- **A Temporal workflow**:
+  - `make worker` runs the worker;
+  - `make surveillance-schedule` creates the nightly run (02:00 UTC);
+  - `make surveillance-run AS_OF=2025-06-30` runs any date.
+- **A small oncology cohort** in the generator (`data/oncology/`), run by the same engine
+  with a different YAML file.
+- **An evaluation** (`make surveillance-report` → `evals/reports/surveillance.md`) that
+  replays the engine day by day over all 2,000 patients and scores it against the ground
+  truth.
+
+### The ideas in plain English
+- **Decision support, not diagnosis**: a flag says "please look at this patient" and shows
+  why ("dd-cfDNA 1.3% on 2025-05-02 is at or above the 1% threshold"). The clinician decides.
+  The rules are plain Python with numbers from a config file, so anyone can check them.
+- **Config-driven**: kidney, heart and cancer surveillance differ only in their YAML (marker,
+  thresholds, schedule). Changing a threshold means editing YAML and bumping `version`, not
+  changing code. Every flag remembers which version made it.
+- **"As of" a date**: the engine only looks at results collected on or before that date. Run
+  it "as of 2024-03-31" and you see exactly what the worklist would have shown that day. That
+  is how the evaluation replays history without cheating.
+- **Idempotent**: running the same night twice must not create duplicate flags. Each flag has
+  a fingerprint (the rule plus the exact results it is based on). The database refuses a
+  second flag with the same fingerprint, so a resolved flag stays resolved. New results make
+  a new fingerprint, and therefore a new flag.
+- **Own baseline**: "creatinine up 25%" compares with the median of the same patient's
+  results over the last 90 days, not with a population normal. A patient whose creatinine is
+  always 2.0 is not flagged forever.
+- **Lead time**: how many days before the biopsy the worklist first showed an alert. Longer
+  means earlier warning.
+- **Alert burden**: how many patients are on the list each day. A rule that catches
+  everything but floods the list is not usable. Clinicians stop reading it ("alert fatigue").
+
+### How the tricky parts work
+- **Replay without evaluating every day**: flags can only change when a result arrives, when
+  a result ages out of a rule's window, or when a due test's window closes. The engine lists
+  those days (`change_days`), and evaluates only on them. A test shows that this gives exactly
+  the same answer as evaluating every calendar day. Replaying 2,000 patients takes seconds.
+- **Clearing vs resolving**: if a rule stops firing (the next dd-cfDNA is normal), the engine
+  sets `cleared_at` and the flag leaves the worklist. `status` belongs to the clinician and is
+  never changed by the engine. Replaying an old date never clears flags made for a later date.
+- **De-identified flags**: the reason text contains dates, so for data stewards every ISO
+  date in the reason and the evidence is shifted by that patient's secret offset. Clinician
+  notes are hidden, because free text can contain names. A test checks that no real evidence
+  date appears in a steward's response.
+- **Two paths, one answer**: the nightly job reads OMOP in Postgres, while the evaluation
+  reads the ground-truth CSV files. A database test runs both on the same center and date and
+  requires identical rule ids and fingerprints.
+- **Honest evaluation**: the generator draws extra "for-cause" labs a week before a biopsy,
+  because a doctor was already worried. Counting them would make the engine look clairvoyant
+  (kidney 98% detected, median 8 days). The report also shows surveillance and routine labs
+  alone (kidney 58%, median 18 days ahead).
+
+### Why these tools
+- **YAML + Pydantic**: YAML is easy for a clinician or data steward to read. Pydantic turns it
+  into typed objects and rejects typos and unknown markers at startup.
+- **Temporal**: retries each center separately, keeps a visible history of every run, and
+  has built-in schedules. It is already in our stack for document processing, and it needs
+  no Redis (CLAUDE.md rules out Celery/Redis).
+- **Postgres `ON CONFLICT` + a unique key**: idempotency enforced by the database itself, not
+  by careful code.
+
+### Trade-offs
+- **The results are optimistic.** The synthetic data was generated with the same thresholds
+  and signal shapes the engine checks. The numbers prove that the pipeline and the scoring
+  work; they say nothing about real patients. The report and the README say this up front.
+- **The trend rule is noisy.** With the shipped kidney settings there are 31.9 false alarms
+  per 100 patient-years, and most come from "2 rises in a row" in normal dd-cfDNA noise.
+  Without the trend rule, false alarms drop to 11.1 and the daily alert list halves, but
+  sensitivity falls from 58% to 52%. We kept the rule and published the table. Choosing is a
+  clinical decision.
+- **Heart detection is weak (23%)**. Heart dd-cfDNA runs low and creatinine is not a heart
+  graft signal; heart programs also rely on protocol biopsies, which are not scored here.
+- **Tacrolimus range flags fire often.** They are low severity: they add to the list but do
+  not count as alerts.
+- **Oncology lives in CSV only.** It is not loaded into OMOP yet. The point was to prove the
+  engine is reusable, not to build an oncology product.
+
+### Likely interview questions
+1. **How do you make sure re-running the nightly job doesn't spam clinicians or reopen
+   things they closed?** Each flag gets a fingerprint: a hash of the rule and the exact
+   results it is based on. The database has a unique key on (center, patient, fingerprint),
+   so a re-run inserts nothing new, and a resolved flag stays resolved. Only new evidence
+   creates a new flag.
+2. **Why not let an LLM decide who is at risk?** These are clinical thresholds that must be
+   explainable, testable and identical every time. Plain code from a versioned config does
+   that. An LLM would be non-deterministic and hard to audit. Our rule is that the LLM
+   extracts and summarizes, and code decides.
+3. **How did you evaluate it, and what would you not claim?** I replayed the engine day by
+   day over 2,000 synthetic patients, seeing only data up to each day. Then I scored:
+   - episodes flagged before biopsy and the lead time;
+   - false alarms per 100 patient-years;
+   - worklist size per day.
+
+   I separated out labs drawn because a doctor was already worried, which would inflate the
+   result. I would not claim real-world performance: the data was generated with the same
+   thresholds the engine checks.
+4. **How is it disease-agnostic?** Markers, thresholds, schedules and trend rules are YAML.
+   The engine has 7 generic rule kinds. A tumor DNA config for cancer follow-up runs on the
+   same engine with zero code changes.
+5. **What is the trade-off between sensitivity and alert burden here?** The threshold table
+   shows it. Dropping the trend rule cuts false alarms by about two thirds but misses 6 percentage
+   points more rejections (58% → 52%). Raising the watch threshold from 0.5% to 0.7% barely changes either. The right
+   setting depends on how many reviews a clinic can handle, so it is a config value, not code.

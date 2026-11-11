@@ -13,8 +13,9 @@ TxLens is a multi-tenant clinical data and AI platform for organ transplant prog
 
 > **All data is synthetic**, created by `data_generator/`. No real patient data is used.
 
-**Status:** skeleton, synthetic data generator, OMOP database and the medallion pipeline
-(Steps 1.1–1.4). Features arrive step by step.
+**Status:** synthetic data generator, OMOP database, medallion pipeline, backend API and
+the surveillance engine with its clinician worklist (Steps 1.1–1.6). Features arrive step by
+step.
 
 ## Tech stack
 
@@ -60,7 +61,8 @@ make db-setup       # ...plus the app login role from APP_DATABASE_URL
 make vocab-load     # load the Athena vocabulary zip from omop/athena/ (see omop/README.md)
 make vocab-check    # check every code we use against the vocabulary
 
-make generate-data        # 2,000 synthetic patients -> data/raw + data/ground_truth (~240 MB)
+make generate-data        # 2,000 synthetic patients -> data/raw + data/ground_truth (~240 MB),
+                          # plus a 200-patient oncology cohort -> data/oncology
 make generate-data-scale  # 20,000 patients, no PDFs/notes -> data_scale/ (Spark volume tests)
 
 make spark-build    # once: build the Spark image (~1 GB)
@@ -74,6 +76,10 @@ make databricks-data  # zip for Databricks Free Edition (see docs/DATABRICKS.md)
 make seed-users     # one demo user per role per center, e.g. clinician.center_a
 make api            # API at http://localhost:8000 (interactive docs: /docs)
 make cohort-report  # cohort rules vs ground truth -> evals/reports/cohort_rules.md
+make worker         # Temporal worker for surveillance runs (keep it running)
+make surveillance-run AS_OF=2025-06-30  # run surveillance for every center as of a date
+make surveillance-schedule  # nightly run at 02:00 UTC
+make surveillance-report    # replay vs ground truth -> evals/reports/surveillance.md
 
 pnpm --dir frontend dev   # frontend at http://localhost:3000
 make down           # stop containers (data is kept)
@@ -138,6 +144,43 @@ by `make cohort-report` on the pipeline-loaded database (2,000 patients):
 - **Known gap:** conditions sent as free text (all of center B, about half of center C) are
   not mapped yet. A "diabetes mellitus and descendants" rule therefore finds 428 of 820
   patients, all of them correct. It is exact for center A, which codes its conditions.
+
+## Surveillance worklist
+
+A config-driven engine flags patients for review. It is clinical decision support and never
+diagnoses. Kidney, heart and oncology rules are versioned YAML files: schedule adherence,
+marker thresholds, rising trends, creatinine/eGFR change from the patient's own baseline,
+tacrolimus range and new DSA. Each flag has a plain-English reason and the values and dates
+it is based on. Runs are a Temporal workflow (nightly, or `--as-of` any date). Re-runs are
+idempotent, and a resolved flag is never reopened for the same evidence.
+
+| | Worklist and patient flags | Acknowledge / resolve |
+|---|---|---|
+| clinician | identified | yes; every change audited |
+| data_steward | de-identified (all flag dates shifted, notes hidden) | no |
+| researcher, admin | no | no |
+
+Results from [evals/reports/surveillance.md](evals/reports/surveillance.md), produced by
+`make surveillance-report`. It replays the engine day by day over 2,000 synthetic patients,
+using surveillance and routine labs only.
+
+> **These numbers are optimistic.** The synthetic data was generated with the same
+> thresholds and signal shapes that the engine checks. They show that the engine, the replay
+> and the scoring work end to end. They are not evidence of real-world performance.
+
+- **Kidney: 58% of rejection episodes flagged before the biopsy** (135 of 231), median
+  **18 days** earlier. False alarms: 31.9 per 100 patient-years.
+- **Heart: 23%** (10 of 43), median 18 days earlier.
+- **Injury, not necessarily rejection:** 46% of BK virus, CMV and acute tubular injury
+  episodes are flagged too. The marker shows injury, not its cause.
+- **Sensitivity vs alert burden:** dropping the dd-cfDNA trend rule cuts kidney false alarms
+  from 31.9 to 11.1 per 100 patient-years and halves the daily alert list, but detection
+  falls to 52%.
+- **Same engine, oncology YAML:** 64% of recurrences flagged before the clinical recurrence
+  date, median 40 days earlier, on a synthetic tumor DNA marker cohort.
+
+Design: [ADR 0009](docs/adr/0009-config-driven-surveillance-engine.md),
+[ADR 0010](docs/adr/0010-temporal-for-surveillance-runs.md).
 
 ## Runs on Databricks
 
