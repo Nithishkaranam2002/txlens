@@ -34,7 +34,7 @@ from txlens_backend.config import Settings
 from txlens_backend.documents.phi import MinimizedText
 from txlens_backend.documents.tracing import TracedCall, Tracer, langfuse_tracer
 
-PROMPT_VERSION = "biopsy-2026-11-11.1"
+PROMPT_VERSION = "biopsy-2026-11-11.2"  # .2: IFTA is not an additional finding
 Variant = Literal["a", "b"]
 T = TypeVar("T", bound=BaseModel)
 MAX_OUTPUT_TOKENS = 4000  # includes reasoning tokens

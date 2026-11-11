@@ -30,6 +30,7 @@ from txlens_backend.documents.phi import MinimizedText, minimize, parse_header
 from txlens_backend.documents.schema import SCHEMAS, Organ, heart_diagnosis
 from txlens_backend.documents.validate import validate
 
+QC_REASON = "QC sample: would have been auto-approved; reviewed to measure the error rate"
 ORGAN_WORDS: dict[Organ, tuple[str, ...]] = {
     "kidney": ("kidney allograft", "banff"),
     "heart": ("endomyocardial", "heart allograft", "ishlt"),
@@ -167,6 +168,7 @@ def assess_document(
     models: Mapping[str, str],
     threshold: float,
     workflow_id: str,
+    qc_rate: float = 0.0,
 ) -> str:
     """Combine both passes, validate, map to OMOP rows; status 'extracted' or 'in_review'."""
     with tenant_transaction(engine, tenant_id) as conn:
@@ -187,7 +189,7 @@ def assess_document(
             threshold,
             errors,
         )
-        status = finish_assessment(conn, document_id, result)
+        status = finish_assessment(conn, document_id, result, qc_sample(row.sha256, qc_rate))
         audit.record(
             conn,
             info(workflow_id),
@@ -200,10 +202,23 @@ def assess_document(
     return status
 
 
-def finish_assessment(conn: Connection, document_id: str, result: Assessment) -> str:
-    """Store fields and OMOP rows; mapping problems also send the document to review."""
+def qc_sample(sha256: str, rate: float) -> bool:
+    """True for a fixed, content-independent share of files (decided by the file hash)."""
+    return int(sha256[:8], 16) % 10_000 < round(rate * 10_000)
+
+
+def finish_assessment(
+    conn: Connection, document_id: str, result: Assessment, qc: bool = False
+) -> str:
+    """Store fields and OMOP rows; mapping problems also send the document to review.
+
+    A report that would be auto-approved but is in the QC sample goes to review too, so the
+    auto-approve error rate keeps being measured.
+    """
     rows, problems = cdm_rows(conn, result.organ, result.values)
     reasons = [*result.decision.reasons, *problems]
+    if not reasons and qc:
+        reasons = [QC_REASON]
     status = "in_review" if reasons else "extracted"
     store.save_fields(conn, document_id, result)
     store.save_cdm_rows(conn, document_id, rows)

@@ -69,8 +69,10 @@ class KidneyBiopsy(BaseModel):
         description="Banff grade of T-cell mediated rejection; null if there is none."
     )
     additional_finding: Finding[AdditionalFinding] = Field(
-        description="Non-rejection finding stated in the diagnosis: BK (polyomavirus) "
-        "nephropathy, ATN (acute tubular injury/necrosis), CMV, or other; null if none."
+        description="A separate non-rejection diagnosis: BK (polyomavirus) nephropathy, ATN "
+        "(acute tubular injury/necrosis), CMV, or another named disease. Null if none. "
+        "Interstitial fibrosis / tubular atrophy (IFTA, the ci/ct line) and other chronic "
+        "changes are reported in every biopsy and are NOT an additional finding."
     )
 
 

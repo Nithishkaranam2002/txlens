@@ -227,6 +227,7 @@ class DocumentActivities:
             models,
             self.settings.review_threshold,
             step.workflow_id,
+            self.settings.qc_sample_rate,
         )
 
     @activity.defn(name="document_load")

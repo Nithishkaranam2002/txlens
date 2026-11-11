@@ -8,6 +8,7 @@ import pytest
 
 from txlens_backend.config import Settings
 from txlens_backend.documents.budget import BudgetExceededError
+from txlens_backend.documents.service import QC_REASON
 from txlens_datagen.config import GeneratorConfig
 from txlens_datagen.record import build_record
 from txlens_evals import biopsy_extraction as ev
@@ -117,22 +118,29 @@ def run(
     )
 
 
-def test_the_report_scores_fields_routes_and_injection() -> None:
+def test_the_report_scores_fields_routes_thresholds_and_injection() -> None:
     runs = [
         run("extracted", "TCMR", {}),
         run("in_review", "TCMR", {"banff_t": None}),
         run("in_review", "TCMR", {"diagnosis": "ABMR"}),
+        run("in_review", "TCMR", {}),
     ]
+    runs[0].confidence, runs[1].confidence, runs[3].confidence = 0.9, 0.6, 0.95
+    runs[1].reasons = ["confidence 0.60 is below 0.70"]
+    runs[2].reasons = ["confidence 0.00 is below 0.70"]
+    runs[3].reasons = [QC_REASON]
     injected = [run("in_review", "TCMR", {})]
-    text = ev.report(runs, injected, Settings(), "eval-test", 1405, 0.01, 0.006)
-    assert (
-        "**3 reports (3 kidney, 0 heart): 66.7% sent to human review; 1 of 1 auto-approved" in text
-    )
-    assert "| kidney | banff_t | 3 | 2 | 66.7% |  |" in text
-    assert "| kidney | banff_cv | 3 | 3 | 100.0% | 3/3 empty as expected |" in text
-    assert "| **TCMR** |  |  | 2 | 1 |  |  |" in text  # truth TCMR: 2 as TCMR, 1 as ABMR
+    text = ev.report(runs, injected, Settings(), "eval-test", 1405, 0.01, 0.006, 3.0)
+    assert "75.0% sent to human review; 2 of 2 auto-approved reports (QC sample included)" in text
+    assert "| kidney | banff_t | 4 | 3 | 75.0% |  |" in text
+    assert "| kidney | banff_cv | 4 | 4 | 100.0% | 4/4 empty as expected |" in text
+    assert "| **TCMR** |  |  | 3 | 1 |  |  |" in text  # truth TCMR: 3 as TCMR, 1 as ABMR
     assert "| Auto-approved (loaded without review) | 1 | 1 | 100.0% |" in text
+    assert "| QC sample (would have been auto-approved) | 1 | 1 | 100.0% |" in text
     assert "| Sent to human review | 2 | 0 | 0.0% |" in text
+    # Would-be auto-approvals: confidences 0.9, 0.6 (t wrong), 0.0 (diagnosis wrong), 0.95.
+    assert "| 0.85 | 2 | 50.0% | 0 |" in text
+    assert "| 0.50 | 3 | 75.0% | 1 |" in text
     assert "about **$2.81**" in text  # 1405 remaining x $0.002
     assert "| BX-000014-01 | TCMR | TCMR | yes | in_review |" in text
 

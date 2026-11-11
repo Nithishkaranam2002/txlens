@@ -4,6 +4,7 @@ OCR is replaced by fixed lines so results do not depend on the Tesseract version
 is tested on real PDFs in test_documents_ocr.py.
 """
 
+import hashlib
 import json
 import uuid
 from collections.abc import Mapping
@@ -253,3 +254,29 @@ def test_an_mrn_damaged_by_ocr_still_links_to_the_only_close_patient(
             {"d": document_id},
         ).one()
     assert tuple(linked) == (1, 101)
+
+
+def test_qc_sample_is_a_fixed_tenth_of_files() -> None:
+    hashes = [hashlib.sha256(str(i).encode()).hexdigest() for i in range(5000)]
+    picked = [h for h in hashes if service.qc_sample(h, 0.10)]
+    assert 0.08 < len(picked) / len(hashes) < 0.12
+    assert picked == [h for h in hashes if service.qc_sample(h, 0.10)]  # reproducible
+    assert not any(service.qc_sample(h, 0.0) for h in hashes)
+
+
+def test_a_confident_report_in_the_qc_sample_goes_to_review(
+    clinic: None, report: Any, documents_engine: Engine, documents_owner: Engine
+) -> None:
+    document_id, status, _ = process(documents_engine, report(KIDNEY_OCR_LINES), KIDNEY_ANSWER)
+    assert status == "extracted"
+    again = service.assess_document(
+        documents_engine, "center_a", document_id, MODELS, 0.85, "wf", qc_rate=1.0
+    )
+    assert again == "in_review"
+    with documents_owner.connect() as conn:
+        reasons = conn.execute(
+            text("SELECT review_reasons FROM app.document WHERE document_id = :d"),
+            {"d": document_id},
+        ).scalar_one()
+    assert reasons == [service.QC_REASON]
+    assert service.load_document(documents_engine, "center_a", document_id, "wf") == 0

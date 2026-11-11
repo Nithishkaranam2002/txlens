@@ -31,6 +31,7 @@ from typing import Any
 
 from sqlalchemy import Engine, text
 
+from txlens_backend.clinical_codes import BIOPSY
 from txlens_backend.config import Settings, get_settings
 from txlens_backend.db import make_engine, tenant_transaction
 from txlens_backend.documents import service, store
@@ -43,6 +44,8 @@ from txlens_backend.documents.llm import (
     tracer_for,
 )
 from txlens_backend.documents.schema import BANFF_SCORES
+from txlens_backend.services.biopsies import SHOWN_STATUSES
+from txlens_backend.services.facts import concept_keys
 from txlens_datagen.config import GeneratorConfig
 from txlens_datagen.rand import rng_for
 from txlens_datagen.record import build_record
@@ -127,6 +130,17 @@ class DocumentRun:
     seconds: float = 0.0
     pass_latency_ms: list[int] = field(default_factory=list)
     error: str | None = None
+    confidence: float = 0.0
+
+    @property
+    def qc(self) -> bool:
+        """In the QC sample: it would have been auto-approved."""
+        return self.reasons == [service.QC_REASON]
+
+    @property
+    def blocked(self) -> bool:
+        """Sent to review for a reason other than confidence (or the QC sample)."""
+        return any("is below" not in r and r != service.QC_REASON for r in self.reasons)
 
 
 def expected(row: dict[str, str]) -> tuple[dict[str, Any], tuple[str, ...]]:
@@ -251,17 +265,33 @@ def cached_documents(engine: Engine, tenants: Iterable[str]) -> int:
     return total
 
 
+def measured_cost_per_report(engine: Engine, tenants: Iterable[str]) -> float | None:
+    """Mean paid cost of one report (both passes) for the current prompt version, if known."""
+    cost = reports = 0.0
+    for tenant in tenants:
+        with tenant_transaction(engine, tenant) as conn:
+            row = conn.execute(
+                text(
+                    "SELECT coalesce(sum(cost_usd), 0) AS cost, count(DISTINCT document_id) AS n "
+                    "FROM app.extraction WHERE prompt_version = :p AND NOT cached AND cost_usd > 0"
+                ),
+                {"p": PROMPT_VERSION},
+            ).one()
+            cost, reports = cost + float(row.cost), reports + row.n
+    return cost / reports if reports else None
+
+
 def finished_values(
     engine: Engine, tenant: str, document_id: str
-) -> tuple[dict[str, Any], list[str]]:
-    """Final field values and review reasons of a document."""
+) -> tuple[dict[str, Any], list[str], float]:
+    """Final field values, review reasons and confidence of a document."""
     with tenant_transaction(engine, tenant) as conn:
         values = store.field_values(conn, document_id)
-        reasons = conn.execute(
-            text("SELECT review_reasons FROM app.document WHERE document_id = :d"),
+        row = conn.execute(
+            text("SELECT review_reasons, confidence FROM app.document WHERE document_id = :d"),
             {"d": document_id},
-        ).scalar_one()
-    return values, list(reasons)
+        ).one()
+    return values, list(row.review_reasons), float(row.confidence or 0)
 
 
 def process(job: Job, engine: Engine, settings: Settings, budget: Budget) -> DocumentRun:
@@ -295,13 +325,19 @@ def process(job: Job, engine: Engine, settings: Settings, budget: Budget) -> Doc
                 run.pass_latency_ms.append(outcome.latency_ms)
         models: dict[str, str] = {v: e.model for v, e in extractors.items()}
         run.status = service.assess_document(
-            engine, job.tenant, row.document_id, models, settings.review_threshold, workflow_id
+            engine,
+            job.tenant,
+            row.document_id,
+            models,
+            settings.review_threshold,
+            workflow_id,
+            settings.qc_sample_rate,
         )
         if run.status == "extracted":
             service.load_document(engine, job.tenant, row.document_id, workflow_id)
     else:
         run.status = row.status
-    run.values, run.reasons = finished_values(engine, job.tenant, row.document_id)
+    run.values, run.reasons, run.confidence = finished_values(engine, job.tenant, row.document_id)
     run.seconds = time.monotonic() - started
     return run
 
@@ -391,16 +427,50 @@ def confusion_rows(runs: Sequence[DocumentRun]) -> list[str]:
 def routing_rows(runs: Sequence[DocumentRun]) -> list[str]:
     """Markdown rows: route, documents, fully correct, share."""
     rows = []
-    for label, statuses in (
-        ("Auto-approved (loaded without review)", ("extracted",)),
-        ("Sent to human review", ("in_review",)),
-        ("Already reviewed by a person", FINAL),
-    ):
-        group = [r for r in runs if r.status in statuses]
+    routes: tuple[tuple[str, Callable[[DocumentRun], bool]], ...] = (
+        ("Auto-approved (loaded without review)", lambda r: r.status == "extracted"),
+        ("QC sample (would have been auto-approved)", lambda r: r.status == "in_review" and r.qc),
+        ("Sent to human review", lambda r: r.status == "in_review" and not r.qc),
+        ("Already reviewed by a person", lambda r: r.status in FINAL),
+    )
+    for label, chosen in routes:
+        group = [r for r in runs if chosen(r)]
         if group:
             ok = sum(all_key_fields_correct(r) for r in group)
             rows.append(f"| {label} | {len(group)} | {ok} | {percent(ok, len(group))} |")
     return rows
+
+
+THRESHOLDS = (0.85, 0.70, 0.50)
+
+
+def threshold_rows(runs: Sequence[DocumentRun]) -> list[str]:
+    """Would-be auto-approvals and their errors at other review thresholds (QC ignored)."""
+    rows = []
+    for t in THRESHOLDS:
+        auto = [r for r in runs if not r.blocked and r.confidence >= t]
+        wrong = sum(not all_key_fields_correct(r) for r in auto)
+        rows.append(f"| {t:.2f} | {len(auto)} | {percent(len(auto), len(runs))} | {wrong} |")
+    return rows
+
+
+def timeline_coverage(engine: Engine, tenants: Iterable[str]) -> tuple[int, int]:
+    """(biopsies with a result shown on the timeline, all biopsies) over these centers."""
+    shown = total = 0
+    for tenant in tenants:
+        with tenant_transaction(engine, tenant) as conn:
+            biopsies = list(concept_keys(conn, BIOPSY))
+            row = conn.execute(
+                text(
+                    "SELECT count(*) AS total, count(*) FILTER (WHERE EXISTS ("
+                    "SELECT 1 FROM app.document d WHERE d.procedure_occurrence_id = "
+                    "p.procedure_occurrence_id AND d.status = ANY(:s))) AS shown "
+                    "FROM cdm.procedure_occurrence p WHERE p.procedure_concept_id = ANY(:b)"
+                ),
+                {"s": list(SHOWN_STATUSES), "b": biopsies},
+            ).one()
+            shown, total = shown + row.shown, total + row.total
+    return shown, total
 
 
 def latency(values: Sequence[float]) -> str:
@@ -417,6 +487,55 @@ def projected_full_cost(runs: Sequence[DocumentRun], remaining: int, worst_case:
     return remaining * (mean(paid) if paid else worst_case)
 
 
+def injection_lines(adversarial: Sequence[DocumentRun]) -> list[str]:
+    """The prompt-injection section (empty when none were run)."""
+    if not adversarial:
+        return []
+    return [
+        "## Prompt injection",
+        "",
+        f"{len(adversarial)} kidney rejection reports were re-rendered with this line in the",
+        f'DIAGNOSIS section: "{INJECTION}"',
+        "",
+        "| Biopsy | Truth | Extracted | Scores intact | Status |",
+        "|---|---|---|---|---|",
+        *(
+            f"| {r.job.truth.biopsy_id} | {r.job.truth.values['diagnosis']} | "
+            f"{r.values.get('diagnosis')} | {'yes' if all_key_fields_correct(r) else 'no'} | "
+            f"{r.status} |"
+            for r in adversarial
+        ),
+        "",
+    ]
+
+
+def cost_lines(
+    remaining: int,
+    cost_per_doc: float,
+    projection: float,
+    spent: float,
+    coverage: tuple[int, int] | None,
+) -> list[str]:
+    """Cost (and, after a full run, timeline coverage)."""
+    lines = ["## Cost", ""]
+    if remaining:
+        lines += [
+            f"{remaining} reports have not been processed. At ${cost_per_doc:.4f} per",
+            f"report that is about **${projection:.2f}** (run `--full --max-cost <dollars>`",
+            "only after approval).",
+        ]
+    else:
+        lines.append(f"This batch spent **${spent:.4f}** (${cost_per_doc:.4f} per paid report).")
+    if coverage:
+        shown, total = coverage
+        lines += [
+            "",
+            f"Biopsies with a result on the timeline: **{shown} of {total}** "
+            f"({percent(shown, total)}).",
+        ]
+    return lines
+
+
 def report(
     runs: Sequence[DocumentRun],
     adversarial: Sequence[DocumentRun],
@@ -425,12 +544,14 @@ def report(
     remaining: int,
     worst_case: float,
     spent: float,
+    cap: float,
+    coverage: tuple[int, int] | None = None,
 ) -> str:
     """The markdown report."""
     scored = [r for r in runs if r.status not in ("not_started", "budget_exceeded")]
     kidney = sum(r.job.truth.organ == "kidney" for r in scored)
     reviewed = sum(r.status == "in_review" for r in scored)
-    auto = [r for r in scored if r.status == "extracted"]
+    auto = [r for r in scored if r.status == "extracted" or r.qc]  # QC: would be auto-approved
     auto_ok = sum(all_key_fields_correct(r) for r in auto)
     paid = [r for r in scored if r.paid_passes == 2]
     cost_per_doc = mean(r.cost_usd for r in paid) if paid else 0.0
@@ -450,7 +571,7 @@ def report(
         "",
         f"**{len(scored)} reports ({kidney} kidney, {len(scored) - kidney} heart): "
         f"{percent(reviewed, len(scored))} sent to human review; "
-        f"{auto_ok} of {len(auto)} auto-approved reports fully correct; "
+        f"{auto_ok} of {len(auto)} auto-approved reports (QC sample included) fully correct; "
         f"${cost_per_doc:.4f} per report.**",
         "",
         "## Run",
@@ -461,7 +582,8 @@ def report(
         f"| Prompt version | {PROMPT_VERSION} |",
         f"| OCR | {settings.ocr_engine} |",
         f"| Review threshold | {settings.review_threshold} |",
-        f"| Budget batch | {batch_id} (cap ${settings.llm_budget_usd:.2f}, spent ${spent:.4f}) |",
+        f"| Budget batch | {batch_id} (cap ${cap:.2f}, spent ${spent:.4f}) |",
+        f"| QC sample | {settings.qc_sample_rate:.0%} of would-be auto-approved reports |",
         f"| Reports paid for in this run | {len(paid)} (served from cache: {cached}) |",
         f"| Tokens per report | {tokens_in:.0f} in, {tokens_out:.0f} out |",
         f"| Latency per report | {latency([r.seconds for r in paid])} |",
@@ -499,25 +621,20 @@ def report(
         "|---|---|",
         *(f"| {reason} | {count} |" for reason, count in reasons.most_common()),
         "",
-        "## Prompt injection",
+        "## Review threshold",
         "",
-        f"{len(adversarial)} kidney rejection reports were re-rendered with this line in the",
-        f'DIAGNOSIS section: "{INJECTION}"',
+        "Reports that would be auto-approved at other thresholds (only the confidence rule",
+        "changes; reports held for any other reason stay in review), and how many of them",
+        f"have a wrong key field. The threshold in use is {settings.review_threshold:.2f}. It was",
+        "chosen on the first 100-report sample of synthetic reports and must be re-checked on",
+        "more data; the QC sample keeps measuring the auto-approve error rate.",
         "",
-        "| Biopsy | Truth | Extracted | Scores intact | Status |",
-        "|---|---|---|---|---|",
-        *(
-            f"| {r.job.truth.biopsy_id} | {r.job.truth.values['diagnosis']} | "
-            f"{r.values.get('diagnosis')} | {'yes' if all_key_fields_correct(r) else 'no'} | "
-            f"{r.status} |"
-            for r in adversarial
-        ),
+        "| Threshold | Would be auto-approved | Share | With a wrong key field |",
+        "|---|---|---|---|",
+        *threshold_rows(scored),
         "",
-        "## Cost of the full set",
-        "",
-        f"{remaining} reports have not been processed. At ${cost_per_doc:.4f} per report",
-        f"that is about **${projection:.2f}** (run `--full --max-cost <dollars>` only after",
-        "approval).",
+        *injection_lines(adversarial),
+        *cost_lines(remaining, cost_per_doc, projection, spent, coverage),
         "",
         "## Limitations",
         "",
@@ -567,7 +684,9 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     """Command-line options."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--data", type=Path, default=Path("data"))
-    parser.add_argument("--out", type=Path, default=Path("evals/reports/biopsy_extraction.md"))
+    parser.add_argument(
+        "--out", type=Path, help="default: evals/reports/biopsy_extraction[_full].md"
+    )
     parser.add_argument("--sample", type=int, default=DEFAULT_SAMPLE)
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--full", action="store_true", help="every PDF (needs --max-cost)")
@@ -584,24 +703,29 @@ def main(argv: list[str] | None = None) -> int:
     jobs = [Job(t, args.data / "raw" / t.pdf_file) for t in sample]
     engine = make_engine(settings.app_database_url.get_secret_value())
     worst_case = 2 * max_call_cost(settings.llm_model, "x" * 2000)
+    tenants = {j.tenant for j in jobs}
+    cap = settings.llm_budget_usd
     if args.full:
-        cached = cached_documents(engine, {j.tenant for j in jobs})
-        estimate = (len(jobs) - cached) * worst_case
+        new = len(jobs) - cached_documents(engine, tenants)
+        per_report = measured_cost_per_report(engine, tenants) or worst_case
+        estimate = new * per_report
         if args.max_cost is None or estimate > args.max_cost:
             print(
-                f"Worst-case estimate ${estimate:.2f} for {len(jobs) - cached} new reports; "
-                "pass --max-cost to confirm."
+                f"Estimated ${estimate:.2f} for {new} new reports (${per_report:.4f} each); "
+                "pass --max-cost at or above it to confirm."
             )
             return 2
+        cap = min(cap, args.max_cost)  # the batch can never spend more than --max-cost
+        print(f"Estimated ${estimate:.2f} for {new} new reports; batch capped at ${cap:.2f}")
     adversarial = (
         [] if args.full else adversarial_jobs(truths, sample, args.data / "eval" / "adversarial")
     )
     batch_id = f"eval-{'full' if args.full else f'sample-{args.sample}-{args.seed}'}"
-    budget = Budget(engine, batch_id, settings.llm_budget_usd)
+    budget = Budget(engine, batch_id, cap)
     budget.open()
     print(
         f"{len(jobs)} reports + {len(adversarial)} adversarial; worst case "
-        f"${(len(jobs) + len(adversarial)) * worst_case:.2f}, cap ${settings.llm_budget_usd:.2f}"
+        f"${(len(jobs) + len(adversarial)) * worst_case:.2f}, cap ${cap:.2f}"
     )
     done = Counter[str]()
 
@@ -614,15 +738,27 @@ def main(argv: list[str] | None = None) -> int:
     main_runs, injected = runs[: len(jobs)], runs[len(jobs) :]
     spent, _ = budget.totals()
     remaining = 0 if args.full else len(truths) - len(sample)
-    args.out.write_text(
-        report(main_runs, injected, settings, batch_id, remaining, worst_case, float(spent)),
+    coverage = timeline_coverage(engine, tenants) if args.full else None
+    out = args.out or Path(f"evals/reports/biopsy_extraction{'_full' if args.full else ''}.md")
+    out.write_text(
+        report(
+            main_runs,
+            injected,
+            settings,
+            batch_id,
+            remaining,
+            worst_case,
+            float(spent),
+            cap,
+            coverage,
+        ),
         encoding="utf-8",
     )
     details(runs, args.data / "eval" / f"{batch_id}.csv")
     tracer = tracer_for(settings)
     if tracer is not None:
         tracer.flush()
-    print(f"Wrote {args.out}; spent ${float(spent):.4f} in batch {batch_id}")
+    print(f"Wrote {out}; spent ${float(spent):.4f} in batch {batch_id}")
     return 0
 
 

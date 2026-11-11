@@ -29,6 +29,7 @@ from txlens_backend.documents.phi import (
     parse_header,
     scrub_identity,
 )
+from txlens_backend.documents.service import QC_REASON
 
 ResultStatus = Literal["extracted", "in_review", "approved"]
 SHOWN_STATUSES = ("extracted", "in_review", "approved")
@@ -73,6 +74,7 @@ class DocumentEvidence(BaseModel):
     organ: str | None
     confidence: float | None
     review_reasons: list[str]
+    qc_sample: bool  # in review only as a random quality-control check of auto-approval
     page_sizes: list[list[float]]
     page_urls: list[str]
     fields: list[FieldEvidence]
@@ -218,6 +220,7 @@ def evidence(
         organ=row.organ,
         confidence=float(meta.confidence) if meta.confidence is not None else None,
         review_reasons=[redact(r) if redacted else r for r in meta.review_reasons],
+        qc_sample=meta.review_reasons == [QC_REASON],
         page_sizes=[] if redacted else pages,
         page_urls=[]
         if redacted

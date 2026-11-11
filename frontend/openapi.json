@@ -569,6 +569,10 @@
             "title": "Page Urls",
             "type": "array"
           },
+          "qc_sample": {
+            "title": "Qc Sample",
+            "type": "boolean"
+          },
           "review_reasons": {
             "items": {
               "type": "string"
@@ -596,6 +600,7 @@
           "organ",
           "confidence",
           "review_reasons",
+          "qc_sample",
           "page_sizes",
           "page_urls",
           "fields"

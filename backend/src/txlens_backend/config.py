@@ -62,7 +62,11 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     langfuse_public_key: SecretStr = SecretStr("")
     langfuse_secret_key: SecretStr = SecretStr("")
-    review_threshold: float = 0.85  # document confidence below this goes to human review
+    # Document confidence below this goes to human review. 0.70: no auto-approved report was
+    # wrong on the 100-report sample at 0.85, 0.70 or 0.50 (evals/reports/biopsy_extraction.md);
+    # re-check on more data.
+    review_threshold: float = 0.70
+    qc_sample_rate: float = 0.10  # share of would-be auto-approved reports sent to review anyway
     review_timeout_days: int = 14  # an unanswered review expires; nothing is loaded
 
     # --- Demo users (`make seed-users`) ---

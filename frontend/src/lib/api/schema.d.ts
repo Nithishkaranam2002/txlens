@@ -606,6 +606,8 @@ export interface components {
             page_sizes: number[][];
             /** Page Urls */
             page_urls: string[];
+            /** Qc Sample */
+            qc_sample: boolean;
             /** Review Reasons */
             review_reasons: string[];
             /** Status */
