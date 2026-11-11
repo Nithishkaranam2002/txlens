@@ -59,7 +59,7 @@ surveillance-run: ## Run surveillance for every center now (AS_OF=YYYY-MM-DD rep
 	uv run txlens-surveillance run $(if $(AS_OF),--as-of $(AS_OF))
 
 prune-login-attempts: ## Delete login attempts older than 30 days (logins also do this)
-	uv run txlens-prune-login-attempts cohort-report
+	uv run txlens-prune-login-attempts
 
 vocab-load: ## Load OMOP vocabularies from omop/athena (or VOCAB_SOURCE=omop/vocab_subset)
 	uv run txlens-vocab load --source $(VOCAB_SOURCE)
