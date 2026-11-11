@@ -21,6 +21,7 @@ from txlens_backend.security import InvalidTokenError, decode
 ACCESS_COOKIE = "txlens_access"
 REFRESH_COOKIE = "txlens_refresh"
 CSRF_HEADER = "X-Requested-With"
+CSRF_HEADER_EXAMPLE = "XMLHttpRequest"
 
 
 class Role(StrEnum):
@@ -105,7 +106,13 @@ TenantDb = Annotated[Connection, Depends(tenant_db, scope="function")]
 
 
 def require_csrf_header(
-    x_requested_with: Annotated[str | None, Header(alias=CSRF_HEADER)] = None,
+    x_requested_with: Annotated[
+        str | None,
+        Header(
+            alias=CSRF_HEADER,
+            description="Any non-empty value; requests without it get 403 (CSRF defence).",
+        ),
+    ] = None,
 ) -> None:
     """State-changing requests must carry a custom header.
 

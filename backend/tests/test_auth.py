@@ -144,3 +144,12 @@ def test_post_without_the_csrf_header_is_refused(api_app: FastAPI) -> None:
         response = bare.post("/auth/login", json=body)
     assert response.status_code == 403
     assert "X-Requested-With" in response.json()["detail"]
+
+
+def test_every_post_documents_the_csrf_header_for_swagger(api_app: FastAPI) -> None:
+    for path, operations in api_app.openapi()["paths"].items():
+        if "post" in operations:
+            header = next(p for p in operations["post"]["parameters"] if p["in"] == "header")
+            assert header["name"] == "X-Requested-With", path
+            assert header["required"] is True, path
+            assert header["schema"]["default"] == "XMLHttpRequest", path

@@ -3,13 +3,14 @@
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import Engine
 
 from txlens_backend.api import auth, cohorts, patients, system
-from txlens_backend.api.deps import CSRF_HEADER, AppContext
+from txlens_backend.api.deps import CSRF_HEADER, CSRF_HEADER_EXAMPLE, AppContext
 from txlens_backend.config import Settings, get_settings, require_secret
 from txlens_backend.db import check_role_is_rls_bound, make_engine
 
@@ -27,6 +28,27 @@ Postgres Row-Level Security. No endpoint accepts a tenant id. Ids from other ten
 stewards see de-identified data: pseudonymous ids, shifted dates, age bands and suppressed
 small counts. Admins see no patient data.
 """
+
+
+def document_csrf_header(app: FastAPI) -> None:
+    """Show the CSRF header as required, pre-filled with "XMLHttpRequest", in the OpenAPI docs.
+
+    Only the documentation changes, so Swagger UI's "Try it out" sends the header. The check
+    in `require_csrf_header` is untouched: a request without the header still gets 403.
+    """
+    generate = app.openapi
+
+    def openapi() -> dict[str, Any]:
+        schema = generate()  # cached by FastAPI after the first call
+        for operations in schema["paths"].values():
+            for operation in operations.values():
+                for parameter in operation.get("parameters", []):
+                    if parameter["in"] == "header" and parameter["name"] == CSRF_HEADER:
+                        parameter["required"] = True
+                        parameter["schema"] = {"type": "string", "default": CSRF_HEADER_EXAMPLE}
+        return schema
+
+    app.openapi = openapi  # type: ignore[method-assign]
 
 
 def create_app(settings: Settings | None = None, engine: Engine | None = None) -> FastAPI:
@@ -71,4 +93,5 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None) -
     app.include_router(auth.router)
     app.include_router(patients.router)
     app.include_router(cohorts.router)
+    document_csrf_header(app)
     return app
