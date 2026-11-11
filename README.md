@@ -81,6 +81,10 @@ make surveillance-run  # surveillance for every center as of the data cutoff (20
                        # AS_OF=YYYY-MM-DD replays another date
 make surveillance-schedule  # nightly run at 02:00 UTC
 make surveillance-report    # replay vs ground truth -> evals/reports/surveillance.md
+make ocr-report             # OCR setups on the biopsy PDFs (no LLM) -> evals/reports/ocr.md
+make biopsy-report          # 100-report extraction sample vs ground truth (paid LLM calls,
+                            # cached; capped by LLM_BUDGET_USD) -> evals/reports/biopsy_extraction.md
+uv run txlens-biopsies process data/raw/pathology/center_a  # biopsy PDFs through the workflow
 
 make frontend       # frontend at http://localhost:3000 (proxies /api to the API on :8000)
 make e2e            # Playwright tests on a seeded throwaway database (needs `make up`)
@@ -185,6 +189,53 @@ using surveillance and routine labs only.
 
 Design: [ADR 0009](docs/adr/0009-config-driven-surveillance-engine.md),
 [ADR 0010](docs/adr/0010-temporal-for-surveillance-runs.md).
+
+## Biopsy reports (scanned pathology PDFs)
+
+Each scanned report runs through a Temporal workflow:
+1. OCR (Tesseract with preprocessing);
+2. link to the patient's biopsy, read from the header locally;
+3. two LLM extraction passes (LiteLLM + Instructor, `gpt-6-luna` by default, a local Llama
+   optional), with patient identifiers removed first;
+4. an evidence check: every value must be quoted from the page;
+5. Banff/ISHLT rules;
+6. confidence from OCR quality × agreement of the two passes;
+7. OMOP: SNOMED conditions and score measurements, with provenance.
+
+Uncertain reports wait for a person (approve / edit / reject), and a random 10% of
+confident ones are reviewed as a QC sample. LLM spending has a hard cap per batch, answers
+are cached, and every call is traced in Langfuse.
+
+| | Biopsy result on the timeline | Evidence | Review |
+|---|---|---|---|
+| clinician | yes | full: page image, box, OCR line | yes |
+| data_steward | yes | redacted evidence lines only | yes |
+| researcher | yes (no document link) | no | no |
+
+Results from [evals/reports/biopsy_extraction_full.md](evals/reports/biopsy_extraction_full.md)
+(`--full`) and [evals/reports/ocr.md](evals/reports/ocr.md) (`make ocr-report`), on all
+1,508 synthetic reports:
+
+> **Synthetic, template-rendered reports.** One layout and one font; the OCR fixes use that
+> template's anchors. These numbers show the workflow works end to end. They are not an
+> estimate for real pathology reports.
+
+- **OCR:** 97.1% of key tokens read exactly (65.2% before preprocessing and 200 dpi scans).
+- **Extraction:**
+  - every kidney Banff score, C4d, grade, diagnosis and finding is at least 99.7% correct;
+  - every heart ACR/pAMR grade and diagnosis is 100% correct;
+  - dates are 98.5% (kidney) and 99.7% (heart) correct;
+  - all 33 fields a report left out came back empty, as they should.
+- **Routing (threshold 0.70):**
+  - 716 of 716 would-be auto-approved reports fully correct (629 loaded, 87 QC sample);
+  - 58% sent to review, mostly for OCR confidence;
+  - at 0.85 only 14% would be auto-approved, at 0.50 76%, with 0 errors at any of the three.
+- **Prompt injection:** 5 of 5 reports with an injected instruction kept their true values
+  (sample run).
+- **Cost:** $0.0007 per report; $1.00 for all 1,508 (budget $2.50). 1,498 of 1,508 biopsies
+  now show a result on the timeline.
+
+Design: [ADR 0013](docs/adr/0013-biopsy-document-extraction.md).
 
 ## Frontend
 
