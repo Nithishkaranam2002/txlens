@@ -201,8 +201,11 @@ def api_flags(api_app: FastAPI, api_database: str, app_login: tuple[str, str]) -
 @pytest.fixture
 def api_tx(api_owner: Engine, api_app: FastAPI) -> Iterator[Connection]:
     """Owner connection to the API database (data and users loaded) in a transaction that is
-    rolled back afterwards; switch it to the app role with `act_as_app`."""
+    rolled back afterwards; switch it to the app role with `act_as_app`. It starts with no
+    surveillance runs or flags, whatever other tests have committed."""
     with api_owner.connect() as conn:
         transaction = conn.begin()
+        conn.execute(text("DELETE FROM app.surveillance_flag"))
+        conn.execute(text("DELETE FROM app.surveillance_run"))
         yield conn
         transaction.rollback()

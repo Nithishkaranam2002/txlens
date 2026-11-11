@@ -2,6 +2,7 @@
 
 from fastapi.testclient import TestClient
 from httpx import Response
+from sqlalchemy import Engine, text
 
 from txlens_backend.api.deps import Role
 
@@ -25,3 +26,14 @@ def login(client: TestClient, role: Role, tenant: str = "center_a") -> Response:
 def set_cookies(response: Response) -> dict[str, str]:
     """Cookie name -> its full Set-Cookie header, from one response."""
     return {h.split("=", 1)[0]: h for h in response.headers.get_list("set-cookie")}
+
+
+def new_flag(owner: Engine, tenant: str = "center_a") -> str:
+    """An open surveillance flag of this center that nobody has reviewed yet."""
+    with owner.connect() as conn:
+        flag_id = conn.execute(
+            text("SELECT flag_id FROM app.surveillance_flag WHERE tenant_id = :t "
+                 "AND status = 'new' AND cleared_at IS NULL ORDER BY flag_id LIMIT 1"),
+            {"t": tenant},
+        ).scalar_one()  # fmt: skip
+    return str(flag_id)

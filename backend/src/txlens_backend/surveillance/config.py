@@ -26,6 +26,9 @@ class Severity(StrEnum):
     LOW = "low"
 
 
+DEFAULT_WEIGHTS = {Severity.HIGH: 10.0, Severity.MEDIUM: 4.0, Severity.LOW: 1.0}
+
+
 class Frozen(BaseModel):
     """Config models are immutable and reject unknown keys (typos fail loudly)."""
 
@@ -194,9 +197,7 @@ class SurveillanceConfig(Frozen):
     markers: dict[str, Marker]
     schedule: Schedule | None = None
     rules: tuple[Rule, ...] = Field(min_length=1)
-    severity_weights: dict[Severity, float] = {
-        Severity.HIGH: 10.0, Severity.MEDIUM: 4.0, Severity.LOW: 1.0,
-    }  # fmt: skip
+    severity_weights: dict[Severity, float] = DEFAULT_WEIGHTS
 
     @model_validator(mode="after")
     def references_resolve(self) -> "SurveillanceConfig":

@@ -6,9 +6,10 @@ cannot even learn whether an id is in use elsewhere. Tenant hints in the request
 
 import pytest
 from api_dataset import Dataset
-from api_testutils import BASE_URL, login
+from api_testutils import BASE_URL, login, new_flag
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import Engine, text
 
 from txlens_backend.api.deps import CSRF_HEADER, Role
 from txlens_backend.config import Settings
@@ -90,3 +91,34 @@ def test_other_centers_cohorts_are_404_and_unlisted(
 def test_center_b_still_sees_its_own_cohort(client: TestClient, center_b_cohort: str) -> None:
     login(client, Role.CLINICIAN, "center_b")
     assert client.get(f"/cohorts/{center_b_cohort}").status_code == 200
+
+
+@pytest.mark.parametrize("role", [Role.CLINICIAN, Role.DATA_STEWARD], ids=str)
+def test_worklist_and_patient_flags_stay_in_own_center(
+    client: TestClient, api_data: Dataset, api_settings: Settings, api_flags: object, role: Role
+) -> None:
+    key = api_settings.deid_hmac_key.get_secret_value()
+    login(client, role, "center_a")
+    listed = {str(i["patient"]["patient_id"])
+              for i in client.get("/worklist?limit=200").json()["items"]}  # fmt: skip
+    assert listed and listed <= set(ids_as_seen_by(role, api_data, "center_a", key))
+    for guessed in ids_as_seen_by(role, api_data, "center_b", key)[:10]:
+        response = client.get(f"/patients/{guessed}/flags")
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Patient not found"}
+
+
+def test_other_centers_flags_are_404(
+    client: TestClient, api_owner: Engine, api_flags: object
+) -> None:
+    other = new_flag(api_owner, "center_b")
+    login(client, Role.CLINICIAN, "center_a")
+    for flag_id in (other, "00000000-0000-0000-0000-000000000000", "not-a-uuid"):
+        for action in ("acknowledge", "resolve"):
+            response = client.post(f"/flags/{flag_id}/{action}")
+            assert response.status_code == 404
+            assert response.json() == {"detail": "Flag not found"}
+    with api_owner.connect() as conn:
+        status = conn.execute(text("SELECT status FROM app.surveillance_flag WHERE flag_id = :f"),
+                              {"f": other}).scalar_one()  # fmt: skip
+    assert status == "new"

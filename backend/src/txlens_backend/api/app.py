@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import Engine
 
-from txlens_backend.api import auth, cohorts, patients, system
+from txlens_backend.api import auth, cohorts, patients, surveillance, system
 from txlens_backend.api.deps import CSRF_HEADER, CSRF_HEADER_EXAMPLE, AppContext
 from txlens_backend.config import Settings, get_settings, require_secret
 from txlens_backend.db import check_role_is_rls_bound, make_engine
@@ -93,5 +93,6 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None) -
     app.include_router(auth.router)
     app.include_router(patients.router)
     app.include_router(cohorts.router)
+    app.include_router(surveillance.router)
     document_csrf_header(app)
     return app

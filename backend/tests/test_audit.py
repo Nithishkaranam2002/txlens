@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from api_dataset import Dataset
-from api_testutils import login
+from api_testutils import login, new_flag
 from fastapi.testclient import TestClient
 from httpx import Response
 from sqlalchemy import Engine, Row, text
@@ -88,3 +88,25 @@ def test_deidentified_views_are_recorded_too(client: TestClient, api_owner: Engi
     user_id = login(client, Role.DATA_STEWARD, "center_b").json()["user_id"]
     listing = client.get("/patients", params={"limit": 3})
     check(audit_row(api_owner, listing), "center_b", user_id, "deid_view", "patient_list")
+
+
+def test_worklist_views_and_flag_reviews(
+    client: TestClient, api_owner: Engine, api_flags: object
+) -> None:
+    user_id = login(client, Role.CLINICIAN, "center_a").json()["user_id"]
+    worklist = client.get("/worklist", params={"limit": 5})
+    check(audit_row(api_owner, worklist), "center_a", user_id, "phi_view", "worklist")
+    flag_id = new_flag(api_owner)
+    for action, old, new in (("acknowledge", "new", "acknowledged"),
+                             ("resolve", "acknowledged", "resolved")):  # fmt: skip
+        response = client.post(f"/flags/{flag_id}/{action}", json={"note": f"{action} note"})
+        row = audit_row(api_owner, response)
+        check(row, "center_a", user_id, f"flag_{action}", "surveillance_flag")
+        assert row.object_id == flag_id
+        with api_owner.connect() as conn:
+            details = conn.execute(text("SELECT details FROM app.audit_log WHERE request_id = :r"),
+                                   {"r": row.request_id}).scalar_one()  # fmt: skip
+        assert (details["from"], details["to"], details["note"]) == (old, new, f"{action} note")
+    steward = login(client, Role.DATA_STEWARD, "center_a").json()["user_id"]
+    view = client.get("/worklist", params={"limit": 5})
+    check(audit_row(api_owner, view), "center_a", steward, "deid_view", "worklist")
