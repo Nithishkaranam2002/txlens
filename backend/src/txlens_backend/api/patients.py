@@ -38,7 +38,11 @@ class PatientPage(BaseModel):
 
 def viewer(principal: Principal, ctx: Context) -> svc.Viewer:
     """How to shape results for this caller."""
-    return svc.Viewer(identified=principal.sees_identifiers, deid_key=ctx.deid_key)
+    return svc.Viewer(
+        identified=principal.sees_identifiers,
+        deid_key=ctx.deid_key,
+        sees_evidence=principal.role in (Role.CLINICIAN, Role.DATA_STEWARD),
+    )
 
 
 @router.get("", summary="List and search patients")

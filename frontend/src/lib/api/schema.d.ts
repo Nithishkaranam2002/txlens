@@ -170,6 +170,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/documents/{document_id}/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Extracted fields with their evidence (full for clinicians, redacted otherwise)
+         * @description Clinicians: page, box and OCR line per field. Data stewards: redacted lines only.
+         */
+        get: operations["document_evidence_documents__document_id__evidence_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/documents/{document_id}/pages/{page}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A page of the scanned report as an image (clinicians only)
+         * @description The page image, read from the raw document store.
+         */
+        get: operations["document_page_documents__document_id__pages__page__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/documents/{document_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve, edit or reject a document waiting for review
+         * @description Send the decision to the waiting workflow (or apply it if none is waiting).
+         */
+        post: operations["submit_review_documents__document_id__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/flags/{flag_id}/acknowledge": {
         parameters: {
             query?: never;
@@ -356,6 +416,31 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * BiopsyResult
+         * @description What a biopsy's pathology report says, and how far it has been checked.
+         */
+        BiopsyResult: {
+            /** Additional Finding */
+            additional_finding: string | null;
+            /** Diagnosis */
+            diagnosis: string | null;
+            /** Document Id */
+            document_id: string | null;
+            /** Evidence Url */
+            evidence_url: string | null;
+            /** Grade */
+            grade: string | null;
+            /** Scores */
+            scores: {
+                [key: string]: string;
+            };
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "extracted" | "in_review" | "approved";
+        };
+        /**
          * Cohort
          * @description A saved cohort.
          */
@@ -505,6 +590,33 @@ export interface components {
             severity: components["schemas"]["Severity"];
         };
         /**
+         * DocumentEvidence
+         * @description A document's fields with their evidence: full (clinicians) or redacted (stewards).
+         */
+        DocumentEvidence: {
+            /** Confidence */
+            confidence: number | null;
+            /** Document Id */
+            document_id: string;
+            /** Fields */
+            fields: components["schemas"]["FieldEvidence"][];
+            /** Organ */
+            organ: string | null;
+            /** Page Sizes */
+            page_sizes: number[][];
+            /** Page Urls */
+            page_urls: string[];
+            /** Review Reasons */
+            review_reasons: string[];
+            /** Status */
+            status: string;
+            /**
+             * View
+             * @enum {string}
+             */
+            view: "full" | "redacted";
+        };
+        /**
          * Drug
          * @description One drug exposure; end_date is None while the order is still active (ongoing).
          */
@@ -537,6 +649,32 @@ export interface components {
             role: string;
             /** Value */
             value: number | null;
+        };
+        /**
+         * FieldEvidence
+         * @description One extracted field and where it was read. Page and box only in the full view.
+         */
+        FieldEvidence: {
+            /** Bbox */
+            bbox: number[] | null;
+            /** Confidence */
+            confidence: number;
+            /** Extracted Value */
+            extracted_value: string | null;
+            /** Field */
+            field: string;
+            /** Line Text */
+            line_text: string | null;
+            /** Page */
+            page: number | null;
+            /** Passes Agree */
+            passes_agree: boolean;
+            /** Problems */
+            problems: string[];
+            /** Source Text */
+            source_text: string | null;
+            /** Value */
+            value: string | null;
         };
         /**
          * FlagEvent
@@ -899,8 +1037,7 @@ export interface components {
             kind: "transplant" | "biopsy" | "other";
             /** Procedure */
             procedure: string | null;
-            /** Result */
-            result?: string | null;
+            result?: components["schemas"]["BiopsyResult"] | null;
         };
         /**
          * RangeByPhase
@@ -976,6 +1113,36 @@ export interface components {
          * @description An optional note kept with the flag (clinicians only see it).
          */
         Review: {
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * ReviewAccepted
+         * @description `submitted`: the waiting workflow got the decision and applies it; otherwise applied.
+         */
+        ReviewAccepted: {
+            /** Document Id */
+            document_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "submitted" | "approved" | "rejected";
+        };
+        /**
+         * ReviewRequest
+         * @description A reviewer's decision. `changes` (field -> value, null = not reported) only for edit.
+         */
+        ReviewRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "approve" | "edit" | "reject";
+            /** Changes */
+            changes?: {
+                [key: string]: string | null;
+            };
             /** Note */
             note?: string | null;
         };
@@ -1534,6 +1701,131 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    document_evidence_documents__document_id__evidence_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentEvidence"];
+                };
+            };
+            /** @description No such document in your center */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    document_page_documents__document_id__pages__page__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+                page: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such document in your center */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_review_documents__document_id__review_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Any non-empty value; requests without it get 403 (CSRF defence). */
+                "X-Requested-With"?: string | null;
+            };
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewAccepted"];
+                };
+            };
+            /** @description No such document in your center */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The document is not waiting for review */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An edit names an unknown field or a value it does not allow */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

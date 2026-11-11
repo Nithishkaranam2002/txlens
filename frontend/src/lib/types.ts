@@ -4,6 +4,7 @@ type Schemas = components["schemas"];
 export type IdentifiedPatient = Schemas["IdentifiedPatient"];
 export type DeidentifiedPatient = Schemas["DeidentifiedPatient"];
 export type Patient = IdentifiedPatient | DeidentifiedPatient;
+export type BiopsyResult = Schemas["BiopsyResult"];
 export type Flag = Schemas["FlagView"];
 export type PatientFlag = Schemas["PatientFlag"];
 export type FlagEvent = Schemas["FlagEvent"];

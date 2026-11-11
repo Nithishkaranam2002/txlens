@@ -3,14 +3,18 @@
 import json
 import os
 import shutil
+import uuid
+from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 import litellm
 import pytest
+from sqlalchemy import Connection, text
 
 from txlens_backend.documents.ocr import Line as OcrLine
-from txlens_backend.documents.ocr import OcrResult, PageSize, Word
+from txlens_backend.documents.ocr import OcrResult, PageSize, Word, to_json
 from txlens_datagen.rand import rng_for
 from txlens_datagen.writers.pathology_pdf import BODY, HEADING, TITLE, Line, draw_page, scan_effects
 
@@ -141,3 +145,90 @@ def ocr_of(lines: tuple[str, ...], confidence: float = 0.95) -> OcrResult:
         for n, t in enumerate(lines, start=1)
     )  # fmt: skip
     return OcrResult("tesseract", (PageSize(612, 792),), built)
+
+
+@dataclass(frozen=True)
+class SeededDocument:
+    """A document put straight into a database for API tests."""
+
+    document_id: str
+    tenant_id: str
+    person_id: int | None
+    status: str
+
+
+def report_lines_for(mrn: str, given: str, family: str, birth: date, day: date) -> tuple[str, ...]:
+    """OCR lines of a kidney report for this patient; line 8 names the patient on purpose."""
+    return (
+        "TEST ONLY MEDICAL CENTER",
+        f"Patient: {family.upper()}, {given.upper()}",
+        f"MRN: {mrn} DOB: {birth:%m/%d/%Y} Sex: F",
+        f"Procedure date: {day:%m/%d/%Y} Reported: {day:%m/%d/%Y}",
+        "Specimen: Kidney allograft, percutaneous needle core biopsy",
+        "- Acute T-cell mediated rejection, Banff grade IA.",
+        "Banff lesion scores: i2 t2 v0 g0 ptc0 ci1 ct1 cv0",
+        f"Discussed with {given} {family} on {day:%m/%d/%Y}; ref {mrn}.",
+    )
+
+
+SEEDED_FIELDS = (  # field, value, line, source text
+    ("biopsy_date", None, 4, None),
+    ("diagnosis", "TCMR", 6, "Acute T-cell mediated rejection"),
+    ("tcmr_grade", "IA", 6, "grade IA."),
+    ("banff_t", "2", 7, "t2"),
+    ("additional_finding", "other", 8, None),
+)
+
+
+def seed_document(
+    conn: Connection,
+    tenant_id: str,
+    lines: tuple[str, ...],
+    status: str,
+    person_id: int | None = None,
+    procedure_id: int | None = None,
+    day: date | None = None,
+) -> SeededDocument:
+    """A kidney document with fields and evidence, as the workflow would leave it."""
+    ocr = ocr_of(lines)
+    document_id = str(uuid.uuid4())
+    conn.execute(
+        text(
+            "INSERT INTO app.document (document_id, tenant_id, sha256, source_path, workflow_id, "
+            "organ, status, person_id, procedure_occurrence_id, confidence, review_reasons, "
+            "ocr, ocr_engine) VALUES (:d, :t, :h, 'pathology/x.pdf', :w, 'kidney', :s, :p, :r, "
+            "0.9, CAST(:reasons AS jsonb), CAST(:o AS jsonb), 'tesseract')"
+        ),
+        {
+            "d": document_id,
+            "t": tenant_id,
+            "h": uuid.uuid4().hex * 2,
+            "w": f"wf-{document_id}",
+            "s": status,
+            "p": person_id,
+            "r": procedure_id,
+            "o": json.dumps(to_json(ocr)),
+            "reasons": json.dumps([f"biopsy date is 9 days from the procedure on {day}"]),
+        },
+    )
+    for field, value, line, source in SEEDED_FIELDS:
+        value = (day.isoformat() if day else None) if field == "biopsy_date" else value
+        source = source or (lines[line - 1] if line <= len(lines) else None)
+        conn.execute(
+            text(
+                "INSERT INTO app.extracted_field (tenant_id, document_id, field, value, "
+                "extracted_value, page, bbox, line_no, source_text, ocr_confidence, "
+                "passes_agree, confidence, problems) VALUES (:t, :d, :f, :v, :v, 1, "
+                "'[10, 20, 30, 40]', :l, :s, 0.9, true, 0.9, CAST(:p AS jsonb))"
+            ),
+            {
+                "t": tenant_id,
+                "d": document_id,
+                "f": field,
+                "v": value,
+                "l": line,
+                "s": source,
+                "p": json.dumps([f"passes disagree (A: {value}, B: None)"]),
+            },
+        )
+    return SeededDocument(document_id, tenant_id, person_id, status)

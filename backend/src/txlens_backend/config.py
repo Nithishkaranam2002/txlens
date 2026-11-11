@@ -1,5 +1,6 @@
 """Application settings, read from environment variables (and `.env` in development)."""
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic import SecretStr, field_validator
@@ -50,6 +51,7 @@ class Settings(BaseSettings):
 
     # --- Document extraction (LLM) ---
     ocr_engine: Literal["tesseract", "docling"] = "tesseract"  # docling: opt-in dependency group
+    documents_root: Path = Path("data/raw")  # where document source paths are resolved
     # LiteLLM model names: "openai/<model>" (paid) or "ollama/llama3.1:8b" (local, free).
     llm_model: str = "openai/gpt-6-luna"
     llm_model_pass_b: str = ""  # second extraction pass; empty = same model, other prompt

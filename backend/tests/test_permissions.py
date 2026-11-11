@@ -3,9 +3,10 @@
 import pytest
 from api_dataset import Dataset
 from api_testutils import BASE_URL, login, new_flag
+from document_testutils import KIDNEY_OCR_LINES, seed_document, write_report_pdf
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
 
 from txlens_backend.api.deps import CSRF_HEADER, Role
 from txlens_backend.config import Settings
@@ -31,6 +32,9 @@ MATRIX: dict[str, dict[Role | str, int]] = {
     "GET /patients/{pid}/flags":   {C: 200, R: 403, S: 200, A: 403, ANON: 401},
     "POST /flags/{fid}/acknowledge": {C: 200, R: 403, S: 403, A: 403, ANON: 401},
     "POST /flags/{fid}/resolve":   {C: 200, R: 403, S: 403, A: 403, ANON: 401},
+    "GET /documents/{did}/evidence": {C: 200, R: 403, S: 200, A: 403, ANON: 401},
+    "GET /documents/{did}/pages/1": {C: 200, R: 403, S: 403, A: 403, ANON: 401},
+    "POST /documents/{rid}/review": {C: 200, R: 403, S: 200, A: 403, ANON: 401},
 }  # fmt: skip
 CALLERS: list[Role | str] = [C, R, S, A, ANON]
 BODY = {"name": "matrix", "rules": {"organ": "kidney"}}
@@ -43,6 +47,27 @@ def cohort_id(api_app: FastAPI) -> str:
         login(client, Role.CLINICIAN)
         created: str = client.post("/cohorts", json=BODY).json()["cohort_id"]
     return created
+
+
+@pytest.fixture(scope="module")
+def document_id(
+    api_app: FastAPI, api_owner: Engine, tmp_path_factory: pytest.TempPathFactory
+) -> str:
+    """A center A document whose scanned file is in the API's document store."""
+    root = tmp_path_factory.mktemp("documents")
+    (root / "pathology").mkdir()
+    write_report_pdf(root / "pathology" / "matrix.pdf")
+    api_app.state.ctx.settings.documents_root = root
+    return new_document(api_owner, "extracted", "pathology/matrix.pdf")
+
+
+def new_document(owner: Engine, status: str, source_path: str = "pathology/x.pdf") -> str:
+    """A center A document (not linked to a patient) in this status."""
+    with owner.begin() as conn:
+        doc = seed_document(conn, "center_a", KIDNEY_OCR_LINES, status)
+        conn.execute(text("UPDATE app.document SET source_path = :s WHERE document_id = :d"),
+                     {"s": source_path, "d": doc.document_id})  # fmt: skip
+    return doc.document_id
 
 
 def patient_id(caller: Role | str, data: Dataset, settings: Settings) -> str:
@@ -62,6 +87,7 @@ def test_permission_matrix(
     api_owner: Engine,
     api_flags: object,
     cohort_id: str,
+    document_id: str,
     endpoint: str,
     caller: Role | str,
 ) -> None:
@@ -69,9 +95,13 @@ def test_permission_matrix(
         assert login(client, caller).status_code == 200
     method, path = endpoint.split(" ")
     fid = new_flag(api_owner) if "{fid}" in path else ""
-    path = path.format(pid=patient_id(caller, api_data, api_settings), cid=cohort_id, fid=fid)
+    rid = new_document(api_owner, "in_review") if "{rid}" in path else ""
+    path = path.format(pid=patient_id(caller, api_data, api_settings), cid=cohort_id, fid=fid,
+                       did=document_id, rid=rid)  # fmt: skip
     if method == "GET":
         response = client.get(path)
+    elif path.startswith("/documents/"):
+        response = client.post(path, json={"action": "approve"})
     elif path.startswith("/flags/"):
         response = client.post(path, json={"note": "permission matrix"})
     else:
@@ -89,5 +119,7 @@ def test_matrix_covers_every_route(api_app: FastAPI) -> None:
     auth = {"POST /auth/login", "POST /auth/refresh", "POST /auth/logout"}  # see test_auth.py
     named = {e.replace("{pid}", "{patient_id}").replace("{cid}", "{cohort_id}")
              .replace("{fid}", "{flag_id}").split("?")[0].replace("/kidney", "/{program}")
+             .replace("{did}", "{document_id}").replace("{rid}", "{document_id}")
+             .replace("/pages/1", "/pages/{page}")
              for e in MATRIX}  # fmt: skip
     assert documented == named | auth

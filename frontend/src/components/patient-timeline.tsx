@@ -3,10 +3,28 @@ import type { ReactNode } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate } from "@/lib/format";
-import type { Timeline } from "@/lib/types";
+import type { BiopsyResult, Timeline } from "@/lib/types";
 
 /** Diagnoses that mean the graft failed (named by the vocabulary, e.g. "Failed renal transplant"). */
 const GRAFT_EVENT = /transplant failure|failed .*transplant|graft (failure|loss)|rejection/i;
+
+const DIAGNOSES: Record<string, string> = {
+  no_rejection: "No rejection", borderline: "Borderline", TCMR: "TCMR", ABMR: "ABMR",
+  mixed: "Mixed (TCMR + ABMR)",
+};
+const STATUSES: Record<BiopsyResult["status"], string> = {
+  extracted: "extracted, not reviewed", in_review: "in review", approved: "approved",
+};
+
+/** One line for a biopsy result: diagnosis and grade, key scores, and how far it was checked. */
+export function biopsyResultText(result: BiopsyResult | null | undefined): string {
+  if (!result) return "Result: awaiting document extraction";
+  const diagnosis = result.diagnosis ? (DIAGNOSES[result.diagnosis] ?? result.diagnosis) : "unclear";
+  const graded = result.grade && result.diagnosis !== "no_rejection" ? `${diagnosis} ${result.grade}` : diagnosis;
+  const scores = Object.entries(result.scores).map(([name, value]) =>
+    /^\d+$/.test(value) ? `${name}${value}` : `${name} ${value}`);
+  return ["Result: " + graded, scores.join(" "), STATUSES[result.status]].filter(Boolean).join(" · ");
+}
 
 export type TimelineEvent = { date: string; kind: string; title: string; detail?: string; icon: ReactNode };
 
@@ -19,7 +37,7 @@ export function timelineEvents(timeline: Timeline): TimelineEvent[] {
     } else if (p.kind === "biopsy") {
       events.push({
         date: p.date, kind: "Biopsy", title: p.procedure ?? "Graft biopsy",
-        detail: `Result: ${p.result ?? "awaiting document extraction"}`, icon: <Microscope className="size-4" />,
+        detail: biopsyResultText(p.result), icon: <Microscope className="size-4" />,
       });
     }
   }

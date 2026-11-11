@@ -14,6 +14,7 @@ from sqlalchemy import Connection, Row, text
 
 from txlens_backend import deid
 from txlens_backend.clinical_codes import BIOPSY, DSA_LOCAL, LABS, TRANSPLANT
+from txlens_backend.services.biopsies import BiopsyResult, results_by_procedure
 from txlens_backend.services.facts import FACTS_CTE, FACTS_PARAMS, concept_keys, descendant_ids
 
 Organ = Literal["kidney", "heart"]
@@ -84,9 +85,9 @@ class Procedure(BaseModel):
     kind: Literal["transplant", "biopsy", "other"]
     concept_id: int
     procedure: str | None
-    # Biopsy result (no rejection, borderline, TCMR, ABMR, mixed). It lives in pathology
-    # documents and is filled once document extraction exists; None until then.
-    result: str | None = None
+    # Biopsy result read from the pathology report (diagnosis, grade, key scores, status);
+    # None until a report is extracted, or for a rejected or expired one.
+    result: BiopsyResult | None = None
 
 
 class NoteMeta(BaseModel):
@@ -125,6 +126,7 @@ class Viewer:
 
     identified: bool
     deid_key: str
+    sees_evidence: bool = False  # links to pathology evidence (clinicians, data stewards)
 
     def shift_days(self, tenant_id: str, person_id: int) -> int:
         """0 for clinicians; the patient's shift otherwise."""
@@ -277,7 +279,12 @@ def timeline(conn: Connection, viewer: Viewer, person_id: int) -> Timeline:
                 conn, "condition_occurrence", "condition", "condition_start_date", person_id
             )
         ],
-        procedures=procedures(conn, person_id, move),
+        procedures=procedures(
+            conn,
+            person_id,
+            move,
+            results_by_procedure(conn, person_id, with_links=viewer.sees_evidence),
+        ),
         notes=notes(conn, viewer, person_id, move),
     )
 
@@ -323,8 +330,10 @@ def labs(conn: Connection, person_id: int, move: timedelta) -> list[Lab]:
     ]  # fmt: skip
 
 
-def procedures(conn: Connection, person_id: int, move: timedelta) -> list[Procedure]:
-    """Procedures, each classified as transplant, biopsy or other."""
+def procedures(
+    conn: Connection, person_id: int, move: timedelta, results: dict[int, BiopsyResult]
+) -> list[Procedure]:
+    """Procedures, each classified as transplant, biopsy or other; biopsies with results."""
     biopsies = set(concept_keys(conn, BIOPSY))
     transplants = descendant_ids(conn, list(concept_keys(conn, TRANSPLANT)))
     rows = events(conn, "procedure_occurrence", "procedure", "procedure_date", person_id)
@@ -337,7 +346,8 @@ def procedures(conn: Connection, person_id: int, move: timedelta) -> list[Proced
     return [
         Procedure(date=r.procedure_date + move, kind=kind(r.procedure_concept_id),
                   concept_id=r.procedure_concept_id,
-                  procedure=r.concept_name or r.procedure_source_value)
+                  procedure=r.concept_name or r.procedure_source_value,
+                  result=results.get(r.procedure_occurrence_id))
         for r in rows
     ]  # fmt: skip
 

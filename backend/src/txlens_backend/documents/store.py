@@ -30,6 +30,7 @@ class DocumentRow:
     status: str
     person_id: int | None
     procedure_occurrence_id: int | None
+    workflow_id: str
 
 
 def encode(value: Any) -> str | None:
@@ -68,7 +69,7 @@ def get(conn: Connection, document_id: str) -> DocumentRow:
     row = conn.execute(
         text(
             "SELECT document_id, sha256, source_path, organ, status, person_id, "
-            "procedure_occurrence_id FROM app.document WHERE document_id = :d"
+            "procedure_occurrence_id, workflow_id FROM app.document WHERE document_id = :d"
         ),
         {"d": document_id},
     ).one()
@@ -80,6 +81,7 @@ def get(conn: Connection, document_id: str) -> DocumentRow:
         row.status,
         row.person_id,
         row.procedure_occurrence_id,
+        row.workflow_id,
     )
 
 

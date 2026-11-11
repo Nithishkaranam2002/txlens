@@ -1,11 +1,12 @@
 """De-identification scan: no researcher or data steward response contains an identifier.
 
 Every response a de-identified role can get is collected: all patient pages, every
-timeline, cohort preview/create/list/get/members, and (data stewards) the surveillance
-worklist and every patient's flags. The scan searches each body for every
-MRN, given name, family name, full name and birth date (several formats) in
-app.patient_identity, of all centers, plus the real person ids. A clinician run of the same
-scanner must find identifiers, which shows that the scanner itself works.
+timeline, the pathology evidence each timeline links to, cohort preview/create/list/get/
+members, and (data stewards) the surveillance worklist and every patient's flags. The seeded
+pathology reports carry the patients' real identifiers in their OCR text. The scan searches
+each body for every MRN, given name, family name, full name and birth date (several formats)
+in app.patient_identity, of all centers, plus the real person ids. A clinician run of the
+same scanner must find identifiers, which shows that the scanner itself works.
 """
 
 import re
@@ -25,7 +26,9 @@ RULES = {"organ": "kidney",
 
 
 @pytest.fixture(scope="module")
-def identifiers(api_owner: Engine, api_app: object, api_flags: object) -> re.Pattern[str]:
+def identifiers(
+    api_owner: Engine, api_app: object, api_flags: object, api_documents: object
+) -> re.Pattern[str]:
     """One case-insensitive, whole-word pattern matching any identifier of any patient."""
     with api_owner.connect() as conn:
         rows = conn.execute(
@@ -54,7 +57,12 @@ def crawl(
         yield page
         items = page.json()["items"]
         for item in items:
-            yield client.get(f"/patients/{item['patient_id']}/timeline")
+            timeline = client.get(f"/patients/{item['patient_id']}/timeline")
+            yield timeline
+            for procedure in timeline.json()["procedures"]:
+                url = (procedure["result"] or {}).get("evidence_url")
+                if url:
+                    yield client.get(url)
             if sees_worklist:
                 yield client.get(f"/patients/{item['patient_id']}/flags")
         offset += len(items)
@@ -101,7 +109,10 @@ def test_no_identifier_in_any_deidentified_response(
     tenant: str,
 ) -> None:
     login(client, role, tenant)
-    assert leaks(crawl(client, builds_cohorts, sees_worklist), identifiers) == []
+    responses = list(crawl(client, builds_cohorts, sees_worklist))
+    evidence = [r for r in responses if r.url.path.endswith("/evidence")]
+    assert len(evidence) == (3 if role == Role.DATA_STEWARD else 0)  # the seeded reports
+    assert leaks(iter(responses), identifiers) == []
 
 
 def test_scanner_finds_identifiers_in_clinician_responses(

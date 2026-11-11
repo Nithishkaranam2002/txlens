@@ -1,6 +1,93 @@
 {
   "components": {
     "schemas": {
+      "BiopsyResult": {
+        "description": "What a biopsy's pathology report says, and how far it has been checked.",
+        "properties": {
+          "additional_finding": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Additional Finding"
+          },
+          "diagnosis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnosis"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "evidence_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Url"
+          },
+          "grade": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grade"
+          },
+          "scores": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Scores",
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "extracted",
+              "in_review",
+              "approved"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "diagnosis",
+          "grade",
+          "scores",
+          "additional_finding",
+          "document_id",
+          "evidence_url"
+        ],
+        "title": "BiopsyResult",
+        "type": "object"
+      },
       "Cohort": {
         "description": "A saved cohort.",
         "properties": {
@@ -429,6 +516,93 @@
         "title": "Detected",
         "type": "object"
       },
+      "DocumentEvidence": {
+        "description": "A document's fields with their evidence: full (clinicians) or redacted (stewards).",
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/FieldEvidence"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "organ": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organ"
+          },
+          "page_sizes": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "title": "Page Sizes",
+            "type": "array"
+          },
+          "page_urls": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Page Urls",
+            "type": "array"
+          },
+          "review_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Review Reasons",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "view": {
+            "enum": [
+              "full",
+              "redacted"
+            ],
+            "title": "View",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id",
+          "view",
+          "status",
+          "organ",
+          "confidence",
+          "review_reasons",
+          "page_sizes",
+          "page_urls",
+          "fields"
+        ],
+        "title": "DocumentEvidence",
+        "type": "object"
+      },
       "Drug": {
         "description": "One drug exposure; end_date is None while the order is still active (ongoing).",
         "properties": {
@@ -509,6 +683,113 @@
           "role"
         ],
         "title": "EvidenceItem",
+        "type": "object"
+      },
+      "FieldEvidence": {
+        "description": "One extracted field and where it was read. Page and box only in the full view.",
+        "properties": {
+          "bbox": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bbox"
+          },
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "extracted_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extracted Value"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "line_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line Text"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "passes_agree": {
+            "title": "Passes Agree",
+            "type": "boolean"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "source_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Text"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "field",
+          "value",
+          "extracted_value",
+          "line_text",
+          "source_text",
+          "page",
+          "bbox",
+          "confidence",
+          "passes_agree",
+          "problems"
+        ],
+        "title": "FieldEvidence",
         "type": "object"
       },
       "FlagEvent": {
@@ -1475,13 +1756,12 @@
           "result": {
             "anyOf": [
               {
-                "type": "string"
+                "$ref": "#/components/schemas/BiopsyResult"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Result"
+            ]
           }
         },
         "required": [
@@ -1664,6 +1944,75 @@
           }
         },
         "title": "Review",
+        "type": "object"
+      },
+      "ReviewAccepted": {
+        "description": "`submitted`: the waiting workflow got the decision and applies it; otherwise applied.",
+        "properties": {
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "submitted",
+              "approved",
+              "rejected"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id",
+          "status"
+        ],
+        "title": "ReviewAccepted",
+        "type": "object"
+      },
+      "ReviewRequest": {
+        "description": "A reviewer's decision. `changes` (field -> value, null = not reported) only for edit.",
+        "properties": {
+          "action": {
+            "enum": [
+              "approve",
+              "edit",
+              "reject"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "changes": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Changes",
+            "type": "object"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "ReviewRequest",
         "type": "object"
       },
       "RisingTrend": {
@@ -2778,6 +3127,170 @@
         "summary": "Search standard SNOMED condition concepts",
         "tags": [
           "cohorts"
+        ]
+      }
+    },
+    "/documents/{document_id}/evidence": {
+      "get": {
+        "description": "Clinicians: page, box and OCR line per field. Data stewards: redacted lines only.",
+        "operationId": "document_evidence_documents__document_id__evidence_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentEvidence"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such document in your center"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Extracted fields with their evidence (full for clinicians, redacted otherwise)",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/documents/{document_id}/pages/{page}": {
+      "get": {
+        "description": "The page image, read from the raw document store.",
+        "operationId": "document_page_documents__document_id__pages__page__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "page",
+            "required": true,
+            "schema": {
+              "title": "Page",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such document in your center"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "A page of the scanned report as an image (clinicians only)",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/documents/{document_id}/review": {
+      "post": {
+        "description": "Send the decision to the waiting workflow (or apply it if none is waiting).",
+        "operationId": "submit_review_documents__document_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+            "in": "header",
+            "name": "X-Requested-With",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such document in your center"
+          },
+          "409": {
+            "description": "The document is not waiting for review"
+          },
+          "422": {
+            "description": "An edit names an unknown field or a value it does not allow"
+          }
+        },
+        "summary": "Approve, edit or reject a document waiting for review",
+        "tags": [
+          "documents"
         ]
       }
     },

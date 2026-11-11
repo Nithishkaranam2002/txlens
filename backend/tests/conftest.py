@@ -28,7 +28,13 @@ from db_testutils import (
     migrate,
     seed_row,
 )
-from document_testutils import SNOMED_IDS, ocr_of
+from document_testutils import (
+    SNOMED_IDS,
+    SeededDocument,
+    ocr_of,
+    report_lines_for,
+    seed_document,
+)
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -184,8 +190,17 @@ def api_app(
     """The app on the API database, with one demo user per role per center."""
     eng = login_engine(api_database, app_login)
     seed_users(eng, list(API_TENANTS), demo_passwords(api_settings))
-    yield create_app(api_settings, eng)
+    app = create_app(api_settings, eng)
+    app.state.review_sender = NoWorkflowSender()  # tests never reach a Temporal server
+    yield app
     eng.dispose()
+
+
+class NoWorkflowSender:
+    """A review sender for which no workflow is waiting (the API applies reviews itself)."""
+
+    async def send(self, workflow_id: str, decision: object) -> bool:
+        return False
 
 
 @pytest.fixture
@@ -332,3 +347,41 @@ def reviewer(documents_owner: Engine) -> None:
             "INSERT INTO app.app_user (user_id, tenant_id, username, display_name, role, "
             "password_hash) VALUES ('00000000-0000-0000-0000-0000000000a1', 'center_a', "
             "'steward.a', 'Steward', 'data_steward', 'x') ON CONFLICT DO NOTHING"))  # fmt: skip
+
+
+@pytest.fixture(scope="session")
+def api_documents(api_owner: Engine, api_app: FastAPI) -> list[SeededDocument]:
+    """Per center, three kidney biopsies with a report: extracted, in review, approved."""
+    seeded = []
+    with api_owner.begin() as conn:
+        for tenant in API_TENANTS:
+            rows = conn.execute(
+                text(
+                    "SELECT p.person_id, p.procedure_occurrence_id, p.procedure_date, i.mrn, "
+                    "i.given_name, i.family_name, i.birth_date FROM cdm.procedure_occurrence p "
+                    "JOIN app.patient_identity i ON i.person_id = p.person_id "
+                    "WHERE p.tenant_id = :t AND p.procedure_concept_id = 1244937 "
+                    "ORDER BY p.procedure_occurrence_id LIMIT 3"
+                ),
+                {"t": tenant},
+            ).all()
+            for row, status in zip(rows, ("extracted", "in_review", "approved"), strict=True):
+                lines = report_lines_for(
+                    row.mrn,
+                    row.given_name or "Ana",
+                    row.family_name or "Doe",
+                    row.birth_date,
+                    row.procedure_date,
+                )
+                seeded.append(
+                    seed_document(
+                        conn,
+                        tenant,
+                        lines,
+                        status,
+                        row.person_id,
+                        row.procedure_occurrence_id,
+                        row.procedure_date,
+                    )
+                )
+    return seeded
