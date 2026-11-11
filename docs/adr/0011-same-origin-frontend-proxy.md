@@ -53,9 +53,8 @@ rate-limit defences.
   rebuilt for another (or the rewrite must read the variable at start, if Next supports it
   later).
 - Refresh-token rotation and navigation can race. If a page is reloaded while a refresh is
-  in flight, the browser can drop the rotated cookie. The next refresh then replays the old
-  token, which the API treats as theft and revokes every session for that user. This is safe,
-  but a user can occasionally be logged out. A short grace period for the just-rotated token
-  would fix it; we have not added one yet.
+  in flight, the browser can drop the rotated cookie and replay the old token. A 30-second
+  reuse grace period (ADR 0007) now returns the same replacement in that case, instead of
+  revoking every session.
 - Next 16 keeps visited routes mounted but hidden (`<Activity>`). Tests and landmarks must
   use the visible `main`, and there is now only one element with `id="main"`.

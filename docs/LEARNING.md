@@ -707,9 +707,14 @@ experiencer flags).
   `/api/auth`), so it could not tell "expired" from "logged out". Security does not depend on
   the UI: the API checks every request.
 - **`BACKEND_URL` is fixed at build time.** A frontend build is tied to one API address.
-- **Refresh rotation vs reload**: reloading a page in the middle of a refresh can log the
-  user out, because the API treats the reuse of an old refresh token as theft. This is safe
-  but occasionally annoying. A grace period would fix it.
+- **Refresh rotation vs reload**: reloading a page in the middle of a refresh used to log the
+  user out, because the API treats the reuse of an old refresh token as theft.
+  - There is now a 30-second grace period: a quick reuse gets the same new refresh token
+    back.
+  - Reuse later than that, or after the new token was already used, still revokes every
+    session.
+  - The cost: a thief with the old token has that short window, but only while the real
+    user has not refreshed again.
 - **Biopsy results and rejection diagnoses are not in the data yet.** The timeline says
   "awaiting document extraction" instead of guessing. Phase 2 extracts them from the
   documents, with a review queue.

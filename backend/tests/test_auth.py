@@ -7,12 +7,13 @@ import pytest
 from api_testutils import BASE_URL, PASSWORDS, login, set_cookies
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from httpx import Response
 from sqlalchemy import Engine, text
 
 from txlens_backend.api.app import create_app
 from txlens_backend.api.deps import ACCESS_COOKIE, CSRF_HEADER, REFRESH_COOKIE, Role
 from txlens_backend.config import Settings
-from txlens_backend.security import TokenType, encode, issue_token
+from txlens_backend.security import TokenType, decode, encode, issue_token
 
 pytestmark = pytest.mark.db
 
@@ -91,7 +92,34 @@ def test_login_prunes_attempts_older_than_30_days(client: TestClient, api_owner:
     assert "old" not in names and "recent" in names
 
 
-def test_refresh_rotates_and_reuse_revokes_every_session(client: TestClient) -> None:
+def refresh_with(client: TestClient, token: str | None) -> Response:
+    """POST /auth/refresh sending exactly this refresh token."""
+    response: Response = client.post(
+        "/auth/refresh", headers={"Cookie": f"{REFRESH_COOKIE}={token}"}
+    )
+    return response
+
+
+def jti(settings: Settings, response: Response) -> str:
+    """The id of the refresh token a response set."""
+    header = set_cookies(response)[REFRESH_COOKIE]
+    token = header.split("=", 1)[1].split(";", 1)[0]
+    return decode(settings.jwt_secret.get_secret_value(), token, "refresh").jti
+
+
+def age_rotation(owner: Engine, token: str, settings: Settings, seconds: int) -> None:
+    """Pretend the token was rotated `seconds` ago."""
+    token_id = decode(settings.jwt_secret.get_secret_value(), token, "refresh").jti
+    with owner.begin() as conn:
+        conn.execute(
+            text("UPDATE app.refresh_token SET revoked_at = now() - make_interval(secs => :s) "
+                 "WHERE jti = :j"), {"s": seconds, "j": token_id},
+        )  # fmt: skip
+
+
+def test_refresh_rotates_and_late_reuse_revokes_every_session(
+    client: TestClient, api_owner: Engine, api_settings: Settings
+) -> None:
     login(client, Role.CLINICIAN, "center_c")
     first_refresh = client.cookies.get(REFRESH_COOKIE)
     rotated = client.post("/auth/refresh")
@@ -100,12 +128,56 @@ def test_refresh_rotates_and_reuse_revokes_every_session(client: TestClient) -> 
     assert second_refresh and second_refresh != first_refresh
     assert client.get("/me").status_code == 200
 
-    # A thief replays the first (already rotated) refresh token.
-    replay = client.post("/auth/refresh", headers={"Cookie": f"{REFRESH_COOKIE}={first_refresh}"})
-    assert replay.status_code == 401
+    # A thief replays the first (already rotated) refresh token after the grace period.
+    age_rotation(api_owner, str(first_refresh), api_settings, 31)
+    assert refresh_with(client, first_refresh).status_code == 401
     # Every session of that user is now revoked, including the legitimate new one.
-    legit = client.post("/auth/refresh", headers={"Cookie": f"{REFRESH_COOKIE}={second_refresh}"})
-    assert legit.status_code == 401
+    assert refresh_with(client, second_refresh).status_code == 401
+
+
+def test_reuse_within_the_grace_period_returns_the_same_replacement(
+    client: TestClient, api_owner: Engine, api_settings: Settings
+) -> None:
+    login(client, Role.RESEARCHER, "center_c")
+    first_refresh = client.cookies.get(REFRESH_COOKIE)
+    rotated = client.post("/auth/refresh")
+    second_refresh = client.cookies.get(REFRESH_COOKIE)
+
+    # A reload or second tab sends the old token moments later: same replacement, no alarm.
+    again = refresh_with(client, first_refresh)
+    assert again.status_code == 200
+    assert ACCESS_COOKIE in set_cookies(again)
+    assert jti(api_settings, again) == jti(api_settings, rotated)
+    # The replacement still works, so the user was not logged out.
+    assert refresh_with(client, second_refresh).status_code == 200
+    with api_owner.connect() as conn:
+        actions = set(conn.execute(text(
+            "SELECT action FROM app.audit_log WHERE tenant_id = 'center_c' AND object_id = :j"
+        ), {"j": decode(api_settings.jwt_secret.get_secret_value(), str(first_refresh),
+                        "refresh").jti}).scalars())  # fmt: skip
+    assert "refresh_grace" in actions and "refresh_reuse" not in actions
+
+
+def test_grace_ends_once_the_replacement_was_used(client: TestClient) -> None:
+    login(client, Role.DATA_STEWARD, "center_c")
+    first_refresh = client.cookies.get(REFRESH_COOKIE)
+    client.post("/auth/refresh")
+    client.post("/auth/refresh")  # the replacement itself is rotated again
+    assert refresh_with(client, first_refresh).status_code == 401  # theft detection applies
+    assert client.post("/auth/refresh").status_code == 401  # every session revoked
+
+
+def test_grace_period_length_comes_from_settings(
+    api_settings: Settings, api_app_engine: Engine, api_owner: Engine
+) -> None:
+    assert Settings.model_fields["refresh_reuse_grace_seconds"].default == 30
+    strict = api_settings.model_copy(update={"refresh_reuse_grace_seconds": 0})
+    with TestClient(create_app(strict, api_app_engine), base_url=BASE_URL,
+                    headers={CSRF_HEADER: "t"}) as client:  # fmt: skip
+        login(client, Role.ADMIN, "center_c")
+        first_refresh = client.cookies.get(REFRESH_COOKIE)
+        client.post("/auth/refresh")
+        assert refresh_with(client, first_refresh).status_code == 401
 
 
 def test_logout_revokes_the_refresh_token_and_clears_cookies(client: TestClient) -> None:

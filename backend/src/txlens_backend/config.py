@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     jwt_secret: SecretStr = SecretStr("")  # signs access and refresh tokens (HS256)
     access_token_minutes: int = 15
     refresh_token_days: int = 7
+    # Reusing a just-rotated refresh token within this window returns its replacement instead
+    # of revoking every session (a reload or a second tab can race a refresh).
+    refresh_reuse_grace_seconds: int = 30
     cookie_secure: bool = True  # browsers accept Secure cookies on http://localhost too
     frontend_origin: str = "http://localhost:3000"
     # The browser path of the refresh endpoint. Browsers reach the API through the frontend's

@@ -11,7 +11,7 @@ in the same time, so the API does not reveal which user names exist.
 """
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -118,27 +118,32 @@ def start_session(
 
     Returns the session and the new refresh token's id.
     """
-    settings = ctx.settings
-    access_ttl = timedelta(minutes=settings.access_token_minutes)
-    refresh_ttl = timedelta(days=settings.refresh_token_days)
-    access = issue_token("access", user_id, tenant, role, access_ttl)
+    refresh_ttl = timedelta(days=ctx.settings.refresh_token_days)
     refresh = issue_token("refresh", user_id, tenant, role, refresh_ttl)
     conn.execute(
         text("INSERT INTO app.refresh_token (jti, user_id, expires_at) VALUES (:j, :u, :e)"),
         {"j": refresh.jti, "u": user_id, "e": refresh.expires_at},
     )
+    return send_tokens(ctx, response, refresh), refresh.jti
+
+
+def send_tokens(ctx: AppContext, response: Response, refresh: TokenClaims) -> Session:
+    """Set a fresh access cookie and the cookie for this (already recorded) refresh token."""
+    settings = ctx.settings
+    access_ttl = timedelta(minutes=settings.access_token_minutes)
+    access = issue_token("access", refresh.user_id, refresh.tenant_id, refresh.role, access_ttl)
+    refresh_ttl = refresh.expires_at - datetime.now(UTC)
     set_cookie(response, settings, ACCESS_COOKIE, encode(ctx.jwt_secret, access), access_ttl, "/")
     set_cookie(
         response, settings, REFRESH_COOKIE, encode(ctx.jwt_secret, refresh), refresh_ttl,
         settings.refresh_cookie_path,
     )  # fmt: skip
-    session = Session(
-        user_id=user_id,
-        tenant_id=tenant,
-        role=role,
+    return Session(
+        user_id=refresh.user_id,
+        tenant_id=refresh.tenant_id,
+        role=refresh.role,
         access_expires_at=access.expires_at.isoformat(),
     )
-    return session, refresh.jti
 
 
 def set_cookie(
@@ -206,7 +211,8 @@ def login(body: LoginRequest, response: Response, ctx: Context, info: Info) -> S
 )
 def refresh(request: Request, response: Response, ctx: Context, info: Info) -> Session:
     """Rotate the refresh token. Re-use of an already-rotated token revokes all of the user's
-    sessions (a sign that the token was stolen)."""
+    sessions (a sign that the token was stolen), except within a short grace period after
+    the rotation, which returns the replacement (a reload or a second tab raced the refresh)."""
     try:
         claims = decode(ctx.jwt_secret, request.cookies.get(REFRESH_COOKIE), "refresh")
     except InvalidTokenError as error:
@@ -229,14 +235,28 @@ def rotate(
     """New tokens for a live refresh token; None (after revoking on re-use) otherwise."""
     token = conn.execute(
         text(
-            "SELECT t.revoked_at, t.expires_at > now() AS live, u.role, u.is_active "
+            "SELECT t.revoked_at, t.expires_at > now() AS live, u.role, u.is_active, "
+            "  r.jti::text AS replacement, r.expires_at AS replacement_expires, "
+            "  t.revoked_at > now() - make_interval(secs => :grace) "
+            "  AND r.revoked_at IS NULL AND r.expires_at > now() AS in_grace "
             "FROM app.refresh_token t JOIN app.app_user u USING (user_id) "
+            "LEFT JOIN app.refresh_token r ON r.jti = t.replaced_by "
             "WHERE t.jti = :j AND t.user_id = :u FOR UPDATE OF t"
         ),
-        {"j": claims.jti, "u": claims.user_id},
-    ).one_or_none()
+        {"j": claims.jti, "u": claims.user_id,
+         "grace": ctx.settings.refresh_reuse_grace_seconds},
+    ).one_or_none()  # fmt: skip
     if token is None or not token.live or not token.is_active:
         return None
+    if token.in_grace:
+        # Rotated moments ago and its replacement is still live: hand out that same refresh
+        # token (same id and expiry) with a new access token, instead of a theft alarm.
+        audit.record(conn, info, claims.user_id, "refresh_grace", "session", claims.jti)
+        replacement = TokenClaims(
+            claims.user_id, claims.tenant_id, token.role, token.replacement, "refresh",
+            token.replacement_expires,
+        )  # fmt: skip
+        return send_tokens(ctx, response, replacement)
     if token.revoked_at is not None:
         conn.execute(
             text(

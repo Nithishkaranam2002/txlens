@@ -26,6 +26,19 @@ rule), and the API will run as several replicas on Azure Container Apps.
 - **Refresh token**: JWT, 7 days, also stored by id in `app.refresh_token` (RLS). Each refresh
   rotates it. If a token that was already rotated is used again, every session of that user
   is revoked, because that pattern means the token was stolen.
+- **Reuse grace period** (added 2026-11-11, `REFRESH_REUSE_GRACE_SECONDS`, default 30):
+  - *Why:* a page reload or a second tab can send the old refresh token just after a
+    rotation, before the browser has stored the new cookie. Without a grace period that
+    honest race logged the user out everywhere.
+  - *Within the window:* if the old token was rotated (not revoked by logout) less than 30
+    seconds ago, and its replacement has not itself been rotated, revoked or expired, the
+    API returns that same replacement refresh token (same id and expiry) with a new access
+    token. This is audited as `refresh_grace`.
+  - *Outside the window:* any other reuse still triggers theft detection. That includes
+    reuse after 30 seconds, reuse after the replacement was used, and reuse of a logged-out
+    token.
+  - *Locking:* the old token's row is locked (`FOR UPDATE`), so two simultaneous refreshes
+    of the same token also get the same replacement.
 - **Cookies**: `txlens_access` (Path=/) and `txlens_refresh` (Path=/auth), both `HttpOnly`,
   `Secure` and `SameSite=Strict`. Tokens never appear in response bodies.
 - **CSRF**: besides SameSite=Strict, every POST must carry `X-Requested-With`. A cross-site
@@ -52,3 +65,6 @@ rule), and the API will run as several replicas on Azure Container Apps.
 - The login-attempt table has no tenant (a failed login may name no user). It holds user
   names and client addresses, never patient data.
 - If the frontend and API move to different sites, SameSite=Strict has to be revisited.
+- The grace period gives a thief who holds the old token 30 seconds to obtain the current
+  refresh token, but only while that replacement is unused. As soon as either side uses it
+  again, reuse is detected as before. Setting the window to 0 restores strict rotation.
