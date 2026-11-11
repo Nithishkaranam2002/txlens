@@ -24,6 +24,22 @@ constraint-dependencies = [
     "markdown-it-py<4.3",
     "regex<2026.11",
     "typer<0.28",
+    # docling group
+    "torch<=2.14.1",
+    "torchvision<=0.29.1",
+    "docling-parse<=7.24.0",
+    "cuda-bindings<=13.4.4",
+    "cuda-pathfinder<=1.8.4",
+    "doclang<=0.8.0",
+    "docling-core<=2.105.0",
+    "faker<=40.43.0",
+    "mail-parser<=4.8.0",
+    "nvidia-nvjitlink<=13.4.92",
+    "pypdfium2<=5.14.0",
+    "soupsieve<=3.0.4",
+    "transformers<=5.21.0",
+    "tree-sitter<=0.26.0",
+    "xlsxwriter<=3.3.0",
 ]
 
 [dependency-groups]
@@ -39,6 +55,9 @@ dev = [
     "httpx>=0.28",
     "types-pyyaml>=6.0,<6.0.12.20261001",
 ]
+# Opt-in (pulls in PyTorch and layout models, ~1-2 GB): `uv sync --all-packages --group docling`.
+# Without it, document OCR uses Tesseract directly. CI does not install it.
+docling = ["docling>=2.140,<=2.143.1"]
 
 [tool.ruff]
 line-length = 100
@@ -78,7 +97,8 @@ explicit_package_bases = true
 # PySpark (and pandera, which the pipelines use with it) is only installed inside the Spark
 # container and in CI.
 [[tool.mypy.overrides]]
-module = ["pyspark.*", "delta.*", "pandera.*"]
+# docling is an opt-in group (absent in CI); pytesseract ships no type information.
+module = ["pyspark.*", "delta.*", "pandera.*", "docling.*", "docling_core.*", "pytesseract.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

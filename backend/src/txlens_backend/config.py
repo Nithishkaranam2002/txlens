@@ -1,5 +1,7 @@
 """Application settings, read from environment variables (and `.env` in development)."""
 
+from typing import Literal
+
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -47,6 +49,7 @@ class Settings(BaseSettings):
     small_cell_threshold: int = 11  # de-identified counts 1..threshold-1 are shown as "<11"
 
     # --- Document extraction (LLM) ---
+    ocr_engine: Literal["tesseract", "docling"] = "tesseract"  # docling: opt-in dependency group
     # LiteLLM model names: "openai/<model>" (paid) or "ollama/llama3.1:8b" (local, free).
     llm_model: str = "openai/gpt-6-luna"
     llm_model_pass_b: str = ""  # second extraction pass; empty = same model, other prompt

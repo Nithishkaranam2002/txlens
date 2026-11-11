@@ -47,6 +47,8 @@ jobs:
         with:
           path: ~/.ivy2
           key: ivy-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+      - name: Install Tesseract (document OCR tests; Docling is opt-in and not installed here)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr
       - name: Install dependencies (including PySpark)
         run: uv sync --frozen --all-packages --all-extras
       - name: Lint
