@@ -47,5 +47,6 @@ export function Plot({ data, layout, label }: { data: Data[]; layout?: Partial<L
       if (plotly && element) plotly.purge(element);
     };
   }, [data, layout]);
-  return <div ref={ref} role="img" aria-label={label} className="h-72 w-full" />;
+  // role="figure", not "img": the chart keeps its own interactive controls (zoom, download).
+  return <div ref={ref} role="figure" aria-label={label} className="h-72 w-full" />;
 }

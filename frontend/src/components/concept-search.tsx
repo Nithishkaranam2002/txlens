@@ -33,10 +33,12 @@ export function ConceptSearch({ selected, onChange }: { selected: ConceptHit[]; 
           placeholder="Search by name or SNOMED code, e.g. diabetes"
           aria-label="Search conditions"
         />
-        {query.trim().length >= 2 && (
-          <CommandList>
+        {/* Always rendered: the input's aria-controls points at this list. */}
+        <CommandList>
+          {query.trim().length >= 2 && (
             <CommandEmpty>{search.isFetching ? "Searching…" : "No matching conditions."}</CommandEmpty>
-            {hits.length > 0 && (
+          )}
+          {query.trim().length >= 2 && hits.length > 0 && (
               <CommandGroup heading="Conditions">
                 {hits.map((hit) => (
                   <CommandItem
@@ -56,8 +58,7 @@ export function ConceptSearch({ selected, onChange }: { selected: ConceptHit[]; 
                 ))}
               </CommandGroup>
             )}
-          </CommandList>
-        )}
+        </CommandList>
       </Command>
       {selected.length > 0 && (
         <ul className="flex flex-wrap gap-2" aria-label="Selected conditions">

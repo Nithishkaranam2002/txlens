@@ -6,7 +6,7 @@ SEED ?= 42
 VOCAB_SOURCE ?= omop/athena
 N_PATIENTS ?= 2000
 
-.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi worker surveillance-schedule surveillance-run prune-login-attempts cohort-report surveillance-report vocab-load vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
+.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run prune-login-attempts cohort-report surveillance-report vocab-load vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -49,6 +49,15 @@ seed-users: ## Create/update one demo user per role per center (passwords from .
 api: ## Run the API with auto-reload (docs: http://localhost:8000/docs)
 	@# --no-proxy-headers: the app itself trusts X-Forwarded-For only from TRUSTED_PROXY_IPS.
 	uv run uvicorn txlens_backend.api.app:create_app --factory --reload --port 8000 --no-proxy-headers
+
+frontend: ## Run the frontend dev server on http://localhost:3000 (proxies /api to `make api`)
+	pnpm --dir frontend dev
+
+e2e: ## Playwright end-to-end tests (seeds a throwaway txlens_e2e database; needs `make up`)
+	pnpm --dir frontend e2e
+
+screenshots: ## README screenshots of the main pages (needs `make api` and `make frontend` running)
+	pnpm --dir frontend screenshots
 
 openapi: ## Export the API's OpenAPI schema and regenerate the typed frontend client
 	uv run txlens-export-openapi > frontend/openapi.json

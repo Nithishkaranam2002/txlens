@@ -57,6 +57,10 @@ jobs:
           for pkg in backend data_generator pipelines evals omop; do uv run mypy "$pkg" || exit 1; done
       - name: Test (without the slow Spark runs)
         run: uv run pytest -m "not slow"
+      - name: OpenAPI schema is up to date (run `make openapi` after API changes)
+        run: |
+          uv run txlens-export-openapi > frontend/openapi.json
+          git diff --exit-code frontend/openapi.json
 
   # End-to-end Spark runs on generated data (about 25 minutes). Only on main and by hand, so
   # pull requests get quick feedback from the job above.
@@ -100,6 +104,60 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - name: Typed API client matches openapi.json
+        run: |
+          pnpm gen:api
+          git diff --exit-code src/lib/api/schema.d.ts
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+
+  # Browser tests against the real API on a seeded throwaway database (no Spark needed).
+  frontend-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg16-bookworm
+        env:
+          POSTGRES_USER: txlens
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: txlens
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U txlens -d txlens"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://txlens:ci-only-password@localhost:5432/txlens
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version: "0.7.22"
+          enable-cache: true
+      - run: uv sync --frozen --all-packages
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm e2e
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7
