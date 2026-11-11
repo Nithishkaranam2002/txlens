@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from document_testutils import FakeCompletion, finding, require_tesseract
@@ -10,6 +11,7 @@ from litellm import exceptions
 from txlens_backend.documents import llm, phi
 from txlens_backend.documents.ocr import ocr_with_tesseract
 from txlens_backend.documents.schema import HeartBiopsy
+from txlens_backend.documents.tracing import LangfuseTracer, TracedCall
 from txlens_datagen.config import GeneratorConfig
 from txlens_datagen.rand import rng_for
 from txlens_datagen.record import build_record
@@ -82,13 +84,86 @@ def test_models_without_a_known_price_are_refused() -> None:
     assert llm.max_call_cost("ollama/llama3.1:8b", DOCUMENT) == 0
 
 
-def test_trace_metadata_has_no_path_or_identifier() -> None:
-    meta = llm.trace_metadata(META, "b")
-    assert meta["trace_metadata"] == {
+class FakeTracer:
+    def __init__(self) -> None:
+        self.calls: list[TracedCall] = []
+
+    def record(self, call: TracedCall) -> None:
+        self.calls.append(call)
+
+    def flush(self) -> None:
+        pass
+
+
+def test_every_pass_is_traced_with_minimized_text_and_hashes_only() -> None:
+    tracer = FakeTracer()
+    extractor = llm.LiteLlmExtractor(
+        "openai/gpt-6-luna", completion=FakeCompletion(HEART_ANSWER), tracer=tracer
+    )
+    extractor.extract(HeartBiopsy, DOCUMENT, "b", META)
+    call = tracer.calls[0]
+    assert (call.file_sha256, call.batch_id, call.variant) == (META.file_sha256, "batch-1", "b")
+    assert call.messages[1] == {"role": "user", "content": DOCUMENT}
+    assert call.output is not None and call.output["acr_grade"]["value"] == "2R"
+    assert (call.input_tokens, call.output_tokens, call.error) == (1500, 400, None)
+    assert call.cost_usd > 0 and call.ended >= call.started
+
+
+def test_failed_passes_are_traced_with_their_error() -> None:
+    tracer = FakeTracer()
+    bad = HEART_ANSWER | {"acr_grade": finding("5R", 5, "5R")}
+    extractor = llm.LiteLlmExtractor(
+        "openai/gpt-6-luna", completion=FakeCompletion(bad), tracer=tracer
+    )
+    with pytest.raises(llm.ExtractionFailedError):
+        extractor.extract(HeartBiopsy, DOCUMENT, "a", META)
+    assert tracer.calls[0].error is not None and tracer.calls[0].output is None
+
+
+class FakeLangfuse:
+    def __init__(self, fail: bool = False) -> None:
+        self.fail = fail
+        self.traces: list[dict[str, Any]] = []
+        self.generations: list[dict[str, Any]] = []
+
+    def trace(self, **kwargs: Any) -> "FakeLangfuse":
+        if self.fail:
+            raise ConnectionError("langfuse is down")
+        self.traces.append(kwargs)
+        return self
+
+    def generation(self, **kwargs: Any) -> None:
+        self.generations.append(kwargs)
+
+
+def test_langfuse_gets_one_trace_and_generation_per_pass() -> None:
+    client = FakeLangfuse()
+    extractor = llm.LiteLlmExtractor(
+        "openai/gpt-6-luna", completion=FakeCompletion(HEART_ANSWER), tracer=LangfuseTracer(client)
+    )
+    extractor.extract(HeartBiopsy, DOCUMENT, "a", META)
+    trace, generation = client.traces[0], client.generations[0]
+    assert (trace["name"], trace["session_id"]) == ("biopsy-extraction", "batch-1")
+    assert trace["metadata"] == {
         "file_sha256": META.file_sha256,
         "prompt_version": llm.PROMPT_VERSION,
+        "pass": "a",
     }
-    assert "pdf" not in json.dumps(meta).lower()
+    usage = generation["usage"]
+    assert (usage["input"], usage["output"], usage["unit"]) == (1500, 400, "TOKENS")
+    assert usage["total_cost"] == pytest.approx(1500 * 0.10e-6 + 400 * 0.50e-6)
+    assert generation["model"] == "openai/gpt-6-luna" and generation["level"] == "DEFAULT"
+    assert "pdf" not in json.dumps(trace["metadata"]).lower()
+
+
+def test_a_tracing_outage_does_not_stop_the_extraction() -> None:
+    extractor = llm.LiteLlmExtractor(
+        "openai/gpt-6-luna",
+        completion=FakeCompletion(HEART_ANSWER),
+        tracer=LangfuseTracer(FakeLangfuse(fail=True)),
+    )
+    answer, _ = extractor.extract(HeartBiopsy, DOCUMENT, "a", META)
+    assert answer.acr_grade.value == "2R"
 
 
 @pytest.mark.parametrize("index", [0, 1, 3])  # patients from center_a, center_b, center_c

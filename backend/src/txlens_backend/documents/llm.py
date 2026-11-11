@@ -10,8 +10,8 @@
 - Prompt-injection defence: the report sits in a <document> block that the instructions call
   data, never instructions; the model has no tools, only the output schema; every value must
   be quoted from the text (evidence.py) and rules run in Python, not in the model.
-- Langfuse (via LiteLLM's callback) sees the minimized text only, plus file hash, prompt
-  version and batch id as metadata: no file path, no name, no MRN.
+- Langfuse (tracing.py) sees the minimized text only, plus file hash, prompt version and
+  batch id as metadata: no file path, no name, no MRN.
 """
 
 import os
@@ -22,6 +22,7 @@ os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, TypeVar
 
 import instructor
@@ -31,6 +32,7 @@ from pydantic import BaseModel, create_model
 
 from txlens_backend.config import Settings
 from txlens_backend.documents.phi import MinimizedText
+from txlens_backend.documents.tracing import TracedCall, Tracer, langfuse_tracer
 
 PROMPT_VERSION = "biopsy-2026-11-11.1"
 Variant = Literal["a", "b"]
@@ -166,29 +168,13 @@ def max_call_cost(model: str, document: str) -> float:
     return attempts * (prompt_tokens * input_price + MAX_OUTPUT_TOKENS * output_price)
 
 
-def configure_tracing(settings: Settings) -> bool:
-    """Send every LiteLLM call to Langfuse when keys are configured; True if enabled."""
+def tracer_for(settings: Settings) -> Tracer | None:
+    """A Langfuse tracer when keys are configured, else None."""
     public = settings.langfuse_public_key.get_secret_value()
     secret = settings.langfuse_secret_key.get_secret_value()
     if not public or not secret or public.startswith("placeholder"):
-        return False
-    os.environ["LANGFUSE_PUBLIC_KEY"] = public
-    os.environ["LANGFUSE_SECRET_KEY"] = secret
-    os.environ["LANGFUSE_HOST"] = settings.langfuse_host
-    litellm.success_callback = ["langfuse"]
-    litellm.failure_callback = ["langfuse"]
-    return True
-
-
-def trace_metadata(meta: CallMeta, variant: Variant) -> dict[str, Any]:
-    """Langfuse fields for one call: hashes and versions only."""
-    return {
-        "trace_name": "biopsy-extraction",
-        "generation_name": f"biopsy-pass-{variant}",
-        "session_id": meta.batch_id,
-        "tags": [PROMPT_VERSION, f"pass-{variant}"],
-        "trace_metadata": {"file_sha256": meta.file_sha256, "prompt_version": PROMPT_VERSION},
-    }
+        return None
+    return langfuse_tracer(public, secret, settings.langfuse_host)
 
 
 class LiteLlmExtractor:
@@ -202,8 +188,10 @@ class LiteLlmExtractor:
         timeout_seconds: int = 60,
         api_base: str | None = None,
         completion: Callable[..., Any] | None = None,
+        tracer: Tracer | None = None,
     ) -> None:
         self.model = model
+        self.tracer = tracer
         self.reasoning_effort = reasoning_effort
         self.timeout_seconds = timeout_seconds
         self.api_base = api_base if model.startswith("ollama/") else None
@@ -220,31 +208,65 @@ class LiteLlmExtractor:
         usage = Usage(self.model)
         client = instructor.from_litellm(self.completion, mode=self.mode)
         client.on("completion:response", lambda response: count(usage, response))
-        started = time.monotonic()
+        messages: list[Any] = [
+            {"role": "system", "content": SYSTEM[variant]},
+            {"role": "user", "content": document},
+        ]
+        started, began = time.monotonic(), datetime.now(UTC)
         try:
             answer = client.chat.completions.create(
                 model=self.model,
                 response_model=schema if variant == "a" else reordered(schema),
-                messages=[
-                    {"role": "system", "content": SYSTEM[variant]},
-                    {"role": "user", "content": document},
-                ],
+                messages=messages,
                 max_retries=VALIDATION_RETRIES,
                 max_tokens=MAX_OUTPUT_TOKENS,
                 reasoning_effort=self.reasoning_effort,
                 timeout=self.timeout_seconds,
                 num_retries=NETWORK_RETRIES,
                 api_base=self.api_base,
-                metadata=trace_metadata(meta, variant),
             )
         except Exception as error:
-            if is_transient(error):
-                raise LlmUnavailableError(f"{type(error).__name__}: {error}") from error
             usage.latency_ms = round((time.monotonic() - started) * 1000)
             message = f"{type(error).__name__}: {error}"[:MAX_ERROR_CHARS]
+            self.trace(meta, variant, messages, None, message, usage, began)
+            if is_transient(error):
+                raise LlmUnavailableError(message) from error
             raise ExtractionFailedError(message, usage) from error
         usage.latency_ms = round((time.monotonic() - started) * 1000)
-        return schema.model_validate(answer.model_dump()), usage
+        result = schema.model_validate(answer.model_dump())
+        self.trace(meta, variant, messages, result.model_dump(mode="json"), None, usage, began)
+        return result, usage
+
+    def trace(
+        self,
+        meta: CallMeta,
+        variant: Variant,
+        messages: list[dict[str, str]],
+        output: dict[str, Any] | None,
+        error: str | None,
+        usage: Usage,
+        began: datetime,
+    ) -> None:
+        """Record the pass in Langfuse (the messages are the minimized text)."""
+        if self.tracer is None:
+            return
+        self.tracer.record(
+            TracedCall(
+                meta.file_sha256,
+                meta.batch_id,
+                variant,
+                self.model,
+                PROMPT_VERSION,
+                messages,
+                output,
+                error,
+                usage.input_tokens,
+                usage.output_tokens,
+                usage.cost_usd,
+                began,
+                datetime.now(UTC),
+            )
+        )
 
 
 def count(usage: Usage, response: Any) -> None:
@@ -270,4 +292,5 @@ def make_extractor(settings: Settings, variant: Variant) -> LiteLlmExtractor:
         reasoning_effort=settings.llm_reasoning_effort,
         timeout_seconds=settings.llm_timeout_seconds,
         api_base=settings.ollama_base_url,
+        tracer=tracer_for(settings),
     )

@@ -38,9 +38,9 @@ from txlens_backend.documents.budget import Budget, BudgetExceededError
 from txlens_backend.documents.llm import (
     PROMPT_VERSION,
     Variant,
-    configure_tracing,
     make_extractor,
     max_call_cost,
+    tracer_for,
 )
 from txlens_backend.documents.schema import BANFF_SCORES
 from txlens_datagen.config import GeneratorConfig
@@ -599,7 +599,6 @@ def main(argv: list[str] | None = None) -> int:
     batch_id = f"eval-{'full' if args.full else f'sample-{args.sample}-{args.seed}'}"
     budget = Budget(engine, batch_id, settings.llm_budget_usd)
     budget.open()
-    configure_tracing(settings)
     print(
         f"{len(jobs)} reports + {len(adversarial)} adversarial; worst case "
         f"${(len(jobs) + len(adversarial)) * worst_case:.2f}, cap ${settings.llm_budget_usd:.2f}"
@@ -620,6 +619,9 @@ def main(argv: list[str] | None = None) -> int:
         encoding="utf-8",
     )
     details(runs, args.data / "eval" / f"{batch_id}.csv")
+    tracer = tracer_for(settings)
+    if tracer is not None:
+        tracer.flush()
     print(f"Wrote {args.out}; spent ${float(spent):.4f} in batch {batch_id}")
     return 0
 

@@ -25,7 +25,6 @@ from temporalio.worker import Worker
 
 from txlens_backend.config import get_settings
 from txlens_backend.db import check_role_is_rls_bound, make_engine
-from txlens_backend.documents.llm import configure_tracing
 from txlens_backend.workflows.biopsy import TASK_QUEUE as DOCUMENTS_QUEUE
 from txlens_backend.workflows.biopsy import (
     BiopsyBatchWorkflow,
@@ -53,7 +52,6 @@ async def serve() -> None:
     settings = get_settings()
     engine = make_engine(settings.app_database_url.get_secret_value())
     check_role_is_rls_bound(engine)
-    configure_tracing(settings)
     activities = SurveillanceActivities(engine)
     documents = DocumentActivities(engine, settings)
     # Two LLM passes per document: room for `llm_concurrency` documents at once.

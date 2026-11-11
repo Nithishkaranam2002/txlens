@@ -97,8 +97,9 @@ explicit_package_bases = true
 # PySpark (and pandera, which the pipelines use with it) is only installed inside the Spark
 # container and in CI.
 [[tool.mypy.overrides]]
-# docling is an opt-in group (absent in CI); pytesseract ships no type information.
-module = ["pyspark.*", "delta.*", "pandera.*", "docling.*", "docling_core.*", "pytesseract.*"]
+# docling is an opt-in group (absent in CI); pytesseract and langfuse 2.x ship no type information.
+module = ["pyspark.*", "delta.*", "pandera.*", "docling.*", "docling_core.*", "pytesseract.*",
+          "langfuse.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
