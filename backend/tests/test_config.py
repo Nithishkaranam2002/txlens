@@ -1,7 +1,7 @@
 import pytest
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
-from txlens_backend.config import InsecureSettingError, get_settings, require_secret
+from txlens_backend.config import InsecureSettingError, Settings, get_settings, require_secret
 
 
 def test_settings_read_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -32,3 +32,9 @@ def test_weak_secrets_are_refused(value: str) -> None:
 
 def test_strong_secret_is_returned() -> None:
     assert require_secret("jwt_secret", SecretStr("x" * 32)) == "x" * 32
+
+
+@pytest.mark.parametrize("value", ["*", "127.0.0.1, *"])
+def test_wildcard_trusted_proxy_is_refused(value: str) -> None:
+    with pytest.raises(ValidationError, match="TRUSTED_PROXY_IPS"):
+        Settings(trusted_proxy_ips=value)

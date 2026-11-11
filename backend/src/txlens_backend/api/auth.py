@@ -1,7 +1,8 @@
 """Login, token refresh and logout.
 
 Tokens live in httpOnly cookies, so page JavaScript (and any injected script) cannot read
-them. The access cookie goes to every path; the refresh cookie only to /auth. Both are
+them. The access cookie goes to every path; the refresh cookie only to the refresh endpoint's
+browser path (`REFRESH_COOKIE_PATH`: /auth, or /api/auth behind the frontend proxy). Both are
 Secure and SameSite=Strict.
 
 Logins are rate-limited per user name and per client address, counted in Postgres so the
@@ -37,7 +38,6 @@ from txlens_backend.security import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"], dependencies=[Depends(require_csrf_header)])
-REFRESH_PATH = "/auth"
 INVALID_LOGIN = "Invalid user name or password"
 
 
@@ -130,7 +130,7 @@ def start_session(
     set_cookie(response, settings, ACCESS_COOKIE, encode(ctx.jwt_secret, access), access_ttl, "/")
     set_cookie(
         response, settings, REFRESH_COOKIE, encode(ctx.jwt_secret, refresh), refresh_ttl,
-        REFRESH_PATH,
+        settings.refresh_cookie_path,
     )  # fmt: skip
     session = Session(
         user_id=user_id,
@@ -158,7 +158,7 @@ def set_cookie(
 
 def clear_cookies(response: Response, settings: Settings) -> None:
     """Remove both token cookies."""
-    for name, path in ((ACCESS_COOKIE, "/"), (REFRESH_COOKIE, REFRESH_PATH)):
+    for name, path in ((ACCESS_COOKIE, "/"), (REFRESH_COOKIE, settings.refresh_cookie_path)):
         response.delete_cookie(
             name, path=path, httponly=True, secure=settings.cookie_secure, samesite="strict"
         )

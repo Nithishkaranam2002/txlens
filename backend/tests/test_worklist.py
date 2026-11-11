@@ -11,6 +11,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
 from txlens_backend.api.deps import Role
+from txlens_backend.config import Settings
+from txlens_backend.deid import pseudonym
 
 pytestmark = pytest.mark.db
 ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -102,3 +104,61 @@ def test_overlong_note_is_rejected(client: TestClient, api_owner: Engine, api_fl
     login(client, Role.CLINICIAN, "center_a")
     too_long = client.post(f"/flags/{new_flag(api_owner)}/acknowledge", json={"note": "x" * 2001})
     assert too_long.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("params", "keep"),
+    [
+        ({"organ": "heart"}, lambda row: row["patient"]["organ"] == "heart"),
+        ({"severity": "high"}, lambda row: any(f["severity"] == "high" for f in row["flags"])),
+        ({"status": "new"}, lambda row: any(f["status"] == "new" for f in row["flags"])),
+    ],
+    ids=["organ", "severity", "status"],
+)
+def test_worklist_filters(
+    client: TestClient, api_flags: date, params: dict[str, str], keep: Any
+) -> None:
+    login(client, Role.CLINICIAN, "center_a")
+    everyone = worklist(client)
+    filtered = client.get("/worklist", params=params | {"limit": 200}).json()
+    expected = [row["patient"]["patient_id"] for row in everyone if keep(row)]
+    assert expected and [r["patient"]["patient_id"] for r in filtered["items"]] == expected
+    assert filtered["total"] == len(expected)
+
+
+def test_patient_flags_carry_review_history(
+    client: TestClient, api_owner: Engine, api_settings: Settings, api_flags: date
+) -> None:
+    flag_id = new_flag(api_owner)
+    login(client, Role.CLINICIAN, "center_a")
+    client.post(f"/flags/{flag_id}/acknowledge", json={"note": "calling patient"})
+    client.post(f"/flags/{flag_id}/resolve", json={"note": "repeat test normal"})
+    with api_owner.connect() as conn:
+        person = conn.execute(
+            text("SELECT person_id FROM app.surveillance_flag WHERE flag_id = :f"), {"f": flag_id}
+        ).scalar_one()
+    [flag] = [f for f in client.get(f"/patients/{person}/flags").json()["flags"]
+              if f["flag_id"] == flag_id]  # fmt: skip
+    events = [(e["event"], e["note"]) for e in flag["history"]]
+    assert events == [("raised", None), ("acknowledged", "calling patient"),
+                      ("resolved", "repeat test normal")]  # fmt: skip
+    assert all(e["by"] for e in flag["history"][1:])
+
+    login(client, Role.DATA_STEWARD, "center_a")
+    alias = pseudonym(api_settings.deid_hmac_key.get_secret_value(), "center_a", person)
+    [seen] = [f for f in client.get(f"/patients/{alias}/flags").json()["flags"]
+              if f["flag_id"] == flag_id]  # fmt: skip
+    assert [e["event"] for e in seen["history"]] == ["raised", "acknowledged", "resolved"]
+    assert all(e["by"] is None and e["note"] is None for e in seen["history"])
+    shift = seen["history"][0]["at"][:10] != flag["history"][0]["at"][:10]
+    assert shift  # event times move with the patient's dates
+
+
+def test_surveillance_config_gives_chart_thresholds(client: TestClient) -> None:
+    login(client, Role.RESEARCHER, "center_a")
+    kidney = client.get("/surveillance/configs/kidney").json()
+    threshold = next(r for r in kidney["rules"] if r["kind"] == "threshold")
+    assert [level["at_or_above"] for level in threshold["levels"]] == [0.5, 1.0]
+    tacrolimus = next(r for r in kidney["rules"] if r["kind"] == "range_by_phase")
+    assert tacrolimus["phases"][0] == {"from_month": 0, "to_month": 3, "low": 8.0, "high": 12.0}
+    assert client.get("/surveillance/configs/lung").status_code == 404

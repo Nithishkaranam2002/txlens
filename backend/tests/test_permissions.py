@@ -25,6 +25,8 @@ MATRIX: dict[str, dict[Role | str, int]] = {
     "GET /cohorts":                {C: 200, R: 200, S: 403, A: 403, ANON: 401},
     "GET /cohorts/{cid}":          {C: 200, R: 200, S: 403, A: 403, ANON: 401},
     "GET /cohorts/{cid}/members":  {C: 200, R: 200, S: 403, A: 403, ANON: 401},
+    "GET /concepts/conditions?q=73211009": {C: 200, R: 200, S: 403, A: 403, ANON: 401},
+    "GET /surveillance/configs/kidney": {C: 200, R: 200, S: 200, A: 403, ANON: 401},
     "GET /worklist":               {C: 200, R: 403, S: 200, A: 403, ANON: 401},
     "GET /patients/{pid}/flags":   {C: 200, R: 403, S: 200, A: 403, ANON: 401},
     "POST /flags/{fid}/acknowledge": {C: 200, R: 403, S: 403, A: 403, ANON: 401},
@@ -86,5 +88,6 @@ def test_matrix_covers_every_route(api_app: FastAPI) -> None:
     }
     auth = {"POST /auth/login", "POST /auth/refresh", "POST /auth/logout"}  # see test_auth.py
     named = {e.replace("{pid}", "{patient_id}").replace("{cid}", "{cohort_id}")
-             .replace("{fid}", "{flag_id}") for e in MATRIX}  # fmt: skip
+             .replace("{fid}", "{flag_id}").split("?")[0].replace("/kidney", "/{program}")
+             for e in MATRIX}  # fmt: skip
     assert documented == named | auth

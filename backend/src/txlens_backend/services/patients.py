@@ -84,6 +84,9 @@ class Procedure(BaseModel):
     kind: Literal["transplant", "biopsy", "other"]
     concept_id: int
     procedure: str | None
+    # Biopsy result (no rejection, borderline, TCMR, ABMR, mixed). It lives in pathology
+    # documents and is filled once document extraction exists; None until then.
+    result: str | None = None
 
 
 class NoteMeta(BaseModel):

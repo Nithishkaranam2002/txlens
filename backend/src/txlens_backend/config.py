@@ -1,6 +1,6 @@
 """Application settings, read from environment variables (and `.env` in development)."""
 
-from pydantic import SecretStr
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 MIN_SECRET_LENGTH = 32
@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     refresh_token_days: int = 7
     cookie_secure: bool = True  # browsers accept Secure cookies on http://localhost too
     frontend_origin: str = "http://localhost:3000"
+    # The browser path of the refresh endpoint. Browsers reach the API through the frontend's
+    # /api proxy, so the refresh cookie goes to /api/auth/refresh and nowhere else. Clients
+    # that call the API directly (tests, scripts) set "/auth".
+    refresh_cookie_path: str = "/api/auth"
+    # Comma-separated addresses allowed to set X-Forwarded-For (the local Next.js proxy). Never
+    # "*": anyone could then pick the client address that login rate limiting counts.
+    trusted_proxy_ips: str = "127.0.0.1"
     login_max_failures_per_user: int = 5
     login_max_failures_per_ip: int = 20
     login_window_minutes: int = 15
@@ -41,6 +48,14 @@ class Settings(BaseSettings):
     demo_researcher_password: SecretStr = SecretStr("")
     demo_data_steward_password: SecretStr = SecretStr("")
     demo_admin_password: SecretStr = SecretStr("")
+
+    @field_validator("trusted_proxy_ips")
+    @classmethod
+    def no_wildcard_proxy(cls, ips: str) -> str:
+        """Refuse "*": X-Forwarded-For is only trusted from named proxy addresses."""
+        if "*" in (ip.strip() for ip in ips.split(",")):
+            raise ValueError("TRUSTED_PROXY_IPS must list proxy addresses, not '*'")
+        return ips
 
 
 class InsecureSettingError(ValueError):

@@ -122,6 +122,7 @@ def api_settings(database_url: str) -> Settings:
     """Settings with strong test-only secrets."""
     return Settings(
         database_url=SecretStr(database_url),
+        refresh_cookie_path="/auth",  # the tests call the API directly, not through /api
         jwt_secret=SecretStr("test-jwt-secret-" + "j" * 32),
         deid_hmac_key=SecretStr("test-deid-key-" + "d" * 32),
         demo_clinician_password=SecretStr(PASSWORDS[Role.CLINICIAN]),

@@ -145,6 +145,8 @@ def test_clinician_timeline_has_every_event(client: TestClient, api_data: Datase
     assert len(timeline["notes"]) == len(notes)
     assert all(set(n) == {"date", "note_id", "title"} for n in timeline["notes"])
     assert timeline["drugs"] and timeline["conditions"]
+    # Biopsy results come from pathology documents (document extraction); none yet.
+    assert all(p["result"] is None for p in timeline["procedures"])
 
 
 def test_researcher_timeline_shifts_every_date_by_the_same_days(

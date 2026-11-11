@@ -28,11 +28,15 @@ from txlens_backend.api.deps import (
 from txlens_backend.api.patients import viewer
 from txlens_backend.services import patients
 from txlens_backend.services import surveillance as svc
+from txlens_backend.surveillance.config import Severity, SurveillanceConfig, load_configs
 from txlens_backend.surveillance.repository import InvalidTransitionError, Status, set_status
 
 router = APIRouter(tags=["surveillance"])
 Reader = Annotated[Principal, Depends(require_roles(Role.CLINICIAN, Role.DATA_STEWARD))]
 Reviewer = Annotated[Principal, Depends(require_roles(Role.CLINICIAN))]
+PatientReader = Annotated[
+    Principal, Depends(require_roles(Role.CLINICIAN, Role.RESEARCHER, Role.DATA_STEWARD))
+]
 FLAG_ERRORS: dict[int | str, dict[str, Any]] = {
     404: {"description": "No such flag in your center"},
     409: {"description": "The flag cannot move to that status (e.g. it is already resolved)"},
@@ -60,24 +64,47 @@ def get_worklist(
     conn: TenantDb,
     ctx: Context,
     info: Info,
+    organ: patients.Organ | None = None,
+    severity: Annotated[
+        Severity | None, Query(description="Rows with an open flag of this severity")
+    ] = None,
+    status_: Annotated[
+        Status | None, Query(alias="status", description="Rows with an open flag in this status")
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> WorklistPage:
     """Open flags (not resolved, still firing) grouped by patient and ranked by priority score."""
     view = viewer(principal, ctx)
-    rows = svc.worklist(conn, view, principal.tenant_id)
+    filters = svc.WorklistFilters(organ=organ, severity=severity, status=status_)
+    rows = svc.worklist(conn, view, principal.tenant_id, filters)
     page = rows[offset : offset + limit]
     audit.record(
         conn, info, principal.user_id, "phi_view" if view.identified else "deid_view",
         "worklist", None, {"patients": [r.patient.patient_id for r in page],
+                           "organ": organ, "severity": severity, "status": status_,
                            "limit": limit, "offset": offset},
     )  # fmt: skip
     return WorklistPage(items=page, total=len(rows), limit=limit, offset=offset)
 
 
 @router.get(
+    "/surveillance/configs/{program}",
+    summary="The surveillance rules of a program (thresholds, target ranges, schedule)",
+    responses={404: {"description": "No config for this program"}},
+)
+def get_config(program: str, _: PatientReader) -> SurveillanceConfig:
+    """The config charts draw threshold lines and target bands from. It holds no patient
+    data, so every role that sees patients may read it."""
+    config = next((c for c in load_configs().values() if c.program == program), None)
+    if config is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No surveillance config for this program")
+    return config
+
+
+@router.get(
     "/patients/{patient_id}/flags",
-    summary="All surveillance flags of one patient, newest first",
+    summary="All surveillance flags of one patient, newest first, with status history",
     responses={404: {"description": "No such patient in your center"}},
 )
 def get_patient_flags(

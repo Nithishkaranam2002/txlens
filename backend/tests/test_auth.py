@@ -9,7 +9,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
-from txlens_backend.api.deps import ACCESS_COOKIE, REFRESH_COOKIE, Role
+from txlens_backend.api.app import create_app
+from txlens_backend.api.deps import ACCESS_COOKIE, CSRF_HEADER, REFRESH_COOKIE, Role
 from txlens_backend.config import Settings
 from txlens_backend.security import TokenType, encode, issue_token
 
@@ -153,3 +154,51 @@ def test_every_post_documents_the_csrf_header_for_swagger(api_app: FastAPI) -> N
             assert header["name"] == "X-Requested-With", path
             assert header["required"] is True, path
             assert header["schema"]["default"] == "XMLHttpRequest", path
+
+
+def test_refresh_cookie_defaults_to_the_frontend_proxy_path(
+    api_settings: Settings, api_app_engine: Engine
+) -> None:
+    assert Settings.model_fields["refresh_cookie_path"].default == "/api/auth"
+    behind_proxy = api_settings.model_copy(update={"refresh_cookie_path": "/api/auth"})
+    with TestClient(create_app(behind_proxy, api_app_engine), base_url=BASE_URL,
+                    headers={CSRF_HEADER: "t"}) as client:  # fmt: skip
+        cookies = set_cookies(login(client, Role.CLINICIAN, "center_b"))
+    assert "path=/api/auth;" in cookies[REFRESH_COOKIE].lower() + ";"
+
+
+def last_attempt_ip(owner: Engine, username: str) -> str:
+    """The client address the API recorded for this user name's latest login attempt."""
+    with owner.connect() as conn:
+        ip: str = conn.execute(
+            text("SELECT ip FROM app.login_attempt WHERE username = :u "
+                 "ORDER BY attempted_at DESC LIMIT 1"), {"u": username},
+        ).scalar_one()  # fmt: skip
+    return ip
+
+
+def test_spoofed_forwarded_for_does_not_change_the_rate_limited_address(
+    client: TestClient, api_owner: Engine
+) -> None:
+    # The test client is not a trusted proxy, like any browser calling the API directly.
+    spoofed = {"X-Forwarded-For": "203.0.113.9"}
+    for n in range(20):
+        client.post("/auth/login", json={"username": f"spoof{n}", "password": "x"},
+                    headers=spoofed)  # fmt: skip
+    assert last_attempt_ip(api_owner, "spoof0") == "testclient"
+    # Rotating the spoofed address does not escape the per-address limit either.
+    rotated = {"X-Forwarded-For": "198.51.100.7"}
+    right = {"username": "clinician.center_a", "password": PASSWORDS[Role.CLINICIAN]}
+    blocked = client.post("/auth/login", json=right, headers=rotated)
+    assert blocked.status_code == 429
+
+
+def test_forwarded_for_is_used_from_the_trusted_proxy(
+    api_settings: Settings, api_app_engine: Engine, api_owner: Engine
+) -> None:
+    proxied = api_settings.model_copy(update={"trusted_proxy_ips": "testclient"})
+    with TestClient(create_app(proxied, api_app_engine), base_url=BASE_URL,
+                    headers={CSRF_HEADER: "t"}) as client:  # fmt: skip
+        client.post("/auth/login", json={"username": "proxied", "password": "x"},
+                    headers={"X-Forwarded-For": "203.0.113.9"})  # fmt: skip
+    assert last_attempt_ip(api_owner, "proxied") == "203.0.113.9"

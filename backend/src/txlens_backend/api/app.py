@@ -1,15 +1,17 @@
 """The FastAPI application factory (`uvicorn txlens_backend.api.app:create_app --factory`)."""
 
+import json
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import Engine
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-from txlens_backend.api import auth, cohorts, patients, surveillance, system
+from txlens_backend.api import auth, cohorts, concepts, patients, surveillance, system
 from txlens_backend.api.deps import CSRF_HEADER, CSRF_HEADER_EXAMPLE, AppContext
 from txlens_backend.config import Settings, get_settings, require_secret
 from txlens_backend.db import check_role_is_rls_bound, make_engine
@@ -68,8 +70,19 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None) -
         yield
         engine.dispose()
 
-    app = FastAPI(title="TxLens API", version="0.1.0", description=DESCRIPTION, lifespan=lifespan)
+    app = build_app(settings, lifespan)
     app.state.ctx = ctx
+    return app
+
+
+def build_app(
+    settings: Settings, lifespan: Callable[[FastAPI], AbstractAsyncContextManager[None]] | None
+) -> FastAPI:
+    """The routes and middleware, without a database (enough to export the OpenAPI schema)."""
+    app = FastAPI(title="TxLens API", version="0.1.0", description=DESCRIPTION, lifespan=lifespan)
+    # Only the configured proxy may set the client address (run uvicorn with --no-proxy-headers
+    # so this is the one place that reads X-Forwarded-For).
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.trusted_proxy_ips)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[settings.frontend_origin],
@@ -93,6 +106,12 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None) -
     app.include_router(auth.router)
     app.include_router(patients.router)
     app.include_router(cohorts.router)
+    app.include_router(concepts.router)
     app.include_router(surveillance.router)
     document_csrf_header(app)
     return app
+
+
+def export_openapi() -> None:
+    """Print the OpenAPI schema as JSON (`txlens-export-openapi > frontend/openapi.json`)."""
+    print(json.dumps(build_app(Settings(), None).openapi(), indent=2, sort_keys=True))

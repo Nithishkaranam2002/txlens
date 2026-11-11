@@ -6,7 +6,7 @@ SEED ?= 42
 VOCAB_SOURCE ?= omop/athena
 N_PATIENTS ?= 2000
 
-.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api worker surveillance-schedule surveillance-run prune-login-attempts cohort-report surveillance-report vocab-load vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
+.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi worker surveillance-schedule surveillance-run prune-login-attempts cohort-report surveillance-report vocab-load vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -47,7 +47,12 @@ seed-users: ## Create/update one demo user per role per center (passwords from .
 	uv run txlens-seed-users
 
 api: ## Run the API with auto-reload (docs: http://localhost:8000/docs)
-	uv run uvicorn txlens_backend.api.app:create_app --factory --reload --port 8000
+	@# --no-proxy-headers: the app itself trusts X-Forwarded-For only from TRUSTED_PROXY_IPS.
+	uv run uvicorn txlens_backend.api.app:create_app --factory --reload --port 8000 --no-proxy-headers
+
+openapi: ## Export the API's OpenAPI schema and regenerate the typed frontend client
+	uv run txlens-export-openapi > frontend/openapi.json
+	pnpm --dir frontend gen:api
 
 worker: ## Run the Temporal worker that executes surveillance runs (needs `make up`)
 	uv run txlens-worker

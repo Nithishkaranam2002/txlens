@@ -8,7 +8,10 @@ people.
 
 import re
 from collections import defaultdict
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from typing import Any, Literal
 
 from pydantic import BaseModel
 from sqlalchemy import Connection, Row, text
@@ -54,6 +57,21 @@ class FlagView(BaseModel):
     cleared: bool
 
 
+class FlagEvent(BaseModel):
+    """One step in a flag's life: raised by the engine, reviewed by a clinician, or cleared."""
+
+    at: datetime
+    event: Literal["raised", "acknowledged", "resolved", "cleared"]
+    by: str | None  # reviewer's display name; clinicians only
+    note: str | None  # clinicians only
+
+
+class PatientFlag(FlagView):
+    """A flag with its status history, oldest event first."""
+
+    history: list[FlagEvent]
+
+
 class WorklistRow(BaseModel):
     """One patient on the worklist with their open flags, highest priority first."""
 
@@ -63,10 +81,10 @@ class WorklistRow(BaseModel):
 
 
 class PatientFlags(BaseModel):
-    """All flags of one patient, open and closed, newest first."""
+    """All flags of one patient, open and closed, newest first, each with its history."""
 
     patient: pts.IdentifiedPatient | pts.DeidentifiedPatient
-    flags: list[FlagView]
+    flags: list[PatientFlag]
 
 
 def shift_text(reason: str, move: timedelta) -> str:
@@ -110,8 +128,29 @@ def patients_by_id(
 SEVERITY_ORDER = {Severity.HIGH: 0, Severity.MEDIUM: 1, Severity.LOW: 2}
 
 
-def worklist(conn: Connection, viewer: pts.Viewer, tenant_id: str) -> list[WorklistRow]:
-    """Every patient with an open flag, highest priority first.
+@dataclass(frozen=True)
+class WorklistFilters:
+    """Keep rows of this organ that have at least one open flag of this severity and status."""
+
+    organ: pts.Organ | None = None
+    severity: Severity | None = None
+    status: Status | None = None
+
+    def keep(self, row: WorklistRow) -> bool:
+        """True if the row passes every filter that is set."""
+        if self.organ is not None and row.patient.organ != self.organ:
+            return False
+        return any(
+            (self.severity is None or flag.severity is self.severity)
+            and (self.status is None or flag.status is self.status)
+            for flag in row.flags
+        )
+
+
+def worklist(
+    conn: Connection, viewer: pts.Viewer, tenant_id: str, filters: WorklistFilters | None = None
+) -> list[WorklistRow]:
+    """Every patient with an open flag (passing the filters), highest priority first.
 
     Ties go to the patient whose newest flag is most recent, then to the patient id (the
     pseudonym for de-identified viewers).
@@ -137,7 +176,42 @@ def worklist(conn: Connection, viewer: pts.Viewer, tenant_id: str) -> list[Workl
         patient = people[person_id]
         ranked.append(((-score, -newest.toordinal(), str(patient.patient_id)),
                        WorklistRow(patient=patient, score=score, flags=views)))  # fmt: skip
-    return [row for _, row in sorted(ranked, key=lambda r: r[0])]
+    keep = (filters or WorklistFilters()).keep
+    return [row for _, row in sorted(ranked, key=lambda r: r[0]) if keep(row)]
+
+
+def history(
+    conn: Connection, viewer: pts.Viewer, tenant_id: str, flag_rows: Sequence[Row[Any]]
+) -> dict[str, list[FlagEvent]]:
+    """flag_id -> its events. Reviews come from the audit log, which records every status
+    change with its old and new status and note; times shift with the patient's dates."""
+    reviews = conn.execute(
+        text(
+            "SELECT a.object_id, a.occurred_at, a.details->>'to' AS status, "
+            "a.details->>'note' AS note, u.display_name "
+            "FROM app.audit_log a LEFT JOIN app.app_user u ON u.user_id = a.user_id "
+            "WHERE a.object_type = 'surveillance_flag' "
+            "AND a.action IN ('flag_acknowledge', 'flag_resolve') AND a.object_id = ANY(:ids) "
+            "ORDER BY a.occurred_at, a.audit_id"
+        ),
+        {"ids": [row.flag_id for row in flag_rows]},
+    ).all()
+    events: dict[str, list[FlagEvent]] = {}
+    for row in flag_rows:
+        move = timedelta(days=viewer.shift_days(tenant_id, row.person_id))
+        raised = [FlagEvent(at=row.created_at + move, event="raised", by=None, note=None)]
+        reviewed = [
+            FlagEvent(at=r.occurred_at + move, event=r.status,
+                      by=r.display_name if viewer.identified else None,
+                      note=r.note if viewer.identified else None)
+            for r in reviews if r.object_id == row.flag_id
+        ]  # fmt: skip
+        cleared = (
+            [FlagEvent(at=row.cleared_at + move, event="cleared", by=None, note=None)]
+            if row.cleared_at else []
+        )  # fmt: skip
+        events[row.flag_id] = raised + reviewed + cleared
+    return events
 
 
 def patient_flags(
@@ -145,12 +219,17 @@ def patient_flags(
 ) -> PatientFlags:
     """All flags of one patient (open, cleared and resolved), newest first."""
     rows = conn.execute(
-        text(f"SELECT {FLAG_COLUMNS} FROM app.surveillance_flag "
+        text(f"SELECT {FLAG_COLUMNS}, created_at FROM app.surveillance_flag "
              "WHERE person_id = :p ORDER BY as_of DESC, created_at DESC, rule_id"),
         {"p": person_id},
     ).all()  # fmt: skip
     patient = patients_by_id(conn, viewer, [person_id])[person_id]
-    return PatientFlags(patient=patient, flags=[flag_view(r, viewer, tenant_id) for r in rows])
+    events = history(conn, viewer, tenant_id, rows)
+    flags = [
+        PatientFlag(**flag_view(r, viewer, tenant_id).model_dump(), history=events[r.flag_id])
+        for r in rows
+    ]
+    return PatientFlags(patient=patient, flags=flags)
 
 
 def one_flag(conn: Connection, viewer: pts.Viewer, tenant_id: str, flag_id: str) -> FlagView:
