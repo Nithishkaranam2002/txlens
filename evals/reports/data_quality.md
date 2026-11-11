@@ -35,7 +35,7 @@ Every active patient is covered on every day.
 | bronze | lab_rows | 249,517 |
 | bronze | fhir_resources | 44,656 |
 | bronze | note_files | 12,505 |
-| bronze | pdf_index | 1,508 |
+| bronze | pdf_index | 1,827 |
 | silver | patients | 2,000 |
 | silver | encounters | 13,918 |
 | silver | procedures | 3,508 |

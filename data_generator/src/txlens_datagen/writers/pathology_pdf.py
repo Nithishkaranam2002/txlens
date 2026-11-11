@@ -18,6 +18,13 @@ from txlens_datagen.rand import Rng, pick, randint, uniform
 PAGE_INCHES = (8.5, 11.0)
 MARGIN_INCHES = 0.75
 JPEG_QUALITY = 55
+# Glomeruli counted, by specimen adequacy (Banff: adequate >= 10, marginal 7-9).
+GLOMERULI = {
+    "adequate": (10, 28),
+    "marginal": (7, 9),
+    "inadequate": (3, 6),
+    "not_reported": (10, 28),
+}
 ACR_SEVERITY = {"0R": "no acute cellular rejection", "1R": "mild", "2R": "moderate", "3R": "severe"}
 TITLE, HEADING, BODY = "title", "heading", "body"
 Line = tuple[str, str]
@@ -61,12 +68,16 @@ def microscopic(b: Biopsy, rng: Rng) -> list[str]:
             f"ACR grade (ISHLT 2004): {b.ishlt_acr_grade}",
             f"pAMR grade (ISHLT 2013): {b.pamr_grade}",
         ]
-    glomeruli = randint(rng, 10, 28)
+    glomeruli = randint(rng, *GLOMERULI[b.adequacy or "not_reported"])
+    sclerosed = randint(rng, 0, min(3, glomeruli - 1))
     sv40 = "positive" if b.other_finding.startswith("Polyomavirus") else "negative"
+    cv = "" if b.banff_cv == "not_reported" else f" cv{b.banff_cv}"
+    adequacy = [] if b.adequacy == "not_reported" else [f"Specimen adequacy: {b.adequacy}"]
     return [
-        f"Glomeruli: {glomeruli} ({randint(rng, 0, 3)} globally sclerosed)",
+        f"Glomeruli: {glomeruli} ({sclerosed} globally sclerosed)",
+        *adequacy,
         f"Banff lesion scores: i{b.banff_i} t{b.banff_t} v{b.banff_v} g{b.banff_g} "
-        f"ptc{b.banff_ptc} ci{b.banff_ci} ct{b.banff_ct}",
+        f"ptc{b.banff_ptc} ci{b.banff_ci} ct{b.banff_ct}{cv}",
         f"C4d (IHC, peritubular capillaries): C4d{b.c4d}",
         f"SV40 immunostain: {sv40}",
     ]

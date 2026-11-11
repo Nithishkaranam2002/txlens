@@ -1,14 +1,17 @@
 """Biopsy findings: Banff lesion scores for kidney, ISHLT grades for heart."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import cast
 
 from txlens_datagen.cohort import on_day
 from txlens_datagen.course import Course, EpisodePlan
-from txlens_datagen.models import Biopsy, Diagnosis, Indication, Patient
-from txlens_datagen.rand import Rng, chance, pick, randint
+from txlens_datagen.models import Adequacy, Biopsy, Diagnosis, Indication, Patient
+from txlens_datagen.rand import Rng, chance, pick, pick_weighted, randint
 
 HEART_PROTOCOL_MONTHS = (1, 3, 6, 12)
+ADEQUACY_WEIGHTS: dict[Adequacy, float] = {"adequate": 0.8, "marginal": 0.15, "inadequate": 0.05}
+# Share of kidney reports that leave out adequacy, cv or both.
+P_OMIT = 0.10
 OTHER_FINDINGS = {
     "bk_nephropathy": "Polyomavirus (BK) nephropathy, SV40 immunostain positive",
     "cmv_infection": "CMV immunostain positive in rare tubular cells",
@@ -59,9 +62,14 @@ def scores(rng: Rng, low: int, high: int) -> int:
     return randint(rng, low, high)
 
 
+def chronic_range(day: int) -> tuple[int, int]:
+    """Chronic lesion scores (ci, ct, cv) are low in the first year, higher later."""
+    return (0, 1) if day < 365 else (1, 2)
+
+
 def kidney_biopsy(req: BiopsyRequest, patient: Patient, rng: Rng) -> Biopsy:
     """Banff lesion scores consistent with the diagnosis."""
-    chronic = (0, 1) if req.day < 365 else (1, 2)
+    chronic = chronic_range(req.day)
     i = t = v = g = ptc = c4d = 0
     if req.other_finding.startswith("Polyomavirus"):
         i, t = scores(rng, 1, 2), scores(rng, 1, 2)  # BK virus can mimic rejection
@@ -127,3 +135,22 @@ def make_biopsy(req: BiopsyRequest, patient: Patient, rng: Rng) -> Biopsy:
     if patient.organ == "kidney":
         return kidney_biopsy(req, patient, rng)
     return heart_biopsy(req, patient, rng)
+
+
+def with_adequacy_and_cv(biopsy: Biopsy, patient: Patient, rng: Rng) -> Biopsy:
+    """Add specimen adequacy and the Banff cv score to a kidney biopsy.
+
+    Drawn from a separate random stream so adding these fields leaves every other generated
+    value unchanged. About 10% of reports omit one or both; the truth then says "not_reported".
+    """
+    if biopsy.organ != "kidney":
+        return biopsy
+    day = (biopsy.biopsy_date - patient.transplant_date).days
+    adequacy = pick_weighted(rng, ADEQUACY_WEIGHTS)
+    cv = scores(rng, *chronic_range(day))
+    omit = pick(rng, ("adequacy", "cv", "both")) if chance(rng, P_OMIT) else ""
+    return replace(
+        biopsy,
+        adequacy="not_reported" if omit in ("adequacy", "both") else adequacy,
+        banff_cv="not_reported" if omit in ("cv", "both") else cv,
+    )

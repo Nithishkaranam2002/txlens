@@ -23,6 +23,7 @@ from txlens_datagen.pathology import (
     heart_protocol_days,
     make_biopsy,
     request_for_episode,
+    with_adequacy_and_cv,
 )
 from txlens_datagen.rand import STREAM_PATIENT, Rng, randint, rng_for
 
@@ -30,6 +31,8 @@ CLINIC_MONTHS = (1, 3, 6, 12, 18, 24, 30, 36)
 (PART_DEMOGRAPHICS, PART_COURSE, PART_BIOPSY, PART_MEDS, PART_LABS, PART_VISITS, PART_NOTES) = (
     range(7)
 )
+# Added later, as a new stream, so existing streams (and their data) stay unchanged.
+PART_BIOPSY_DETAIL = 7
 
 
 def patient_key(index: int) -> str:
@@ -142,6 +145,8 @@ def build_record(index: int, config: GeneratorConfig, *, with_notes: bool = True
     course = simulate_course(patient, config, rng(PART_COURSE))
     record = PatientRecord(patient=patient, outcome=make_outcome(patient, course))
     add_episodes_and_biopsies(record, course, key, rng(PART_BIOPSY))
+    detail = rng(PART_BIOPSY_DETAIL)
+    record.biopsies = [with_adequacy_and_cv(b, patient, detail) for b in record.biopsies]
     record.meds = make_med_orders(patient, course, key, rng(PART_MEDS))
     record.labs, record.schedule = make_labs(patient, course, config, key, rng(PART_LABS))
     record.encounters = make_encounters(patient, course, record.biopsies, key, rng(PART_VISITS))

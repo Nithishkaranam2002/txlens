@@ -12,6 +12,9 @@ Diagnosis = Literal["no_rejection", "borderline", "TCMR", "ABMR", "mixed"]
 LabName = Literal["creatinine", "egfr", "tacrolimus_trough", "dd_cfdna", "dsa_mfi"]
 LabReason = Literal["routine", "surveillance", "for_cause"]
 Indication = Literal["protocol", "for_cause"]
+Adequacy = Literal["adequate", "marginal", "inadequate"]
+# A finding the pathologist left out of the report (ground truth for "the model must not guess").
+NotReported = Literal["not_reported"]
 EncounterKind = Literal["clinic", "biopsy", "admission"]
 Temporality = Literal["current", "historical", "hypothetical"]
 Experiencer = Literal["patient", "family"]
@@ -111,6 +114,8 @@ class Biopsy:
     banff_ci: int | None = None
     banff_ct: int | None = None
     c4d: int | None = None
+    banff_cv: int | NotReported | None = None
+    adequacy: Adequacy | NotReported | None = None
     banff_tcmr_grade: str = ""
     ishlt_acr_grade: str = ""
     pamr_grade: str = ""

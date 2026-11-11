@@ -31,6 +31,12 @@ def test_report_text_matches_ground_truth(cohort: list[PatientRecord]) -> None:
             assert f"{biopsy.biopsy_date:%m/%d/%Y}" in text
             if biopsy.organ == "kidney":
                 assert f"i{biopsy.banff_i} t{biopsy.banff_t} v{biopsy.banff_v}" in text
+                assert ("Specimen adequacy" in text) == (biopsy.adequacy != "not_reported")
+                assert (" cv" in text) == (biopsy.banff_cv != "not_reported")
+                if biopsy.adequacy != "not_reported":
+                    assert f"Specimen adequacy: {biopsy.adequacy}" in text
+                if biopsy.banff_cv != "not_reported":
+                    assert f"ct{biopsy.banff_ct} cv{biopsy.banff_cv}" in text
                 assert f"C4d{biopsy.c4d}" in text
                 if biopsy.banff_tcmr_grade:
                     assert f"Banff grade {biopsy.banff_tcmr_grade}" in text
@@ -43,3 +49,12 @@ def test_report_text_matches_ground_truth(cohort: list[PatientRecord]) -> None:
                 assert biopsy.other_finding in text
             checked += 1
     assert checked > 50
+
+
+def test_about_one_in_ten_kidney_reports_omit_adequacy_or_cv(cohort: list[PatientRecord]) -> None:
+    biopsies = [b for record in cohort for b in record.biopsies]
+    kidney = [b for b in biopsies if b.organ == "kidney"]
+    omitted = [b for b in kidney if "not_reported" in (b.adequacy, b.banff_cv)]
+    assert 0.05 < len(omitted) / len(kidney) < 0.16
+    assert {b.adequacy for b in kidney} == {"adequate", "marginal", "inadequate", "not_reported"}
+    assert all(b.adequacy is None and b.banff_cv is None for b in biopsies if b.organ == "heart")
