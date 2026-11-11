@@ -86,3 +86,32 @@ export function useReviewFlag() {
     },
   });
 }
+
+export function useTimeline(patientId: string) {
+  return useQuery({
+    queryKey: keys.timeline(patientId),
+    queryFn: async () =>
+      unwrap(await api.GET("/patients/{patient_id}/timeline", { params: { path: { patient_id: patientId } } })),
+  });
+}
+
+/** A patient's flags with history; only for roles that may see flags. */
+export function usePatientFlags(patientId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: keys.flags(patientId),
+    queryFn: async () =>
+      unwrap(await api.GET("/patients/{patient_id}/flags", { params: { path: { patient_id: patientId } } })),
+    enabled,
+  });
+}
+
+/** The surveillance config (thresholds, target ranges) for an organ program. */
+export function useSurveillanceConfig(program: string | null | undefined) {
+  return useQuery({
+    queryKey: keys.config(program ?? ""),
+    queryFn: async () =>
+      unwrap(await api.GET("/surveillance/configs/{program}", { params: { path: { program: program! } } })),
+    enabled: Boolean(program),
+    staleTime: Infinity,
+  });
+}

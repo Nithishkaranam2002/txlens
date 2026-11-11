@@ -3,21 +3,20 @@
 import { Activity, LogOut } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 
 import { SafetyBanner } from "@/components/banner";
 import { ErrorState } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLogout, useMe } from "@/lib/auth";
-import { asRole, navFor, ROLE_LABEL } from "@/lib/roles";
+import { asRole, navFor, ROLE_LABEL, type Role } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
 /** Header with role-aware navigation, the safety banner, and the page in a <main> landmark. */
 export function AppShell({ children }: { children: ReactNode }) {
   const me = useMe();
   const logout = useLogout();
-  const pathname = usePathname();
   const role = me.data ? asRole(me.data.role) : null;
 
   return (
@@ -36,22 +35,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             TxLens
           </Link>
           <nav aria-label="Main" className="flex items-center gap-1">
-            {navFor(role).map((item) => {
-              const current = pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={current ? "page" : undefined}
-                  className={cn(
-                    "rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                    current && "bg-accent text-accent-foreground",
-                  )}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
+            <Suspense fallback={<NavLinks role={role} pathname="" />}>
+              <CurrentNavLinks role={role} />
+            </Suspense>
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm">
             {me.data ? (
@@ -76,4 +62,28 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
     </>
   );
+}
+
+/** The URL is runtime data, so the "current page" marker streams in inside Suspense. */
+function CurrentNavLinks({ role }: { role: Role | null }) {
+  return <NavLinks role={role} pathname={usePathname()} />;
+}
+
+function NavLinks({ role, pathname }: { role: Role | null; pathname: string }) {
+  return navFor(role).map((item) => {
+    const current = pathname.startsWith(item.href);
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        aria-current={current ? "page" : undefined}
+        className={cn(
+          "rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+          current && "bg-accent text-accent-foreground",
+        )}
+      >
+        {item.label}
+      </Link>
+    );
+  });
 }
