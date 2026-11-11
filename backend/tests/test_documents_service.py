@@ -4,134 +4,29 @@ OCR is replaced by fixed lines so results do not depend on the Tesseract version
 is tested on real PDFs in test_documents_ocr.py.
 """
 
-import csv
 import json
 import uuid
-from collections.abc import Iterator, Mapping
-from datetime import date
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
 
 import pytest
-from document_testutils import FakeCompletion, finding
+from document_testutils import (
+    HEART_ANSWER,
+    HEART_OCR_LINES,
+    KIDNEY_ANSWER,
+    KIDNEY_OCR_LINES,
+    MODEL,
+    MODELS,
+    FakeCompletion,
+    finding,
+)
 from sqlalchemy import Engine, text
 
 from txlens_backend.documents import llm, service
 from txlens_backend.documents.budget import Budget, BudgetExceededError
-from txlens_backend.documents.ocr import Line, OcrResult, PageSize, Word
-from txlens_omop.mappings import LOCAL_CONCEPT_FILE, mappings_dir
 
 pytestmark = pytest.mark.db
-MODEL = "openai/gpt-6-luna"
-MODELS = {"a": MODEL, "b": MODEL}
-# TEST ONLY concept ids for the standard codes the workflow uses.
-SNOMED_IDS = {"1293269004": 900001, "387829002": 900002, "236575009": 900010,
-              "236576005": 900011, "236577001": 900012, "236574008": 900013,
-              "1381981002": 900014, "432843002": 900015, "713886006": 900016,
-              "35455006": 900017, "28944009": 900018}  # fmt: skip
-KIDNEY_LINES = (
-    "TEST ONLY MEDICAL CENTER",
-    "Patient: ELMDALE, BRANNOC",
-    "MRN: A1000123 DOB: 02/08/1964 Sex: M",
-    "Procedure date: 05/06/2024 Reported: 05/08/2024",
-    "Specimen: Kidney allograft, percutaneous needle core biopsy",
-    "Specimen adequacy: adequate",
-    "Banff lesion scores: i2 t2 v0 g0 ptc0 ci1 ct1 cv0",
-    "C4d (IHC, peritubular capillaries): C4d0",
-    "- Acute T-cell mediated rejection, Banff grade IA.",
-    "Electronically signed: Testa Reviewer, MD",
-)
-KIDNEY_ANSWER = {
-    "biopsy_date": finding("2024-05-06", 4, "05/06/2024"),
-    "adequacy": finding("adequate", 6, "adequate"),
-    "banff_i": finding(2, 7, "i2"),
-    "banff_t": finding(2, 7, "t2"),
-    "banff_v": finding(0, 7, "v0"),
-    "banff_g": finding(0, 7, "g0"),
-    "banff_ptc": finding(0, 7, "ptc0"),
-    "banff_ci": finding(1, 7, "ci1"),
-    "banff_ct": finding(1, 7, "ct1"),
-    "banff_cv": finding(0, 7, "cv0"),
-    "c4d": finding(0, 8, "C4d0"),
-    "diagnosis": finding("TCMR", 9, "Acute T-cell mediated rejection"),
-    "tcmr_grade": finding("IA", 9, "grade IA."),
-    "additional_finding": finding(None),
-}
-HEART_LINES = (
-    "Patient: TESTER, HEARTLY",
-    "MRN: A1000456 DOB: 01/01/1950",
-    "Procedure date: 07/01/2024 Reported: 07/02/2024",
-    "Specimen: Endomyocardial biopsy, right ventricle",
-    "ACR grade (ISHLT 2004): 2R",
-    "pAMR grade (ISHLT 2013): pAMR 0",
-)
-HEART_ANSWER = {
-    "biopsy_date": finding("2024-07-01", 3, "07/01/2024"),
-    "acr_grade": finding("2R", 5, "2R"),
-    "pamr_grade": finding("pAMR 0", 6, "pAMR 0"),
-}
-
-
-def ocr_of(lines: tuple[str, ...], confidence: float = 0.95) -> OcrResult:
-    built = tuple(
-        Line(n, 1, tuple(Word(w, (10.0 * i, 20.0 * n, 10.0 * i + 8, 20.0 * n + 9), confidence)
-                         for i, w in enumerate(t.split())))
-        for n, t in enumerate(lines, start=1)
-    )  # fmt: skip
-    return OcrResult("tesseract", (PageSize(612, 792),), built)
-
-
-@pytest.fixture(scope="module")
-def clinic(documents_owner: Engine) -> None:
-    """Vocabulary rows, and two center_a patients with one biopsy each (committed)."""
-    with documents_owner.begin() as conn:
-        rows: list[tuple[int, str, str, str | None, str]] = [
-            (cid, code, "SNOMED", "S", "Condition") for code, cid in SNOMED_IDS.items()
-        ]
-        with (mappings_dir() / LOCAL_CONCEPT_FILE).open(encoding="utf-8") as handle:
-            rows += [(int(r["concept_id"]), r["concept_code"], "TxLens", None, r["domain_id"])
-                     for r in csv.DictReader(handle, delimiter="\t")]  # fmt: skip
-        for cid, code, vocabulary, standard, domain in rows:
-            conn.execute(
-                text(
-                    "INSERT INTO vocab.concept VALUES (:i, 'TEST ONLY', :d, :v, 'x', :s, :c, "
-                    "'2020-01-01', '2099-12-31', NULL) ON CONFLICT DO NOTHING"
-                ),
-                {"i": cid, "d": domain, "v": vocabulary, "s": standard, "c": code},
-            )
-        for person, mrn, names, born, procedure, day, concept in (
-            (1, "A1000123", ("Brannoc", "Elmdale"), date(1964, 2, 8), 101, date(2024, 5, 6),
-             900001),
-            (2, "A1000456", ("Heartly", "Tester"), date(1950, 1, 1), 102, date(2024, 7, 1),
-             900002),
-        ):  # fmt: skip
-            params = {"p": person, "m": mrn, "g": names[0], "f": names[1], "b": born,
-                      "r": procedure, "d": day, "c": concept}  # fmt: skip
-            for statement in (
-                "INSERT INTO cdm.person (tenant_id, person_id, gender_concept_id, year_of_birth, "
-                "race_concept_id, ethnicity_concept_id) VALUES ('center_a', :p, 0, 1960, 0, 0)",
-                "INSERT INTO app.patient_identity (tenant_id, person_id, mrn, given_name, "
-                "family_name, birth_date) VALUES ('center_a', :p, :m, :g, :f, :b)",
-                "INSERT INTO cdm.procedure_occurrence (tenant_id, procedure_occurrence_id, "
-                "person_id, procedure_concept_id, procedure_date, procedure_type_concept_id) "
-                "VALUES ('center_a', :r, :p, :c, :d, 32817)",
-            ):
-                conn.execute(text(statement), params)
-
-
-@pytest.fixture
-def report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
-    """`report(lines)`: a new file (its own hash) whose OCR reads as those lines."""
-    readings: dict[Path, OcrResult] = {}
-    monkeypatch.setattr(service, "ocr_pdf", lambda path, _engine: readings[path])
-
-    def make(lines: tuple[str, ...], confidence: float = 0.95) -> Path:
-        path = tmp_path / f"{uuid.uuid4()}.pdf"
-        path.write_bytes(uuid.uuid4().bytes)
-        readings[path] = ocr_of(lines, confidence)
-        return path
-
-    yield make
 
 
 def process(
@@ -176,7 +71,7 @@ def cdm_rows(owner: Engine, document_id: str) -> dict[str, list[tuple[Any, ...]]
 def test_an_agreeing_confident_report_is_extracted_and_loaded(
     clinic: None, report: Any, documents_engine: Engine, documents_owner: Engine
 ) -> None:
-    document_id, status, _ = process(documents_engine, report(KIDNEY_LINES), KIDNEY_ANSWER)
+    document_id, status, _ = process(documents_engine, report(KIDNEY_OCR_LINES), KIDNEY_ANSWER)
     assert status == "extracted"
     assert service.load_document(documents_engine, "center_a", document_id, "wf") == 11
     rows = cdm_rows(documents_owner, document_id)
@@ -190,7 +85,7 @@ def test_an_agreeing_confident_report_is_extracted_and_loaded(
 def test_the_llm_never_sees_identifiers_from_patient_identity(
     clinic: None, report: Any, documents_engine: Engine, documents_owner: Engine
 ) -> None:
-    _, _, fake = process(documents_engine, report(KIDNEY_LINES), KIDNEY_ANSWER)
+    _, _, fake = process(documents_engine, report(KIDNEY_OCR_LINES), KIDNEY_ANSWER)
     with documents_owner.connect() as conn:
         identity = conn.execute(text(
             "SELECT mrn, given_name, family_name, birth_date FROM app.patient_identity "
@@ -204,7 +99,7 @@ def test_the_llm_never_sees_identifiers_from_patient_identity(
 def test_fields_keep_their_evidence_and_provenance(
     clinic: None, report: Any, documents_engine: Engine, documents_owner: Engine
 ) -> None:
-    document_id, _, _ = process(documents_engine, report(KIDNEY_LINES), KIDNEY_ANSWER)
+    document_id, _, _ = process(documents_engine, report(KIDNEY_OCR_LINES), KIDNEY_ANSWER)
     with documents_owner.connect() as conn:
         field = conn.execute(text(
             "SELECT value, page, bbox, line_no, source_text, passes_agree FROM "
@@ -230,7 +125,9 @@ def test_disagreeing_passes_wait_for_review_and_load_nothing(
     clinic: None, report: Any, documents_engine: Engine, documents_owner: Engine
 ) -> None:
     other = KIDNEY_ANSWER | {"banff_t": finding(3, 7, "t2")}  # pass B's evidence fails
-    document_id, status, _ = process(documents_engine, report(KIDNEY_LINES), KIDNEY_ANSWER, other)
+    document_id, status, _ = process(
+        documents_engine, report(KIDNEY_OCR_LINES), KIDNEY_ANSWER, other
+    )
     assert status == "in_review"
     assert service.load_document(documents_engine, "center_a", document_id, "wf") == 0
     assert cdm_rows(documents_owner, document_id) == {"conditions": [], "measurements": []}
@@ -245,14 +142,16 @@ def test_disagreeing_passes_wait_for_review_and_load_nothing(
 def test_low_ocr_confidence_goes_to_review(
     clinic: None, report: Any, documents_engine: Engine
 ) -> None:
-    _, status, _ = process(documents_engine, report(KIDNEY_LINES, confidence=0.5), KIDNEY_ANSWER)
+    _, status, _ = process(
+        documents_engine, report(KIDNEY_OCR_LINES, confidence=0.5), KIDNEY_ANSWER
+    )
     assert status == "in_review"
 
 
 def test_an_unknown_mrn_is_not_linked_and_goes_to_review(
     clinic: None, report: Any, documents_engine: Engine
 ) -> None:
-    lines = tuple(t.replace("A1000123", "Z9999999") for t in KIDNEY_LINES)
+    lines = tuple(t.replace("A1000123", "Z9999999") for t in KIDNEY_OCR_LINES)
     _, status, _ = process(documents_engine, report(lines), KIDNEY_ANSWER)
     assert status == "in_review"
 
@@ -268,20 +167,11 @@ def review(
     return service.apply_review(engine, "center_a", document_id, decision, "wf")
 
 
-@pytest.fixture
-def reviewer(documents_owner: Engine) -> None:
-    with documents_owner.begin() as conn:
-        conn.execute(text(
-            "INSERT INTO app.app_user (user_id, tenant_id, username, display_name, role, "
-            "password_hash) VALUES ('00000000-0000-0000-0000-0000000000a1', 'center_a', "
-            "'steward.a', 'Steward', 'data_steward', 'x') ON CONFLICT DO NOTHING"))  # fmt: skip
-
-
 def test_an_edited_review_loads_the_corrected_values(
     clinic: None, reviewer: None, report: Any, documents_engine: Engine, documents_owner: Engine
 ) -> None:
     other = KIDNEY_ANSWER | {"banff_t": finding(3, 7, "t2")}
-    document_id, _, _ = process(documents_engine, report(KIDNEY_LINES), KIDNEY_ANSWER, other)
+    document_id, _, _ = process(documents_engine, report(KIDNEY_OCR_LINES), KIDNEY_ANSWER, other)
     changes = {"banff_t": "3", "tcmr_grade": "IB"}
     assert review(documents_engine, document_id, "edit", changes) == "approved"
     rows = cdm_rows(documents_owner, document_id)
@@ -292,7 +182,7 @@ def test_an_edited_review_loads_the_corrected_values(
 def test_a_rejected_review_removes_everything_from_cdm(
     clinic: None, reviewer: None, report: Any, documents_engine: Engine, documents_owner: Engine
 ) -> None:
-    document_id, _, _ = process(documents_engine, report(KIDNEY_LINES), KIDNEY_ANSWER)
+    document_id, _, _ = process(documents_engine, report(KIDNEY_OCR_LINES), KIDNEY_ANSWER)
     service.load_document(documents_engine, "center_a", document_id, "wf")
     assert review(documents_engine, document_id, "reject") == "rejected"
     assert cdm_rows(documents_owner, document_id) == {"conditions": [], "measurements": []}
@@ -314,7 +204,7 @@ def test_invalid_edits_are_refused(changes: dict[str, str | None], message: str)
 def test_heart_diagnosis_is_derived_from_the_grades(
     clinic: None, report: Any, documents_engine: Engine, documents_owner: Engine
 ) -> None:
-    document_id, status, _ = process(documents_engine, report(HEART_LINES), HEART_ANSWER)
+    document_id, status, _ = process(documents_engine, report(HEART_OCR_LINES), HEART_ANSWER)
     assert status == "extracted"
     service.load_document(documents_engine, "center_a", document_id, "wf")
     rows = cdm_rows(documents_owner, document_id)
@@ -328,7 +218,7 @@ def test_heart_diagnosis_is_derived_from_the_grades(
 def test_the_same_file_is_the_same_document(
     clinic: None, report: Any, documents_engine: Engine
 ) -> None:
-    path = report(KIDNEY_LINES)
+    path = report(KIDNEY_OCR_LINES)
     first = service.register_document(documents_engine, "center_a", path, "x.pdf", "wf-1")
     second = service.register_document(documents_engine, "center_a", path, "x.pdf", "wf-2")
     assert first.document_id == second.document_id
@@ -337,7 +227,7 @@ def test_the_same_file_is_the_same_document(
 def test_an_exhausted_budget_stops_the_pass(
     clinic: None, report: Any, documents_engine: Engine
 ) -> None:
-    path = report(KIDNEY_LINES)
+    path = report(KIDNEY_OCR_LINES)
     doc = service.register_document(documents_engine, "center_a", path, "x.pdf", "wf")
     service.read_document(documents_engine, "center_a", doc.document_id, path, "tesseract", "wf")
     budget = Budget(documents_engine, f"svc-{uuid.uuid4()}", 0.0001)
@@ -352,7 +242,7 @@ def test_an_exhausted_budget_stops_the_pass(
 def test_an_mrn_damaged_by_ocr_still_links_to_the_only_close_patient(
     clinic: None, report: Any, documents_engine: Engine, documents_owner: Engine
 ) -> None:
-    lines = tuple(t.replace("A1000123", "A1O00123") for t in KIDNEY_LINES)  # O for 0
+    lines = tuple(t.replace("A1000123", "A1O00123") for t in KIDNEY_OCR_LINES)  # O for 0
     document_id, status, _ = process(documents_engine, report(lines), KIDNEY_ANSWER)
     assert status == "extracted"
     with documents_owner.connect() as conn:

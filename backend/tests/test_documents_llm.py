@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from document_testutils import FakeCompletion, finding, require_tesseract
+from litellm import exceptions
 
 from txlens_backend.documents import llm, phi
 from txlens_backend.documents.ocr import ocr_with_tesseract
@@ -120,3 +121,12 @@ def test_llm_request_carries_no_patient_identifier(tmp_path: Path, index: int) -
     procedure_text = sent.text_of(header.procedure_line)
     assert procedure_text is not None and procedure_text.lower() in payload
     assert phi.parse_date(procedure_text) == biopsy.biopsy_date
+
+
+def test_a_rate_limit_is_retryable_not_a_failed_extraction() -> None:
+    def limited(**_: object) -> None:
+        raise exceptions.RateLimitError("slow down", llm_provider="openai", model="gpt-6-luna")
+
+    extractor = llm.LiteLlmExtractor("openai/gpt-6-luna", completion=limited)
+    with pytest.raises(llm.LlmUnavailableError, match="RateLimitError"):
+        extractor.extract(HeartBiopsy, DOCUMENT, "a", META)

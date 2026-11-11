@@ -30,6 +30,7 @@ txlens-seed-users = "txlens_backend.seed_users:main"
 txlens-prune-login-attempts = "txlens_backend.maintenance:main"
 txlens-worker = "txlens_backend.workflows.cli:worker_main"
 txlens-surveillance = "txlens_backend.workflows.cli:main"
+txlens-biopsies = "txlens_backend.workflows.biopsy_cli:main"
 txlens-export-openapi = "txlens_backend.api.app:export_openapi"
 
 [build-system]

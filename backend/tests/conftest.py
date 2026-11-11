@@ -4,9 +4,13 @@ DB tests are skipped when PostgreSQL is not reachable, unless TXLENS_REQUIRE_DB=
 makes that a failure, so CI can never pass by silently skipping them.
 """
 
+import csv
 import os
+import uuid
 from collections.abc import Callable, Iterator
 from datetime import date
+from pathlib import Path
+from typing import Any
 
 import psycopg
 import pytest
@@ -24,6 +28,7 @@ from db_testutils import (
     migrate,
     seed_row,
 )
+from document_testutils import SNOMED_IDS, ocr_of
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -34,8 +39,11 @@ from txlens_backend.api.app import create_app
 from txlens_backend.api.deps import CSRF_HEADER, Role
 from txlens_backend.config import Settings
 from txlens_backend.db_setup import ensure_login_role
+from txlens_backend.documents import service
+from txlens_backend.documents.ocr import OcrResult
 from txlens_backend.seed_users import demo_passwords, seed_users
 from txlens_backend.surveillance.run import run_tenant, transplant_configs
+from txlens_omop.mappings import LOCAL_CONCEPT_FILE, mappings_dir
 
 # The date the API tests' surveillance run is "as of" (inside the generated follow-up).
 SURVEILLANCE_AS_OF = date(2025, 6, 30)
@@ -262,3 +270,65 @@ def documents_engine(documents_database: str, app_login: tuple[str, str]) -> Ite
     eng = login_engine(documents_database, app_login)
     yield eng
     eng.dispose()
+
+
+@pytest.fixture(scope="session")
+def clinic(documents_owner: Engine) -> None:
+    """Vocabulary rows, and two center_a patients with one biopsy each (committed)."""
+    with documents_owner.begin() as conn:
+        rows: list[tuple[int, str, str, str | None, str]] = [
+            (cid, code, "SNOMED", "S", "Condition") for code, cid in SNOMED_IDS.items()
+        ]
+        with (mappings_dir() / LOCAL_CONCEPT_FILE).open(encoding="utf-8") as handle:
+            rows += [(int(r["concept_id"]), r["concept_code"], "TxLens", None, r["domain_id"])
+                     for r in csv.DictReader(handle, delimiter="\t")]  # fmt: skip
+        for cid, code, vocabulary, standard, domain in rows:
+            conn.execute(
+                text(
+                    "INSERT INTO vocab.concept VALUES (:i, 'TEST ONLY', :d, :v, 'x', :s, :c, "
+                    "'2020-01-01', '2099-12-31', NULL) ON CONFLICT DO NOTHING"
+                ),
+                {"i": cid, "d": domain, "v": vocabulary, "s": standard, "c": code},
+            )
+        for person, mrn, names, born, procedure, day, concept in (
+            (1, "A1000123", ("Brannoc", "Elmdale"), date(1964, 2, 8), 101, date(2024, 5, 6),
+             900001),
+            (2, "A1000456", ("Heartly", "Tester"), date(1950, 1, 1), 102, date(2024, 7, 1),
+             900002),
+        ):  # fmt: skip
+            params = {"p": person, "m": mrn, "g": names[0], "f": names[1], "b": born,
+                      "r": procedure, "d": day, "c": concept}  # fmt: skip
+            for statement in (
+                "INSERT INTO cdm.person (tenant_id, person_id, gender_concept_id, year_of_birth, "
+                "race_concept_id, ethnicity_concept_id) VALUES ('center_a', :p, 0, 1960, 0, 0)",
+                "INSERT INTO app.patient_identity (tenant_id, person_id, mrn, given_name, "
+                "family_name, birth_date) VALUES ('center_a', :p, :m, :g, :f, :b)",
+                "INSERT INTO cdm.procedure_occurrence (tenant_id, procedure_occurrence_id, "
+                "person_id, procedure_concept_id, procedure_date, procedure_type_concept_id) "
+                "VALUES ('center_a', :r, :p, :c, :d, 32817)",
+            ):
+                conn.execute(text(statement), params)
+
+
+@pytest.fixture
+def report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
+    """`report(lines)`: a new file (its own hash) whose OCR reads as those lines."""
+    readings: dict[Path, OcrResult] = {}
+    monkeypatch.setattr(service, "ocr_pdf", lambda path, _engine: readings[path])
+
+    def make(lines: tuple[str, ...], confidence: float = 0.95) -> Path:
+        path = tmp_path / f"{uuid.uuid4()}.pdf"
+        path.write_bytes(uuid.uuid4().bytes)
+        readings[path] = ocr_of(lines, confidence)
+        return path
+
+    yield make
+
+
+@pytest.fixture
+def reviewer(documents_owner: Engine) -> None:
+    with documents_owner.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO app.app_user (user_id, tenant_id, username, display_name, role, "
+            "password_hash) VALUES ('00000000-0000-0000-0000-0000000000a1', 'center_a', "
+            "'steward.a', 'Steward', 'data_steward', 'x') ON CONFLICT DO NOTHING"))  # fmt: skip

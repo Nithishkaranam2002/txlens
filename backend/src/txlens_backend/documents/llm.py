@@ -26,6 +26,7 @@ from typing import Any, Literal, Protocol, TypeVar
 
 import instructor
 import litellm
+from litellm import exceptions
 from pydantic import BaseModel, create_model
 
 from txlens_backend.config import Settings
@@ -72,6 +73,29 @@ class Usage:
     output_tokens: int = 0
     cost_usd: float = 0.0
     latency_ms: int = 0
+
+
+class LlmUnavailableError(RuntimeError):
+    """Rate limit, timeout or outage that LiteLLM's own retries did not clear (retry later)."""
+
+
+TRANSIENT = (
+    exceptions.RateLimitError,
+    exceptions.Timeout,
+    exceptions.APIConnectionError,
+    exceptions.ServiceUnavailableError,
+    exceptions.InternalServerError,
+)
+
+
+def is_transient(error: BaseException) -> bool:
+    """True if the error, or one it wraps, is a passing provider problem."""
+    seen: BaseException | None = error
+    while seen is not None:
+        if isinstance(seen, TRANSIENT):
+            return True
+        seen = seen.__cause__ or seen.__context__
+    return False
 
 
 @dataclass
@@ -214,6 +238,8 @@ class LiteLlmExtractor:
                 metadata=trace_metadata(meta, variant),
             )
         except Exception as error:
+            if is_transient(error):
+                raise LlmUnavailableError(f"{type(error).__name__}: {error}") from error
             usage.latency_ms = round((time.monotonic() - started) * 1000)
             message = f"{type(error).__name__}: {error}"[:MAX_ERROR_CHARS]
             raise ExtractionFailedError(message, usage) from error

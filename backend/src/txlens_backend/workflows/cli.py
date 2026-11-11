@@ -1,6 +1,6 @@
-"""Command-line entry points for the surveillance workflow.
+"""Command-line entry points for the surveillance workflow (and the worker for all workflows).
 
-- `txlens-worker`: the Temporal worker that executes surveillance workflows and activities.
+- `txlens-worker`: the Temporal worker for surveillance and biopsy document workflows.
 - `txlens-surveillance schedule`: create or update the nightly schedule (02:00 UTC).
 - `txlens-surveillance run [--as-of YYYY-MM-DD]`: run now and print what each center did.
 """
@@ -25,6 +25,13 @@ from temporalio.worker import Worker
 
 from txlens_backend.config import get_settings
 from txlens_backend.db import check_role_is_rls_bound, make_engine
+from txlens_backend.documents.llm import configure_tracing
+from txlens_backend.workflows.biopsy import TASK_QUEUE as DOCUMENTS_QUEUE
+from txlens_backend.workflows.biopsy import (
+    BiopsyBatchWorkflow,
+    BiopsyDocumentWorkflow,
+    DocumentActivities,
+)
 from txlens_backend.workflows.surveillance import (
     NIGHTLY_SCHEDULE_ID,
     TASK_QUEUE,
@@ -42,16 +49,28 @@ async def connect() -> Client:
 
 
 async def serve() -> None:
-    """Run the worker until interrupted. Activities use the app login, so RLS applies."""
-    engine = make_engine(get_settings().app_database_url.get_secret_value())
+    """Run the workers until interrupted. Activities use the app login, so RLS applies."""
+    settings = get_settings()
+    engine = make_engine(settings.app_database_url.get_secret_value())
     check_role_is_rls_bound(engine)
+    configure_tracing(settings)
     activities = SurveillanceActivities(engine)
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        worker = Worker(
-            await connect(), task_queue=TASK_QUEUE, workflows=[SurveillanceWorkflow],
+    documents = DocumentActivities(engine, settings)
+    # Two LLM passes per document: room for `llm_concurrency` documents at once.
+    llm_slots = 2 * settings.llm_concurrency
+    client = await connect()
+    with ThreadPoolExecutor(max_workers=4) as pool, ThreadPoolExecutor(llm_slots) as doc_pool:
+        surveillance = Worker(
+            client, task_queue=TASK_QUEUE, workflows=[SurveillanceWorkflow],
             activities=[activities.list_centers, activities.run_center], activity_executor=pool,
         )  # fmt: skip
-        await worker.run()
+        biopsies = Worker(
+            client, task_queue=DOCUMENTS_QUEUE,
+            workflows=[BiopsyDocumentWorkflow, BiopsyBatchWorkflow],
+            activities=documents.all(), activity_executor=doc_pool,
+            max_concurrent_activities=llm_slots,
+        )  # fmt: skip
+        await asyncio.gather(surveillance.run(), biopsies.run())
 
 
 def nightly() -> Schedule:

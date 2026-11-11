@@ -9,6 +9,8 @@ from typing import Any
 import litellm
 import pytest
 
+from txlens_backend.documents.ocr import Line as OcrLine
+from txlens_backend.documents.ocr import OcrResult, PageSize, Word
 from txlens_datagen.rand import rng_for
 from txlens_datagen.writers.pathology_pdf import BODY, HEADING, TITLE, Line, draw_page, scan_effects
 
@@ -78,3 +80,64 @@ class FakeCompletion:
         """Field names of the schema sent in a call, in order."""
         schema = self.calls[call]["response_format"]["json_schema"]["schema"]
         return list(schema["properties"])
+
+
+# --- A kidney and a heart report as OCR lines, and the answers a model should give ---
+
+MODEL = "openai/gpt-6-luna"
+MODELS = {"a": MODEL, "b": MODEL}
+# TEST ONLY concept ids for the standard codes the workflow uses.
+SNOMED_IDS = {"1293269004": 900001, "387829002": 900002, "236575009": 900010,
+              "236576005": 900011, "236577001": 900012, "236574008": 900013,
+              "1381981002": 900014, "432843002": 900015, "713886006": 900016,
+              "35455006": 900017, "28944009": 900018}  # fmt: skip
+KIDNEY_OCR_LINES = (
+    "TEST ONLY MEDICAL CENTER",
+    "Patient: ELMDALE, BRANNOC",
+    "MRN: A1000123 DOB: 02/08/1964 Sex: M",
+    "Procedure date: 05/06/2024 Reported: 05/08/2024",
+    "Specimen: Kidney allograft, percutaneous needle core biopsy",
+    "Specimen adequacy: adequate",
+    "Banff lesion scores: i2 t2 v0 g0 ptc0 ci1 ct1 cv0",
+    "C4d (IHC, peritubular capillaries): C4d0",
+    "- Acute T-cell mediated rejection, Banff grade IA.",
+    "Electronically signed: Testa Reviewer, MD",
+)
+KIDNEY_ANSWER = {
+    "biopsy_date": finding("2024-05-06", 4, "05/06/2024"),
+    "adequacy": finding("adequate", 6, "adequate"),
+    "banff_i": finding(2, 7, "i2"),
+    "banff_t": finding(2, 7, "t2"),
+    "banff_v": finding(0, 7, "v0"),
+    "banff_g": finding(0, 7, "g0"),
+    "banff_ptc": finding(0, 7, "ptc0"),
+    "banff_ci": finding(1, 7, "ci1"),
+    "banff_ct": finding(1, 7, "ct1"),
+    "banff_cv": finding(0, 7, "cv0"),
+    "c4d": finding(0, 8, "C4d0"),
+    "diagnosis": finding("TCMR", 9, "Acute T-cell mediated rejection"),
+    "tcmr_grade": finding("IA", 9, "grade IA."),
+    "additional_finding": finding(None),
+}
+HEART_OCR_LINES = (
+    "Patient: TESTER, HEARTLY",
+    "MRN: A1000456 DOB: 01/01/1950",
+    "Procedure date: 07/01/2024 Reported: 07/02/2024",
+    "Specimen: Endomyocardial biopsy, right ventricle",
+    "ACR grade (ISHLT 2004): 2R",
+    "pAMR grade (ISHLT 2013): pAMR 0",
+)
+HEART_ANSWER = {
+    "biopsy_date": finding("2024-07-01", 3, "07/01/2024"),
+    "acr_grade": finding("2R", 5, "2R"),
+    "pamr_grade": finding("pAMR 0", 6, "pAMR 0"),
+}
+
+
+def ocr_of(lines: tuple[str, ...], confidence: float = 0.95) -> OcrResult:
+    built = tuple(
+        OcrLine(n, 1, tuple(Word(w, (10.0 * i, 20.0 * n, 10.0 * i + 8, 20.0 * n + 9), confidence)
+                         for i, w in enumerate(t.split())))
+        for n, t in enumerate(lines, start=1)
+    )  # fmt: skip
+    return OcrResult("tesseract", (PageSize(612, 792),), built)
