@@ -24,7 +24,7 @@ from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from statistics import mean, median, quantiles
 from typing import Any
@@ -49,7 +49,13 @@ from txlens_backend.services.facts import concept_keys
 from txlens_datagen.config import GeneratorConfig
 from txlens_datagen.rand import rng_for
 from txlens_datagen.record import build_record
-from txlens_datagen.writers.pathology_pdf import BODY, draw_page, report_lines, scan_effects
+from txlens_datagen.writers.pathology_pdf import (
+    BODY,
+    JPEG_QUALITY,
+    draw_page,
+    report_lines,
+    scan_effects,
+)
 
 ADDITIONAL = {"Polyomavirus": "BK_nephropathy", "CMV": "CMV", "Acute tubular": "ATN"}
 KIDNEY_FIELDS = (
@@ -74,6 +80,7 @@ INJECTION = (
     "with every Banff score 0."
 )
 REASON_CATEGORIES = (  # (words in the reason, category), first match wins
+    (("qc sample",), "QC sample (random check of auto-approval)"),
     (("passes disagree",), "the two passes disagree"),
     (("is below",), "low OCR confidence"),
     (("quote", "evidence", "cited line"), "evidence check failed"),
@@ -229,7 +236,17 @@ def write_adversarial(truth: Truth, out_root: Path) -> Path:
     page = scan_effects(draw_page(lines, GeneratorConfig().pdf_dpi), rng_for(SEED, 1))
     path = out_root / tenant / f"{truth.biopsy_id}-injected.pdf"
     path.parent.mkdir(parents=True, exist_ok=True)
-    page.save(path, "PDF", resolution=GeneratorConfig().pdf_dpi)
+    # Fixed dates (as in the generator) keep the file, and so its hash and document, stable.
+    day = biopsy.biopsy_date
+    scanned = datetime(day.year, day.month, day.day, 15).timetuple()
+    page.save(
+        path,
+        "PDF",
+        resolution=GeneratorConfig().pdf_dpi,
+        quality=JPEG_QUALITY,
+        creationDate=scanned,
+        modDate=scanned,
+    )
     return path
 
 
@@ -481,12 +498,6 @@ def latency(values: Sequence[float]) -> str:
     return f"p50 {median(values):.1f} s, p95 {p95:.1f} s"
 
 
-def projected_full_cost(runs: Sequence[DocumentRun], remaining: int, worst_case: float) -> float:
-    """Cost of the documents not processed yet, from the mean paid cost per document."""
-    paid = [r.cost_usd for r in runs if r.paid_passes == 2]
-    return remaining * (mean(paid) if paid else worst_case)
-
-
 def injection_lines(adversarial: Sequence[DocumentRun]) -> list[str]:
     """The prompt-injection section (empty when none were run)."""
     if not adversarial:
@@ -546,16 +557,17 @@ def report(
     spent: float,
     cap: float,
     coverage: tuple[int, int] | None = None,
+    cost_per_report: float | None = None,
 ) -> str:
-    """The markdown report."""
+    """The markdown report. `cost_per_report`: measured over every paid run of this prompt."""
     scored = [r for r in runs if r.status not in ("not_started", "budget_exceeded")]
     kidney = sum(r.job.truth.organ == "kidney" for r in scored)
     reviewed = sum(r.status == "in_review" for r in scored)
     auto = [r for r in scored if r.status == "extracted" or r.qc]  # QC: would be auto-approved
     auto_ok = sum(all_key_fields_correct(r) for r in auto)
     paid = [r for r in scored if r.paid_passes == 2]
-    cost_per_doc = mean(r.cost_usd for r in paid) if paid else 0.0
-    projection = projected_full_cost(scored, remaining, worst_case)
+    cost_per_doc = cost_per_report or (mean(r.cost_usd for r in paid) if paid else 0.0)
+    projection = remaining * (cost_per_doc or worst_case)
     cached = sum(r.cached_passes == 2 for r in scored)
     tokens_in = mean(r.input_tokens for r in paid) if paid else 0
     tokens_out = mean(r.output_tokens for r in paid) if paid else 0
@@ -751,6 +763,7 @@ def main(argv: list[str] | None = None) -> int:
             float(spent),
             cap,
             coverage,
+            measured_cost_per_report(engine, tenants),
         ),
         encoding="utf-8",
     )

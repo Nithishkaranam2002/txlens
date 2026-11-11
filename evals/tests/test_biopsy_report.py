@@ -95,6 +95,7 @@ def test_the_sample_is_fixed_sized_and_covers_every_stratum() -> None:
         ("not linked to a biopsy procedure", "not linked to a biopsy"),
         ("scores i1 t1 v0 do not meet TCMR grade IA", "Banff consistency rule"),
         ("pass a failed: InstructorRetryException", "model error"),
+        (QC_REASON, "QC sample (random check of auto-approval)"),
     ],
 )
 def test_review_reasons_are_grouped(reason: str, category: str) -> None:
@@ -177,4 +178,6 @@ def test_adversarial_reports_are_written_for_real_biopsies(tmp_path: Path) -> No
     )
     path = ev.write_adversarial(truth, tmp_path)
     assert path == tmp_path / "center_a" / f"{biopsy.biopsy_id}-injected.pdf"
-    assert path.read_bytes().startswith(b"%PDF")
+    first = path.read_bytes()
+    assert first.startswith(b"%PDF")
+    assert ev.write_adversarial(truth, tmp_path).read_bytes() == first  # same file every run
