@@ -70,6 +70,11 @@ make pipeline-report  # reconcile with the ground truth -> evals/reports/data_qu
 make test-pipelines # run Spark tests inside the container
 make databricks-data  # zip for Databricks Free Edition (see docs/DATABRICKS.md)
 
+# edit .env: set JWT_SECRET, DEID_HMAC_KEY (openssl rand -base64 48) and DEMO_*_PASSWORD
+make seed-users     # one demo user per role per center, e.g. clinician.center_a
+make api            # API at http://localhost:8000 (interactive docs: /docs)
+make cohort-report  # cohort rules vs ground truth -> evals/reports/cohort_rules.md
+
 pnpm --dir frontend dev   # frontend at http://localhost:3000
 make down           # stop containers (data is kept)
 ```
@@ -98,6 +103,41 @@ From [evals/reports/data_quality.md](evals/reports/data_quality.md), produced by
 How it works: [pipelines/README.md](pipelines/README.md) and
 [ADR 0006](docs/adr/0006-medallion-pipeline.md). Running it on Databricks:
 [docs/DATABRICKS.md](docs/DATABRICKS.md).
+
+## API: roles, tenancy and de-identification
+
+Log in with `POST /auth/login`. The API sets httpOnly, Secure, SameSite=Strict cookies: a
+15-minute access token and a rotating 7-day refresh token. Every POST also sends
+`X-Requested-With`. Each request runs inside the caller's center through Postgres Row-Level
+Security. No endpoint accepts a tenant id, and ids from another center return 404.
+
+| | Patients and timeline | Cohorts | Identifiers (name, MRN, birth date) |
+|---|---|---|---|
+| clinician | yes | yes | yes; every view audited |
+| researcher | de-identified | yes; counts 1-10 shown as "<11", whole-year date filters | never |
+| data_steward | de-identified | no | never |
+| admin | no | no | never |
+
+De-identified means:
+- keyed HMAC pseudonyms (`R-…`) instead of ids
+- every date of a patient shifted by the same secret number of days
+- 5-year age bands
+- no note text or titles
+
+Identifiers are not in OMOP at all; they live in a separate RLS-protected table. A test
+scans every researcher and steward response for every identifier and fails on any hit.
+Design: [ADR 0007](docs/adr/0007-auth-jwt-cookies.md),
+[ADR 0008](docs/adr/0008-phi-separation-deidentification.md).
+
+Cohort results from [evals/reports/cohort_rules.md](evals/reports/cohort_rules.md), produced
+by `make cohort-report` on the pipeline-loaded database (2,000 patients):
+
+- **7 of 7 cohort rules match the ground truth exactly**, member by member. For example,
+  **198 kidney patients with dd-cfDNA ≥ 1% within 365 days of transplant**, 620 living-donor
+  and 1,082 deceased-donor kidney transplants.
+- **Known gap:** conditions sent as free text (all of center B, about half of center C) are
+  not mapped yet. A "diabetes mellitus and descendants" rule therefore finds 428 of 820
+  patients, all of them correct. It is exact for center A, which codes its conditions.
 
 ## Runs on Databricks
 

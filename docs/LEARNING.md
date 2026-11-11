@@ -341,3 +341,126 @@ experiencer flags).
    of every lab and which rows it broke on purpose. The reconciliation script matches all
    240,945 lab results row by row in standard units, plus patients, deaths, medications,
    duplicates, quarantine and Postgres counts. All 12 checks pass.
+
+## Phase 1, Step 1.5 — Backend API: login, roles, tenancy, de-identification, audit
+
+### What was built
+- **A FastAPI backend** (`make api`, docs at http://localhost:8000/docs):
+  - `POST /auth/login`, `/auth/refresh`, `/auth/logout`
+  - `GET /me`, `GET /health`
+  - `GET /patients` (search, filters for organ, donor type and status, pages)
+  - `GET /patients/{id}/timeline` (labs, drugs, conditions, biopsies, death, note dates)
+  - cohorts: `POST /cohorts/preview` (counts per rule), `POST /cohorts` (save), `GET /cohorts`,
+    `GET /cohorts/{id}`, `GET /cohorts/{id}/members`
+- **Four roles**: clinician, researcher, data_steward and admin. One demo user per role per
+  center (`make seed-users`, passwords from `.env`).
+- **Identifiers moved out of OMOP.** `cdm.person` now keeps only the birth year. MRN, name
+  and exact birth date live in `app.patient_identity`, and only the clinician path reads it.
+- **Kidney transplants carry their donor type** as a more specific SNOMED concept ("Live
+  donor renal transplant", "Cadaveric renal transplant"). Both sit under "Transplant of
+  kidney", so "all kidney transplants" still finds them.
+- **Audit**: every login, failed login, logout, patient view and cohort creation writes a row
+  with who, which center, what, which object, when, the client address and the request id.
+- **Tests (255 backend tests)**:
+  - a role × endpoint permission matrix
+  - tenant isolation through the API
+  - a scan of every researcher and steward response for identifiers
+  - audit rows
+  - cohort rules checked against the ground truth
+
+  `make cohort-report` shows **7 of 7 cohort rules exactly match the ground truth** on the
+  real 2,000-patient database (for example, 198 kidney patients with dd-cfDNA ≥ 1% in year 1).
+
+### The ideas in plain English
+- **JWT (JSON Web Token)**: a small signed note that says "user 42, center A, researcher,
+  valid until 10:15". The server signs it with a secret key. On each request it only checks
+  the signature, with no database lookup. If anyone changes one letter (say, "researcher" to
+  "clinician"), the signature no longer matches and the token is refused.
+- **Access + refresh tokens**: the access token lives 15 minutes, so a stolen one is soon
+  useless. The refresh token lives 7 days and is also stored in the database. That lets us
+  revoke it at logout, and swap it for a new one on every refresh ("rotation"). If an old
+  refresh token is used again, someone copied it, so we log that user out everywhere.
+- **Cookies vs localStorage**: JavaScript on the page can read `localStorage`. One injected
+  script (XSS) could steal the token and use it from anywhere. An **httpOnly** cookie cannot
+  be read by JavaScript at all; the browser just sends it. The catch with cookies is CSRF:
+  another website making your browser send a request. We block that with
+  **SameSite=Strict** (the cookie is never sent from other sites) plus a required custom
+  header that other sites cannot add.
+- **RBAC (role-based access control)**: permissions belong to roles, not people. The code
+  says "patients: clinician, researcher, data_steward", and the test matrix checks every role
+  against every endpoint.
+- **HMAC pseudonyms**: a researcher sees `R-3f9a0c17b2d84e61` instead of patient 100000042.
+  A plain hash (SHA-256 of the id) is not enough: ids are just numbers, so anyone could hash
+  every number and find the match. An **HMAC** mixes in a secret key, so without the key
+  nobody can recompute or reverse it. The same patient always gets the same pseudonym.
+- **Date shifting**: every date of one patient moves by the same secret number of days (up to
+  ±182). "Biopsy 57 days after transplant" stays true, so survival analysis still works, but
+  the calendar dates are no longer real. Each patient has their own shift.
+- **Age bands and small counts**: researchers see "45-49" instead of a birth date. Counts
+  from 1 to 10 are shown as "<11", because "1 patient matches" can point at a person.
+  Researchers may filter dates only by whole years, so they cannot narrow a date range to
+  find someone's real transplant day.
+- **Why 404, not 403, for another center's patient**: 403 means "it exists but you may not
+  see it", which already leaks that the id exists. Row-Level Security makes another center's
+  row invisible, exactly like a missing row. So the API answers 404 with the same message in
+  both cases.
+
+### How the tricky parts work
+- **Login before a tenant is known**: the users table has RLS, so before login nobody can see
+  any user. A small database function, `app.find_login`, runs as a special role that may read
+  only the login columns. Only the app is allowed to call it.
+- **Rate limiting without Redis**: failed logins go into `app.login_attempt`. After 5
+  failures for one user name, or 20 from one address, within 15 minutes, the API answers 429.
+  It lives in Postgres, so all API copies share the count. Rows older than 30 days are deleted.
+- **The tenant comes only from the signed token.** Each request opens a transaction as the
+  limited app login with that tenant set, so RLS filters every query.
+- **Cohort rules become SQL** built only from fixed pieces chosen by validated options. Every
+  value the user typed is a bind parameter, so injection is not possible. Conditions include
+  descendants through `concept_ancestor`, so "Diabetes mellitus" also finds "Type 2 diabetes".
+- **Commit before responding**: the request's transaction (including its audit row) commits
+  before the response is sent. A failed audit write therefore becomes an error, never a
+  silent success.
+
+### Why these tools
+- **FastAPI + Pydantic**: request and response models are validated and become the OpenAPI
+  docs automatically.
+- **PyJWT**: the standard, small JWT library; we pin the algorithm when decoding.
+- **argon2-cffi (Argon2id)**: the current recommended password hash. It is slow and
+  memory-hard on purpose, so guessing passwords is expensive.
+- **pgcrypto `hmac()`**: finds a patient by pseudonym inside Postgres without storing a
+  pseudonym table.
+
+### Trade-offs
+- A role change takes effect at the next token refresh (up to 15 minutes), not instantly.
+- Cohort rules run on true dates and researchers see shifted results. Whole-year date
+  filters and small-count suppression limit what can be inferred; there is no formal
+  k-anonymity check yet.
+- Note text still contains names inside `cdm.note`. The API never returns it, but the Phase 2
+  NLP step must treat it as PHI.
+- Condition rules are only as good as the coding upstream. Center B sends conditions as free
+  text, so "diabetes" finds center A fully but center B not yet. The cohort report shows this
+  as a known gap until Phase 2 NLP.
+- Starlette now warns about using `httpx` in its test client. We kept the well-known `httpx`
+  instead of switching to an unfamiliar package.
+
+### Likely interview questions
+1. **Why store tokens in httpOnly cookies and not localStorage?** Any script on the page can
+   read localStorage, so one XSS bug leaks the token. httpOnly cookies are invisible to
+   JavaScript. Cookies bring CSRF risk instead, which SameSite=Strict and a required custom
+   header close.
+2. **How do you stop a researcher from seeing another center's data, or from seeing names?**
+   - The tenant comes only from the signed token, and Postgres RLS filters every query by it.
+   - Identifiers are in a separate table that only the clinician code path reads.
+   - Researchers get HMAC pseudonyms, shifted dates and age bands.
+   - A test scans every researcher response for every name, MRN and birth date, and fails on
+     any hit.
+3. **Why HMAC and not just hashing the patient id?** Ids are small numbers, so you can hash
+   all of them and look up any hash. HMAC needs a secret key, so only our server can make or
+   check pseudonyms.
+4. **Why return 404 instead of 403 for another center's patient?** 403 confirms the record
+   exists. 404 says nothing, and with RLS the database really cannot see the row, so "not
+   found" is the honest answer.
+5. **How do you know the cohort builder is correct?** The synthetic data comes with the true
+   answers. A script runs each rule on the real database and compares members by center and
+   MRN. All 7 rules match exactly, for example 198 kidney patients with dd-cfDNA ≥ 1% in the
+   first year.
