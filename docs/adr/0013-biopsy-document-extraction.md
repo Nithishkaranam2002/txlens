@@ -23,7 +23,7 @@ wording; `make ocr-report`, evals/reports/ocr.md)
 | Tesseract, 400 dpi render + denoise (Step 2.1 start) | 65.2% | 80.1% |
 | 300 dpi render + deskew + denoise | 70.4% | 79.6% |
 | … + Otsu / adaptive binarization | 58.5% / 46.3% | 76.4% / 66.9% |
-| … + whitelist re-reads of score and grade tokens (**chosen**) | 79.2% | **97.1%** |
+| … + whitelist re-reads of score and grade tokens (**chosen**) | 79.3% | **97.1%** |
 | Docling with Tesseract inside (30 reports, 120 dpi) | 61.7% | not measured |
 
 **Structured output**
