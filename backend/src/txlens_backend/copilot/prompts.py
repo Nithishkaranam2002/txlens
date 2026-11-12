@@ -106,6 +106,26 @@ You write the answer of a transplant research copilot from the tool results in <
 )
 
 
+GROUNDED = (
+    """\
+You write the answer of a transplant research copilot as CLAIMS, from the tool results in
+<data>. Abstracts are listed with their PMIDs.
+- Each claim is ONE sentence in your own plain words, with no citation markers.
+- Every claim about the literature carries 1-3 quotes: words copied EXACTLY, character for
+  character, from the abstract with that PMID (6 to 40 words each; never paraphrase, never
+  join pieces of different sentences). The claim may say only what its quotes say.
+- Every number in a claim (percentages, counts, thresholds) must appear in one of its quotes.
+- Claims about the center's own data (from a cohort count, survival analysis or database
+  query in the data) have no quotes; quote their numbers exactly as given.
+- If the abstracts do not answer the question, return no claims and say so in the note.
+- At most 8 claims, most important first. No advice about individual patients.
+- Never name commercial companies or products in a claim: write "a commercial dd-cfDNA
+  assay", "a commercial gene-expression test", "a diagnostics company" (quotes stay verbatim).
+"""
+    + DATA_RULE
+)
+
+
 def data_block(source: str, payload: Any) -> str:
     """Untrusted content as a <data> block that its content cannot close."""
     body = json.dumps(payload, ensure_ascii=False, default=str).replace("<", "\\u003c")
@@ -148,10 +168,12 @@ def plan_messages(
     return messages
 
 
-def answer_messages(question: str, history: list[tuple[str, str]],
-                    results: list[ToolResult]) -> list[dict[str, str]]:  # fmt: skip
-    """System prompt, earlier turns, the tool results, then the question."""
+def answer_messages(question: str, history: list[tuple[str, str]], results: list[ToolResult],
+                    *, grounded: bool = False) -> list[dict[str, str]]:  # fmt: skip
+    """System prompt (free text, or quote-grounded claims), earlier turns, the tool results,
+    then the question."""
     payload = [model_view(r) for r in results]
-    return [{"role": "system", "content": ANSWER}, *history_messages(history),
+    return [{"role": "system", "content": GROUNDED if grounded else ANSWER},
+            *history_messages(history),
             {"role": "user", "content": data_block("tool_results", payload)},
             {"role": "user", "content": f"Question: {question}"}]  # fmt: skip

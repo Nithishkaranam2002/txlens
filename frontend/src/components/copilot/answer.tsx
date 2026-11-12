@@ -128,7 +128,8 @@ export function AnswerText({ text, citations }: { text: string; citations: Citat
   );
 }
 
-/** Cited abstracts: title, journal, year, PubMed link, and the sentences used, verbatim. */
+/** Cited abstracts: title, journal, year, PubMed link, and the verified quotes the answer rests
+ * on (verbatim; older answers show the best-matching sentences instead). */
 export function Citations({ citations }: { citations: Citation[] }) {
   if (citations.length === 0) return null;
   return (
@@ -144,8 +145,12 @@ export function Citations({ citations }: { citations: Citation[] }) {
               </a>
             </p>
             <details>
-              <summary className="cursor-pointer text-muted-foreground">Quoted from the abstract</summary>
-              <blockquote className="mt-1 border-l-2 pl-2 text-muted-foreground">{c.snippet}</blockquote>
+              <summary className="cursor-pointer text-muted-foreground">
+                {c.quotes?.length ? "Supporting quote, verified in the abstract" : "Quoted from the abstract"}
+              </summary>
+              {(c.quotes?.length ? c.quotes : [c.snippet]).map((quote) => (
+                <blockquote key={quote} className="mt-1 border-l-2 pl-2 text-muted-foreground">“{quote}”</blockquote>
+              ))}
             </details>
           </li>
         ))}

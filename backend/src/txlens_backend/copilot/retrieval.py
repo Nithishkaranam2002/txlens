@@ -115,7 +115,7 @@ class PgVectorStore:
         rows = self.conn.execute(
             text(
                 "SELECT pmid FROM lit.abstract WHERE embedding_model = :m "
-                "ORDER BY embedding <=> CAST(:v AS vector) LIMIT :k"
+                "ORDER BY embedding <=> CAST(:v AS vector), pmid LIMIT :k"
             ),
             {"m": model, "v": literal(vector), "k": k},
         ).scalars()

@@ -28,7 +28,9 @@ from txlens_backend.documents import cache
 from txlens_backend.documents.budget import Budget
 from txlens_backend.documents.llm import price_per_token
 
-PROMPT_VERSION = "copilot-2026-11-12.3"  # .2: rounding, no tool names; .3: lab precision
+PROMPT_VERSION = "copilot-2026-11-13.4"  # .4: quote-grounded literature claims, temperature 0
+TEMPERATURE = 0  # as deterministic as the provider allows (ignored by models that fix it)
+SEED = 7
 MAX_OUTPUT_TOKENS = 2500  # includes reasoning tokens
 VALIDATION_RETRIES = 1
 NETWORK_RETRIES = 2
@@ -56,12 +58,14 @@ class CopilotLlm:
         self, model: str, *, engine: Engine, tenant_id: str, budget: Budget,
         trace: QuestionTrace, reasoning_effort: str = "low", timeout_seconds: int = 60,
         api_base: str | None = None, completion: Callable[..., Any] | None = None,
+        read_cache: bool = True,
     ) -> None:  # fmt: skip
         self.model, self.engine, self.tenant_id = model, engine, tenant_id
         self.budget, self.trace = budget, trace
         self.reasoning_effort, self.timeout_seconds = reasoning_effort, timeout_seconds
         self.api_base = api_base if model.startswith("ollama/") else None
         self.completion = completion or litellm.completion
+        self.read_cache = read_cache  # False: always ask the model (to measure run-to-run variance)
         self.spend = Spend()
         litellm.drop_params = True
 
@@ -71,6 +75,8 @@ class CopilotLlm:
         return hashlib.sha256(body.encode()).hexdigest()
 
     def cached(self, key: str) -> cache.CachedAnswer | None:
+        if not self.read_cache:
+            return None
         with tenant_transaction(self.engine, self.tenant_id) as conn:
             return cache.get(conn, key)
 
@@ -128,6 +134,7 @@ class CopilotLlm:
             result = client.chat.completions.create(
                 model=self.model, response_model=schema, messages=messages,  # type: ignore[arg-type]
                 max_retries=VALIDATION_RETRIES, max_tokens=MAX_OUTPUT_TOKENS,
+                temperature=TEMPERATURE, seed=SEED,
                 reasoning_effort=self.reasoning_effort, timeout=self.timeout_seconds,
                 num_retries=NETWORK_RETRIES, api_base=self.api_base,
             )  # fmt: skip
@@ -155,6 +162,7 @@ class CopilotLlm:
             chunks = self.completion(
                 model=self.model, messages=messages, stream=True,
                 stream_options={"include_usage": True}, max_tokens=MAX_OUTPUT_TOKENS,
+                temperature=TEMPERATURE, seed=SEED,
                 reasoning_effort=self.reasoning_effort, timeout=self.timeout_seconds,
                 num_retries=NETWORK_RETRIES, api_base=self.api_base,
             )  # fmt: skip

@@ -27,7 +27,8 @@ export type ToolEvent = {
   latency_ms: number;
 };
 
-export type Citation = { pmid: number; title: string; journal: string; year: number | null; snippet: string; url: string };
+/** A cited abstract; `quotes` are the verbatim sentences the answer rests on, checked by the server. */
+export type Citation = { pmid: number; title: string; journal: string; year: number | null; snippet: string; url: string; quotes?: string[] };
 
 export type DoneEvent = {
   type: "done";

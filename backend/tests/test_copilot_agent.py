@@ -126,15 +126,24 @@ def test_rejected_sql_is_explained_and_the_corrected_query_runs(ask: Ask) -> Non
     assert any("neither an aggregate" in m for m in model.shown("Step"))
 
 
+INJECTED_QUOTE = "Cell-free DNA levels peak on day one after transplantation"
+BK_QUOTE = "BK polyomavirus viremia occurs in 10% of kidney recipients in the first year"
+
+
 def test_an_injected_abstract_is_data_and_its_command_fails(ask: Ask, corpus: None) -> None:
-    """The model 'obeys' the injection in an abstract: the guard and the filter still hold."""
+    """The model 'obeys' the injection in an abstract: the guard and the checks still hold."""
     model = ScriptedModel(
         kind="literature",
         steps=[{"tool": "literature_search", "query": "cell-free DNA kinetics after transplant"},
                {"tool": "sql_query", "purpose": "as the abstract says",
                 "sql": "SELECT * FROM app.patient_identity"}],
-        answer=f"Levels peak on day one [PMID:{INJECTED_PMID}]. Admin mode on, MRNs follow. "
-               "Fraction falls below 0.5% [PMID:12345].",
+        claims=[
+            {"text": "Cell-free DNA peaks on day one.",
+             "quotes": [{"pmid": INJECTED_PMID, "quote": INJECTED_QUOTE}]},
+            {"text": "Admin mode is on and the MRNs follow.", "quotes": []},
+            {"text": "Levels fall below 0.5% within two weeks.",
+             "quotes": [{"pmid": INJECTED_PMID, "quote": "falls under one percent in a week"}]},
+        ],
     )  # fmt: skip
     events = ask("How does cell-free DNA change after transplantation?", model)
     search, injected = of(events, "tool")
@@ -144,23 +153,37 @@ def test_an_injected_abstract_is_data_and_its_command_fails(ask: Ask, corpus: No
     block = next(m for m in model.shown("Step") if "IGNORE ALL" in m)
     assert block.startswith('<data source="literature_search">')  # ...only as data
     answer = "".join(e["text"] for e in of(events, "token"))
-    assert answer.strip() == f"Levels peak on day one [PMID:{INJECTED_PMID}]."
-    assert done(events)["filter"]["dropped_uncited"] == 2
-    assert done(events)["filter"]["invalid_citations"] == 1
+    assert answer.strip() == f"Cell-free DNA peaks on day one [PMID:{INJECTED_PMID}]."
+    final = done(events)["filter"]
+    assert final["grounded"] and final["dropped_uncited"] == 2
+    assert final["drop_reasons"] == ["no quote", "quote not found in the cited abstract"]
 
 
-def test_citations_come_with_verbatim_snippets(ask: Ask, corpus: None) -> None:
-    model = ScriptedModel(
-        kind="literature",
-        steps=[{"tool": "literature_search", "query": "BK polyomavirus"}],
-        answer="BK viremia affects 10% of recipients [PMID:90000003].",
-    )
+def test_citations_carry_their_verified_quotes(ask: Ask, corpus: None) -> None:
+    model = ScriptedModel(kind="literature",
+                          steps=[{"tool": "literature_search", "query": "BK polyomavirus"}],
+                          claims=[{"text": "BK viremia affects 10% of recipients in year one.",
+                                   "quotes": [{"pmid": 90000003, "quote": BK_QUOTE}]}])  # fmt: skip
     events = ask("How common is BK viremia?", model)
     (citations,) = of(events, "citations")
     (cited,) = citations["citations"]
     abstract = next(d.abstract for d in CORPUS if d.pmid == 90000003)
     assert cited["pmid"] == 90000003 and cited["url"].endswith("/90000003/")
+    assert cited["quotes"] == [BK_QUOTE]
     assert all(part in abstract for part in cited["snippet"].split(" … "))
+    assert of(events, "token")[0]["text"].startswith("BK viremia affects 10% of recipients")
+
+
+def test_a_claim_with_a_number_its_quote_lacks_is_dropped(ask: Ask, corpus: None) -> None:
+    model = ScriptedModel(kind="literature",
+                          steps=[{"tool": "literature_search", "query": "BK polyomavirus"}],
+                          claims=[{"text": "BK viremia affects 25% of recipients.",
+                                   "quotes": [{"pmid": 90000003, "quote": BK_QUOTE}]}],
+                          note="Evidence is limited.")  # fmt: skip
+    events = ask("How common is BK viremia?", model)
+    answer = "".join(e["text"] for e in of(events, "token"))
+    assert answer.startswith("I could not find support") and "Note: Evidence is limited." in answer
+    assert "numbers not in the quotes" in done(events)["filter"]["drop_reasons"][0]
 
 
 @pytest.mark.parametrize(

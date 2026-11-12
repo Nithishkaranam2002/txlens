@@ -130,3 +130,20 @@ def test_the_report_has_the_headline_caveat_and_spot_check() -> None:
     assert "judge model `openai/judge`" in report and "self-grading bias" in report
     assert "## Human spot-check (to fill in)" in report
     assert "[ ] supported  [ ] partly  [ ] not supported" in report
+
+
+def test_repeated_literature_runs_report_mean_and_range() -> None:
+    def result(run: int, verdicts: list[str], relevancy: float) -> ev.LitResult:
+        r = ev.LitResult(cq.LiteratureQuestion("l01", "?"), asked("x [PMID:1]."), {}, run)
+        r.relevancy, r.faithfulness = relevancy, 1.0
+        r.verdicts = [("x", 1, v) for v in verdicts]
+        return r
+
+    lit = [result(1, ["yes", "yes"], 0.8), result(2, ["yes", "no"], 0.6), result(3, ["yes"], 0.7)]
+    spend = {"batch": "b", "cap_usd": 1.0, "batch_spent_usd": 0.0, "copilot_usd": 0.0,
+             "copilot_without_cache_usd": 0.0, "judge_usd": 0.0}  # fmt: skip
+    h = ev.headline([], lit, [], "judge", spend)
+    assert h["supported_over_runs"] == {"mean": round(2.5 / 3, 4), "min": 0.5, "max": 1.0}
+    assert h["relevancy_over_runs"] == {"mean": 0.7, "min": 0.6, "max": 0.8}
+    report = ev.render(h, [], lit, [], "copilot", sample=True)
+    assert "## Run-to-run variance (literature)" in report and "range 50.0%-100.0%" in report

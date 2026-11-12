@@ -46,6 +46,7 @@ class CopilotDeps:
     completion: Callable[..., Any] | None = None  # None: litellm.completion
     budget_batch: str | None = None  # None: the center's monthly copilot budget
     budget_cap_usd: float | None = None  # None: LLM_BUDGET_USD
+    read_cache: bool = True  # False: ask the model again (evaluation of run-to-run variance)
 
 
 class Message(BaseModel):
@@ -179,6 +180,7 @@ def ask(deps: CopilotDeps, user_id: str, tenant_id: str, info: RequestInfo,
         trace=trace, reasoning_effort=deps.settings.llm_reasoning_effort,
         timeout_seconds=deps.settings.llm_timeout_seconds,
         api_base=deps.settings.ollama_base_url, completion=deps.completion,
+        read_cache=deps.read_cache,
     )  # fmt: skip
     ctx = ToolContext(deps.engine, tenant_id, user_id, deps.settings, info, answer_id,
                       deps.embedder, budget)  # fmt: skip

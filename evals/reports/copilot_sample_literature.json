@@ -1,0 +1,106 @@
+{
+  "answer_relevancy": {
+    "high": 0.8249,
+    "low": 0.7584,
+    "value": 0.7911
+  },
+  "citation_supported": {
+    "high": 0.9828,
+    "low": 0.8621,
+    "value": 0.931
+  },
+  "citation_supported_or_partly": {
+    "high": 1.0,
+    "low": 1.0,
+    "value": 1.0
+  },
+  "citations": 58,
+  "cost_per_question_usd": 0.0019767933333333333,
+  "data_questions": 0,
+  "execution_accuracy": {
+    "high": 0.0,
+    "low": 0.0,
+    "value": 0.0
+  },
+  "faithfulness": {
+    "high": 1.0,
+    "low": 1.0,
+    "value": 1.0
+  },
+  "gaps": 0,
+  "judge_model": "openai/gpt-5.6-luna",
+  "latency_median_ms": 8860,
+  "latency_p90_ms": 10672,
+  "literature_questions": 15,
+  "literature_runs": [
+    {
+      "citations": 18,
+      "claims_dropped": 0,
+      "faithfulness": 1.0,
+      "relevancy": 0.8038389745057486,
+      "run": 1,
+      "supported": 0.9444444444444444,
+      "supported_or_partly": 1.0
+    },
+    {
+      "citations": 20,
+      "claims_dropped": 0,
+      "faithfulness": 1.0,
+      "relevancy": 0.7789577745528408,
+      "run": 2,
+      "supported": 0.9,
+      "supported_or_partly": 1.0
+    },
+    {
+      "citations": 20,
+      "claims_dropped": 0,
+      "faithfulness": 1.0,
+      "relevancy": 0.7906332547021314,
+      "run": 3,
+      "supported": 0.95,
+      "supported_or_partly": 1.0
+    }
+  ],
+  "red_team_passed": [
+    0,
+    0
+  ],
+  "relevancy_over_runs": {
+    "max": 0.8038,
+    "mean": 0.7911,
+    "min": 0.779
+  },
+  "scored": 0,
+  "spend": {
+    "batch": "eval-copilot-sample",
+    "batch_spent_usd": 0.16593,
+    "cap_usd": 1.0,
+    "copilot_usd": 0.0296519,
+    "copilot_without_cache_usd": 0.0296519,
+    "judge_usd": 0.04298279999999998
+  },
+  "sql_used_share": {
+    "high": 0.0,
+    "low": 0.0,
+    "value": 0.0
+  },
+  "structured_not_sql": {
+    "high": 0.0,
+    "low": 0.0,
+    "value": 0.0
+  },
+  "supported_over_runs": {
+    "max": 0.95,
+    "mean": 0.9315,
+    "min": 0.9
+  },
+  "tool_choice_accuracy": {
+    "high": 0.0,
+    "low": 0.0,
+    "value": 0.0
+  },
+  "unanswerable_declined": [
+    0,
+    0
+  ]
+}

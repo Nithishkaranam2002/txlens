@@ -36,7 +36,7 @@ describe("AnswerBody", () => {
       text: "- Levels above 1% suggested ABMR [PMID:111].\n- Others disagreed [PMID:222].",
       citations: [
         { pmid: 111, title: "A study", journal: "J One", year: 2022, snippet: "Levels above 1% suggested ABMR.", url: "https://pubmed.ncbi.nlm.nih.gov/111/" },
-        { pmid: 222, title: "Another", journal: "J Two", year: null, snippet: "We disagree.", url: "https://pubmed.ncbi.nlm.nih.gov/222/" },
+        { pmid: 222, title: "Another", journal: "J Two", year: null, snippet: "We disagree.", url: "https://pubmed.ncbi.nlm.nih.gov/222/", quotes: ["Others found no association with rejection"] },
       ],
     };
     renderWithQuery(<AnswerBody turn={turn} />);
@@ -46,7 +46,10 @@ describe("AnswerBody", () => {
     const pubmed = within(sources).getByRole("link", { name: /PMID 111/ });
     expect(pubmed).toHaveAttribute("href", "https://pubmed.ncbi.nlm.nih.gov/111/");
     expect(pubmed).toHaveAttribute("rel", "noopener noreferrer");
-    expect(within(sources).getByText("We disagree.")).toBeInTheDocument();
+    expect(within(sources).getByText("“Levels above 1% suggested ABMR.”")).toBeInTheDocument(); // no quotes: snippet
+    expect(within(sources).getByText("Supporting quote, verified in the abstract")).toBeInTheDocument();
+    expect(within(sources).getByText("“Others found no association with rejection”")).toBeInTheDocument();
+    expect(within(sources).queryByText(/We disagree/)).toBeNull();
   });
 
   it("marks failed steps and shows the reason", () => {

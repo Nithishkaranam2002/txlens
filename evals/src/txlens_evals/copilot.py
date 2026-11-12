@@ -23,7 +23,7 @@ import argparse
 import re
 import statistics
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +52,7 @@ from txlens_evals.copilot_judge import Judge, cited_sentences
 from txlens_evals.stats import Estimate, bootstrap, ratio, write_headline
 
 EVAL_USER = "copilot-eval.center_a"
+PARTS = ("data", "literature", "redteam")
 TENANT = cq.TENANT
 INFO = RequestInfo("copilot-eval", "127.0.0.1")
 # A number, "1,234" style or plain; not part of a word or label ("1-year", "R2").
@@ -112,6 +113,7 @@ class LitResult:
     q: cq.LiteratureQuestion
     asked: rt.Asked
     abstracts: dict[int, Document]
+    run: int = 1
     faithfulness: float | None = None
     relevancy: float | None = None
     verdicts: list[tuple[str, int, str]] = field(default_factory=list)  # sentence, pmid, verdict
@@ -262,6 +264,37 @@ def fmt(value: float | None) -> str:
     return f"{value:,.0f}" if float(value).is_integer() else f"{value:,.4g}"
 
 
+def spread(values: Sequence[float]) -> dict[str, float]:
+    """Mean and range over repeated runs."""
+    if not values:
+        return {"mean": 0.0, "min": 0.0, "max": 0.0}
+    return {
+        "mean": round(statistics.mean(values), 4),
+        "min": round(min(values), 4),
+        "max": round(max(values), 4),
+    }
+
+
+def per_run(lit: list[LitResult]) -> list[dict[str, float]]:
+    """Each literature run's citation support, faithfulness and relevancy."""
+    runs = []
+    for run in sorted({r.run for r in lit}):
+        rs = [r for r in lit if r.run == run and r.q.answerable]
+        verdicts = [v for r in rs for _, _, v in r.verdicts]
+        faith = [r.faithfulness for r in rs if r.faithfulness is not None]
+        rel = [r.relevancy for r in rs if r.relevancy is not None]
+        runs.append({
+            "run": run, "citations": len(verdicts),
+            "supported": sum(v == "yes" for v in verdicts) / len(verdicts) if verdicts else 0.0,
+            "supported_or_partly": sum(v != "no" for v in verdicts) / len(verdicts)
+            if verdicts else 0.0,
+            "faithfulness": statistics.mean(faith) if faith else 0.0,
+            "relevancy": statistics.mean(rel) if rel else 0.0,
+            "claims_dropped": sum((r.asked.filter or {}).get("dropped_uncited", 0) for r in rs),
+        })  # fmt: skip
+    return runs
+
+
 def headline(data: list[DataResult], lit: list[LitResult], red: list[tuple[rt.Case, rt.Verdict]],
              judge_model: str, spend: dict[str, Any]) -> dict[str, Any]:  # fmt: skip
     scored = [d for d in data if not d.gap]
@@ -285,6 +318,9 @@ def headline(data: list[DataResult], lit: list[LitResult], red: list[tuple[rt.Ca
         "citation_supported_or_partly": est([v != "no" for v in verdicts]).as_dict(),
         "unanswerable_declined": [sum(bool(r.declined) for r in lit if not r.q.answerable),
                                   sum(not r.q.answerable for r in lit)],
+        "literature_runs": (runs := per_run(lit)),
+        "supported_over_runs": spread([r["supported"] for r in runs]),
+        "relevancy_over_runs": spread([r["relevancy"] for r in runs]),
         "red_team_passed": [sum(v.passed for _, v in red), len(red)],
         "cost_per_question_usd": statistics.mean(a.cost_without_cache_usd for a in everything)
         if everything else 0.0,
@@ -359,6 +395,10 @@ def render(
         "count, survival) are preferred over SQL where they fit.",
         "- The differencing guard's memory is cleared before each data and literature question, so "
         "each answer is scored on its own; the red team tests the guard.",
+        "- Literature answers are quote-grounded: each claim carries verbatim quotes from the "
+        "abstracts it cites, checked by string matching in code; claims whose quote is not found "
+        "(or that add numbers their quotes lack) are dropped and counted. The judge then rates "
+        "whether the cited abstract supports the claim.",
         "- Answer relevancy uses strictness 1 (one generated question per answer): the judge is "
         "cached, so more would repeat the same question.",
         "- Intervals cover sampling noise over these questions only. All data is synthetic.",
@@ -380,9 +420,9 @@ def render(
         "",
         "## Literature questions",
         "",
-        "| Id | Question | Faithfulness | Relevancy | Citations yes / partly / no | Uncited "
-        "sentences dropped | Cost | Latency |",
-        "|---|---|---|---|---|---|---|---|",
+        "| Id | Run | Question | Faithfulness | Relevancy | Citations yes / partly / no | "
+        "Claims dropped (no verified quote) | Cost | Latency |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for r in lit:
         if not r.q.answerable:
@@ -390,7 +430,8 @@ def render(
         counts = [sum(v == k for _, _, v in r.verdicts) for k in ("yes", "partly", "no")]
         dropped = (r.asked.filter or {}).get("dropped_uncited", 0)
         lines.append(
-            f"| {r.q.qid} | {excerpt(r.q.text, 90)} | {fmt(r.faithfulness)} | {fmt(r.relevancy)} | "
+            f"| {r.q.qid} | {r.run} | {excerpt(r.q.text, 90)} | {fmt(r.faithfulness)} | "
+            f"{fmt(r.relevancy)} | "
             f"{counts[0]} / {counts[1]} / {counts[2]} | {dropped} | "
             f"${r.asked.cost_without_cache_usd:.4f} | {r.asked.latency_ms / 1000:.1f} s |"
         )
@@ -405,6 +446,24 @@ def render(
         ]
         lines += [f"| {r.q.qid} | {excerpt(r.q.text, 90)} | {'yes' if r.declined else '**no**'} | "
                   f"{excerpt(r.asked.answer)} |" for r in unanswerable]  # fmt: skip
+    if len(h["literature_runs"]) > 1:
+        sup, rel = h["supported_over_runs"], h["relevancy_over_runs"]
+        lines += [
+            "", "## Run-to-run variance (literature)", "",
+            f"Each literature question was asked {len(h['literature_runs'])} times without the "
+            "answer cache (temperature 0, fixed seed, fixed retrieval order).",
+            "",
+            f"- Citations fully supported: mean {sup['mean']:.1%}, range {sup['min']:.1%}-"
+            f"{sup['max']:.1%}.",
+            f"- Answer relevancy: mean {rel['mean']:.2f}, range {rel['min']:.2f}-{rel['max']:.2f}.",
+            "",
+            "| Run | Citations | Fully supported | Supported or partly | Faithfulness | Relevancy "
+            "| Claims dropped |",
+            "|---|---|---|---|---|---|---|",
+            *[f"| {r['run']} | {r['citations']} | {r['supported']:.1%} | "
+              f"{r['supported_or_partly']:.1%} | {r['faithfulness']:.2f} | {r['relevancy']:.2f} | "
+              f"{r['claims_dropped']} |" for r in h["literature_runs"]],
+        ]  # fmt: skip
     lines += ["", "## Red team", "", "| Id | Category | Attack | Outcome | Detail |",
               "|---|---|---|---|---|"]  # fmt: skip
     lines += [
@@ -429,7 +488,7 @@ def render(
         "Five literature answers with their cited abstracts. For each citation, read the quoted "
         "sentence(s) and the abstract on PubMed, then tick one box.",
     ]
-    for r in [r for r in lit if r.q.answerable and r.verdicts][:5]:
+    for r in [r for r in lit if r.q.answerable and r.verdicts and r.run == 1][:5]:
         lines += ["", f"### {r.q.qid}: {r.q.text}", "", "> " + " ".join(r.asked.answer.split()), ""]
         cited = {c["pmid"]: c for e in r.asked.events if e["type"] == "citations"
                  for c in e["citations"]}  # fmt: skip
@@ -461,6 +520,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sample", action="store_true",
                         help="10 data, 5 literature and all 25 red-team questions")  # fmt: skip
     parser.add_argument("--max-cost", type=float, required=True, help="dollars, for this batch")
+    parser.add_argument("--only", choices=PARTS, action="append",
+                        help="run only these parts (repeatable; default: all)")  # fmt: skip
+    parser.add_argument("--repeat", type=int, default=1,
+                        help="ask each literature question this many times, without the "
+                        "answer cache (run-to-run variance)")  # fmt: skip
     parser.add_argument("--truth", type=Path, default=Path("data/ground_truth"))
     parser.add_argument("--reports", type=Path, default=Path("evals/reports"))
     args = parser.parse_args(argv)
@@ -480,8 +544,13 @@ def main(argv: list[str] | None = None) -> int:
     judge_llm = CopilotLlm(settings.eval_judge_model, engine=app, tenant_id=TENANT,
                            budget=budget, trace=NullTrace())  # fmt: skip
     judge = Judge(judge_llm, embedder, budget)
+    parts = args.only or list(PARTS)
     data_qs = [q for q in cq.DATA if not args.sample or q.qid in cq.SAMPLE_DATA]
     lit_qs = [q for q in cq.LITERATURE if not args.sample or q.qid in cq.SAMPLE_LITERATURE]
+    data_qs = data_qs if "data" in parts else []
+    lit_qs = lit_qs if "literature" in parts else []
+    cases = rt.CASES if "redteam" in parts else []
+    literature_deps = replace(deps, read_cache=args.repeat == 1)
 
     data: list[DataResult] = []
     lit: list[LitResult] = []
@@ -491,14 +560,18 @@ def main(argv: list[str] | None = None) -> int:
             run.forget_counts()
             data.append(DataResult(q, q.truth(truth), reference(app, q.reference), run.ask(q.text)))
             print(f"{q.qid}: {'gap' if data[-1].gap else data[-1].correct}")
-        for lq in lit_qs:
-            run.forget_counts()
-            asked = run.ask(lq.text)
-            result = LitResult(lq, asked, contexts(run, asked))
-            judge_literature(judge, result)
-            lit.append(result)
-            print(f"{lq.qid}: {result.faithfulness} {result.relevancy} {result.declined}")
-        for case in rt.CASES:
+        run.deps = literature_deps
+        for repeat in range(1, args.repeat + 1):
+            for lq in lit_qs:
+                run.forget_counts()
+                asked = run.ask(lq.text)
+                result = LitResult(lq, asked, contexts(run, asked), repeat)
+                judge_literature(judge, result)
+                lit.append(result)
+                print(f"{lq.qid} run {repeat}: {result.faithfulness} {result.relevancy} "
+                      f"{result.declined}")  # fmt: skip
+        run.deps = deps
+        for case in cases:
             red.append((case, case.run(run)))
             print(f"{case.cid}: {red[-1][1]}")
     except BudgetExceededError as error:
@@ -513,7 +586,9 @@ def main(argv: list[str] | None = None) -> int:
              "copilot_without_cache_usd": sum(a.cost_without_cache_usd for a in asked_all),
              "judge_usd": judge_llm.spend.cost_usd}  # fmt: skip
     h = headline(data, lit, red, settings.eval_judge_model, spend)
-    name = "copilot_sample" if args.sample else "copilot"
+    name = ("copilot_sample" if args.sample else "copilot") + (
+        "" if set(parts) == set(PARTS) else "_" + "_".join(p for p in PARTS if p in parts)
+    )
     report = render(h, data, lit, red, settings.llm_model, args.sample)
     (args.reports / f"{name}.md").write_text(report)
     write_headline(args.reports / f"{name}.json", h)

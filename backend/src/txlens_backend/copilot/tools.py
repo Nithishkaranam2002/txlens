@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import Engine
 
 from txlens_backend import audit
@@ -22,7 +22,7 @@ from txlens_backend.config import Settings
 from txlens_backend.copilot import actions, sql_exec, sql_guard
 from txlens_backend.copilot.embeddings import Embedder
 from txlens_backend.copilot.embeddings import max_cost as embed_cost
-from txlens_backend.copilot.retrieval import PgVectorStore, hybrid_search
+from txlens_backend.copilot.retrieval import Document, PgVectorStore, hybrid_search
 from txlens_backend.db import tenant_transaction
 from txlens_backend.documents.budget import Budget
 from txlens_backend.services import cohorts, concepts, disclosure
@@ -37,7 +37,8 @@ SURVIVAL_DAYS = (365, 1095, 1825)
 
 
 class Citation(BaseModel):
-    """A retrieved abstract the answer may cite: shown with a verbatim snippet."""
+    """A retrieved abstract the answer may cite: shown with a verbatim snippet, and once
+    cited, the verified quotes the answer rests on."""
 
     pmid: int
     title: str
@@ -45,6 +46,7 @@ class Citation(BaseModel):
     year: int | None
     snippet: str
     url: str
+    quotes: list[str] = []
 
 
 class ToolResult(BaseModel):
@@ -57,6 +59,7 @@ class ToolResult(BaseModel):
     display: dict[str, Any] | None = None
     sql: str | None = None
     citations: list[Citation] = []
+    sources: list[Document] = Field(default=[], exclude=True)  # full abstracts, for grounding
     notices: list[str] = []
     error: str | None = None
     latency_ms: int = 0
@@ -189,8 +192,8 @@ def literature_search(ctx: ToolContext, action: actions.LiteratureSearch) -> Too
     ctx.budget.reserve(reserved)
     try:
         with tenant_transaction(ctx.engine, ctx.tenant_id) as conn:
-            passages, cost = hybrid_search(PgVectorStore(conn), ctx.embedder, action.query,
-                                           LITERATURE_K)  # fmt: skip
+            store = PgVectorStore(conn)
+            passages, cost = hybrid_search(store, ctx.embedder, action.query, LITERATURE_K)
             record(conn, ctx, action.tool, args, rows=len(passages))
     finally:
         ctx.budget.settle(reserved, cost)
@@ -200,7 +203,9 @@ def literature_search(ctx: ToolContext, action: actions.LiteratureSearch) -> Too
                           snippet=p.snippet, url=PUBMED.format(pmid=p.pmid))
                  for p in passages]  # fmt: skip
     return ToolResult(tool=action.tool, args=args, ok=True, data={"abstracts": abstracts},
-                      citations=citations)  # fmt: skip
+                      citations=citations, sources=[
+                          Document(pmid=p.pmid, title=p.title, abstract=p.abstract,
+                                   journal=p.journal, year=p.year) for p in passages])  # fmt: skip
 
 
 def record(conn: Any, ctx: ToolContext, tool: str, args: dict[str, Any], *, rows: int = 0,

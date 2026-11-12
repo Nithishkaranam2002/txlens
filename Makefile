@@ -143,8 +143,8 @@ rejection-report: ## Rejection records vs ground-truth episodes -> evals/reports
 copilot-sample: ## Copilot eval sample: 10 data, 5 literature, 25 red-team questions (MAX_COST=1.00)
 	uv run python -m txlens_evals.copilot --sample --max-cost $(or $(MAX_COST),1.00)
 
-copilot-report: ## Copilot eval, all questions -> evals/reports/copilot.md (MAX_COST=1.00; cached re-runs)
-	uv run python -m txlens_evals.copilot --max-cost $(or $(MAX_COST),1.00)
+copilot-report: ## Copilot eval, all questions, literature asked 3 times -> evals/reports/copilot.md (MAX_COST=1.00)
+	uv run python -m txlens_evals.copilot --repeat 3 --max-cost $(or $(MAX_COST),1.00)
 
 survival-report: ## Survival: R parity, immortal time, competing risks, DGF -> evals/reports/survival.md
 	uv run python -m txlens_evals.survival

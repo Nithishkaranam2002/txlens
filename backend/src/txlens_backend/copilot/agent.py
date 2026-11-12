@@ -12,7 +12,8 @@
 - plan: the model picks ONE schema-validated action; at most MAX_TOOL_STEPS tools per question,
   and an identical repeated call ends planning.
 - act: runs the tool (guards, suppression, audit inside the tool).
-- answer: streams the model's answer through the AnswerFilter, sentence by sentence.
+- answer: with retrieved abstracts, quote-grounded claims checked in code (grounding.py);
+  otherwise the model's text, streamed through the AnswerFilter sentence by sentence.
 Progress is sent as custom stream events (status, tool, token, citations, refusal), which the
 API forwards to the browser as server-sent events.
 """
@@ -23,11 +24,12 @@ from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from pydantic import TypeAdapter
 
-from txlens_backend.copilot import actions, prompts, screen, tools
-from txlens_backend.copilot.answer_filter import AnswerFilter, numbers_in
+from txlens_backend.copilot import actions, grounding, prompts, restricted, screen, tools
+from txlens_backend.copilot.answer_filter import UNSUPPORTED, AnswerFilter, numbers_in
 from txlens_backend.copilot.llm import CopilotLlm
 
 MAX_TOOL_STEPS = 5
+DATA_TOOLS = frozenset({"preview_cohort", "run_survival", "sql_query"})
 ACTION = TypeAdapter[actions.ToolAction | actions.Answer | actions.Refuse](actions.AnyAction)
 LABELS = {"concept_search": "searched concepts", "preview_cohort": "built cohort",
           "run_survival": "ran survival", "sql_query": "ran SQL",
@@ -95,17 +97,64 @@ class Agent:
         return {"steps": [*state.get("steps", []), (state["next"], result)]}
 
     def answer(self, state: State) -> State:
-        """Stream the answer, sentence by sentence, through the filter."""
-        write = get_stream_writer()
-        write({"type": "status", "stage": "answering"})
+        """Write the answer: quote-grounded claims when abstracts were retrieved, otherwise
+        streamed text through the sentence filter."""
+        get_stream_writer()({"type": "status", "stage": "answering"})
         results = [r for _, r in state.get("steps", [])]
+        if any(r.sources for r in results):
+            return self.grounded_answer(state, results)
+        return self.streamed_answer(state, results)
+
+    def grounded_answer(self, state: State, results: list[tools.ToolResult]) -> State:
+        """Claims with verbatim quotes; each quote is checked in the abstract it cites."""
+        write = get_stream_writer()
+        docs = {d.pmid: d for r in results for d in r.sources}
         citations = {c.pmid: c for r in results for c in r.citations}
-        data_tools = {"preview_cohort", "run_survival", "sql_query"}
+        data_ok = any(r.ok and r.tool in DATA_TOOLS for r in results)
+        messages = prompts.answer_messages(state["question"], state.get("history", []), results,
+                                           grounded=True)  # fmt: skip
+        answer = self.llm.structured(grounding.GroundedAnswer, messages, "answer-grounded")
+        shown: list[str] = []
+        quotes: dict[int, list[str]] = {}
+        problems: list[str] = []
+        names = 0
+        for claim in answer.claims:
+            checked = grounding.check(claim, docs, data_allowed=data_ok)
+            if checked.text is None:
+                problems.append(checked.problem or "unsupported")
+                continue
+            text, replaced = restricted.neutralize(grounding.render(checked.text, checked.quotes))
+            names += replaced
+            for q in checked.quotes:
+                quotes.setdefault(q.pmid, []).append(q.quote)
+            shown.append(text)
+            write({"type": "token", "text": text + "\n"})
+        if not shown and not data_ok:
+            shown.append(UNSUPPORTED)
+            write({"type": "token", "text": UNSUPPORTED + "\n"})
+        if answer.note:
+            note, replaced = restricted.neutralize(f"Note: {answer.note.strip()}")
+            names += replaced
+            shown.append(note)
+            write({"type": "token", "text": note})
+        cited = [citations[p].model_copy(update={"quotes": quotes[p]}).model_dump()
+                 for p in sorted(quotes) if p in citations]  # fmt: skip
+        write({"type": "citations", "citations": cited})
+        return {"answer": "\n".join(shown).strip(), "outcome": "answered", "filter": {
+            "grounded": True, "claims": len(answer.claims), "sentences": len(answer.claims),
+            "dropped_uncited": len(problems), "drop_reasons": problems, "invalid_citations": 0,
+            "names_replaced": names, "cited": sorted(quotes), "ungrounded_numbers": [],
+        }}  # fmt: skip
+
+    def streamed_answer(self, state: State, results: list[tools.ToolResult]) -> State:
+        """Stream the answer, sentence by sentence, through the filter (data answers)."""
+        write = get_stream_writer()
+        citations = {c.pmid: c for r in results for c in r.citations}
         answer_filter = AnswerFilter(
             set(citations),
             # failed calls (e.g. rejected SQL) give no data: they do not excuse uncited claims
             literature_only=bool(citations)
-            and not any(r.ok and r.tool in data_tools for r in results),
+            and not any(r.ok and r.tool in DATA_TOOLS for r in results),
             known_numbers=numbers_in([r.data for r in results if r.ok]),
         )  # fmt: skip
         messages = prompts.answer_messages(state["question"], state.get("history", []), results)
@@ -121,9 +170,10 @@ class Agent:
         write({"type": "citations", "citations": cited})
         stats = answer_filter.stats
         return {"answer": "".join(shown).strip(), "outcome": "answered", "filter": {
-            "sentences": stats.sentences, "dropped_uncited": stats.dropped_uncited,
-            "invalid_citations": stats.invalid_citations, "names_replaced": stats.names_replaced,
-            "cited": sorted(stats.cited), "ungrounded_numbers": stats.ungrounded_numbers,
+            "grounded": False, "sentences": stats.sentences,
+            "dropped_uncited": stats.dropped_uncited, "invalid_citations": stats.invalid_citations,
+            "names_replaced": stats.names_replaced, "cited": sorted(stats.cited),
+            "ungrounded_numbers": stats.ungrounded_numbers,
         }}  # fmt: skip
 
     def refuse(self, state: State) -> State:

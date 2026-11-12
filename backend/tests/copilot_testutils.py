@@ -12,13 +12,18 @@ class ScriptedModel:
     """Answers like litellm.completion, by request kind:
     - the classifier (schema "Screening") with `kind` / `reason`;
     - the planner (schema "Step") with the next of `steps`, then "answer";
-    - the streamed answer with `answer`, in small pieces.
+    - the streamed answer with `answer`, in small pieces;
+    - a quote-grounded answer (schema "GroundedAnswer") with `claims` and `note`.
     Every request is recorded, so tests can check what the model was shown."""
 
-    def __init__(self, *, steps: list[dict[str, Any]] | None = None, answer: str = "Done.",
-                 kind: str = "data", reason: str | None = None) -> None:  # fmt: skip
+    def __init__(
+        self, *, steps: list[dict[str, Any]] | None = None, answer: str = "Done.",
+        kind: str = "data", reason: str | None = None,
+        claims: list[dict[str, Any]] | None = None, note: str | None = None,
+    ) -> None:  # fmt: skip
         self.steps = list(steps or [])
         self.answer, self.kind, self.reason = answer, kind, reason
+        self.claims, self.note = list(claims or []), note
         self.calls: list[dict[str, Any]] = []
 
     def __call__(self, **kwargs: Any) -> Any:
@@ -28,6 +33,8 @@ class ScriptedModel:
         schema = kwargs["response_format"]["json_schema"]["name"]
         if schema == "Screening":
             content: dict[str, Any] = {"kind": self.kind, "reason": self.reason}
+        elif schema == "GroundedAnswer":
+            content = {"claims": self.claims, "note": self.note}
         else:
             content = {"action": self.steps.pop(0) if self.steps else {"tool": "answer"}}
         return litellm.ModelResponse(
@@ -84,8 +91,11 @@ class KeywordModel(ScriptedModel):
         plan: list[dict[str, Any]]
         if literature:
             plan = [{"tool": "literature_search", "query": question}]
-            self.answer = ("Donor-derived cell-free DNA of 1% or more identified antibody-mediated "
-                           "rejection with 85% sensitivity [PMID:90000001].")  # fmt: skip
+            self.claims = [{"text": "Donor-derived cell-free DNA of 1% or more identified "
+                            "antibody-mediated rejection with 85% sensitivity.",
+                            "quotes": [{"pmid": 90000001, "quote": "A fraction of 1% or more "
+                                        "identified antibody-mediated rejection with 85% "
+                                        "sensitivity"}]}]  # fmt: skip
         elif "by organ" in question.lower():
             plan = [{"tool": "sql_query", "purpose": "patients by organ",
                      "sql": "SELECT organ, count(DISTINCT person_id) AS patients "
