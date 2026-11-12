@@ -6,6 +6,7 @@ import psycopg
 from pyspark.sql import DataFrame
 
 from txlens_pipelines.config import PipelineConfig
+from txlens_pipelines.gold.gaps import condition_gaps
 from txlens_pipelines.load.postgres import LOAD_ORDER, TableRows, database_url, load_tenant
 from txlens_pipelines.runtime import Runtime
 
@@ -16,6 +17,13 @@ def stream(df: DataFrame) -> Iterator[tuple[object, ...]]:
         yield tuple(row)
 
 
+def gold_rows(runtime: Runtime, table: str, tenant: str) -> DataFrame:
+    """One tenant's rows for a Postgres table (mapping_gap comes from gold.mapping_gaps)."""
+    if table == "mapping_gap":
+        return condition_gaps(runtime.read_tenants("gold", "mapping_gaps", [tenant]))
+    return runtime.read_tenants("gold", table, [tenant])
+
+
 def run_load(runtime: Runtime, config: PipelineConfig) -> dict[str, int]:
     """Load every configured tenant; returns rows inserted per table (all tenants)."""
     totals: dict[str, int] = {}
@@ -24,7 +32,7 @@ def run_load(runtime: Runtime, config: PipelineConfig) -> dict[str, int]:
         for tenant in config.tenants:
             tables = {}
             for table in LOAD_ORDER:
-                df = runtime.read_tenants("gold", table, [tenant.tenant_id])
+                df = gold_rows(runtime, table, tenant.tenant_id)
                 tables[table] = TableRows(df.columns, stream(df))
             for table, count in load_tenant(
                 conn, tenant.tenant_id, tables, config.batch_id

@@ -11,6 +11,7 @@ from psycopg import sql
 
 from txlens_backend.db_setup import ensure_login_role, ensure_tenants, libpq_url
 from txlens_pipelines.load.postgres import TableRows, UnsafeLoadError, load_tenant
+from txlens_pipelines.review_gaps import REVIEW_GAP_COLUMNS
 
 pytestmark = pytest.mark.db
 PERSON = ["tenant_id", "person_id", "gender_concept_id", "year_of_birth", "race_concept_id",
@@ -154,3 +155,16 @@ def test_reviewed_biopsy_results_survive_a_reload(urls: tuple[str, str]) -> None
             "WHERE condition_occurrence_id >= 2100000000"
         ).fetchall()
     assert rows == [(50, 4127550, date(2024, 5, 6), 32858, "TCMR IA")]
+
+
+def test_condition_gaps_are_replaced_at_every_load(urls: tuple[str, str]) -> None:
+    _, app = urls
+    columns = list(REVIEW_GAP_COLUMNS)
+    with psycopg.connect(app, autocommit=True) as conn:
+        for texts in (["odd text", "other text"], ["odd text"]):
+            gaps = [("center_a", t, "unmapped", 2, 316866, 0.8, "low_score") for t in texts]
+            load_tenant(conn, "center_a", {"mapping_gap": TableRows(columns, gaps)}, "b9")
+        with conn.transaction():
+            conn.execute("SELECT set_config('app.tenant_id', 'center_a', true)")
+            rows = conn.execute("SELECT source_value, suggested_concept_id FROM app.mapping_gap")
+            assert rows.fetchall() == [("odd text", 316866)]

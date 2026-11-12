@@ -46,6 +46,8 @@ class ReviewDecision:
     request_id: str
     changes: dict[str, str | None] = field(default_factory=dict)
     note: str | None = None
+    # Added in Step 2.3; the default keeps signals from older API versions valid.
+    reason_code: str | None = None
 
 
 class InvalidEditError(ValueError):
@@ -294,8 +296,9 @@ def apply_review(
             f"document_review_{decision.action}",
             "document",
             document_id,
-            {"workflow_id": workflow_id, "fields": sorted(changes)},
-        )
+            {"workflow_id": workflow_id, "fields": sorted(changes),
+             "reason_code": decision.reason_code},
+        )  # fmt: skip
     return "rejected" if decision.action == "reject" else "approved"
 
 

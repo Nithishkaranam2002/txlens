@@ -2,7 +2,8 @@
 
 Every response a de-identified role can get is collected: all patient pages, every
 timeline, the pathology evidence each timeline links to, cohort preview/create/list/get/
-members, and (data stewards) the surveillance worklist and every patient's flags. The seeded
+members, and (data stewards) the surveillance worklist, every patient's flags, the review
+queue, every queued item's evidence and every cropped evidence image it links to. The seeded
 pathology reports carry the patients' real identifiers in their OCR text. The scan searches
 each body for every MRN, given name, family name, full name and birth date (several formats)
 in app.patient_identity, of all centers, plus the real person ids. A clinician run of the
@@ -72,6 +73,7 @@ def crawl(
         worklist = client.get("/worklist", params={"limit": 200})
         assert worklist.json()["items"], "the worklist must have patients to scan"
         yield worklist
+        yield from review_queue(client)
     if may_build_cohorts:
         yield client.post("/cohorts/preview", json=RULES)
         created = client.post("/cohorts", json={"name": "scan", "rules": RULES})
@@ -80,6 +82,19 @@ def crawl(
         yield client.get("/cohorts")
         yield client.get(f"/cohorts/{cohort_id}")
         yield client.get(f"/cohorts/{cohort_id}/members", params={"limit": 200})
+
+
+def review_queue(client: TestClient) -> Iterator[Response]:
+    """The review queue, every item in it, and every crop image an item links to."""
+    for status in ("pending", "decided"):
+        page = client.get("/review/items", params={"limit": 200, "status": status})
+        yield page
+        for item in page.json()["items"]:
+            detail = client.get(f"/review/items/{item['item_type']}/{item['item_key']}")
+            yield detail
+            for url in (detail.json()["evidence"].get("crop_urls") or {}).values():
+                yield client.get(url)
+    yield client.get("/review/metrics")
 
 
 def leaks(responses: Iterator[Response], pattern: re.Pattern[str]) -> list[str]:

@@ -34,7 +34,11 @@ MATRIX: dict[str, dict[Role | str, int]] = {
     "POST /flags/{fid}/resolve":   {C: 200, R: 403, S: 403, A: 403, ANON: 401},
     "GET /documents/{did}/evidence": {C: 200, R: 403, S: 200, A: 403, ANON: 401},
     "GET /documents/{did}/pages/1": {C: 200, R: 403, S: 403, A: 403, ANON: 401},
-    "POST /documents/{rid}/review": {C: 200, R: 403, S: 200, A: 403, ANON: 401},
+    "GET /documents/{did}/fields/banff_t/crop": {C: 200, R: 403, S: 200, A: 403, ANON: 401},
+    "GET /review/items":           {C: 200, R: 403, S: 200, A: 403, ANON: 401},
+    "GET /review/items/biopsy_document/{rid}": {C: 200, R: 403, S: 200, A: 403, ANON: 401},
+    "POST /review/items/biopsy_document/{rid}": {C: 200, R: 403, S: 200, A: 403, ANON: 401},
+    "GET /review/metrics":         {C: 200, R: 403, S: 200, A: 200, ANON: 401},
 }  # fmt: skip
 CALLERS: list[Role | str] = [C, R, S, A, ANON]
 BODY = {"name": "matrix", "rules": {"organ": "kidney"}}
@@ -62,9 +66,10 @@ def document_id(
 
 
 def new_document(owner: Engine, status: str, source_path: str = "pathology/x.pdf") -> str:
-    """A center A document (not linked to a patient) in this status."""
+    """A center A document (not linked to a patient) in this status, its text below the
+    report header (so a line may be shown as a crop)."""
     with owner.begin() as conn:
-        doc = seed_document(conn, "center_a", KIDNEY_OCR_LINES, status)
+        doc = seed_document(conn, "center_a", KIDNEY_OCR_LINES, status, body_top=300)
         conn.execute(text("UPDATE app.document SET source_path = :s WHERE document_id = :d"),
                      {"s": source_path, "d": doc.document_id})  # fmt: skip
     return doc.document_id
@@ -100,7 +105,7 @@ def test_permission_matrix(
                        did=document_id, rid=rid)  # fmt: skip
     if method == "GET":
         response = client.get(path)
-    elif path.startswith("/documents/"):
+    elif path.startswith("/review/"):
         response = client.post(path, json={"action": "approve"})
     elif path.startswith("/flags/"):
         response = client.post(path, json={"note": "permission matrix"})
@@ -119,7 +124,8 @@ def test_matrix_covers_every_route(api_app: FastAPI) -> None:
     auth = {"POST /auth/login", "POST /auth/refresh", "POST /auth/logout"}  # see test_auth.py
     named = {e.replace("{pid}", "{patient_id}").replace("{cid}", "{cohort_id}")
              .replace("{fid}", "{flag_id}").split("?")[0].replace("/kidney", "/{program}")
+             .replace("biopsy_document/{rid}", "{item_type}/{item_key}")
              .replace("{did}", "{document_id}").replace("{rid}", "{document_id}")
-             .replace("/pages/1", "/pages/{page}")
+             .replace("/pages/1", "/pages/{page}").replace("/banff_t/", "/{field}/")
              for e in MATRIX}  # fmt: skip
     assert documented == named | auth

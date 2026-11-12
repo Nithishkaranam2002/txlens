@@ -12,7 +12,16 @@ from fastapi.openapi.utils import get_openapi
 from sqlalchemy import Engine
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-from txlens_backend.api import auth, cohorts, concepts, documents, patients, surveillance, system
+from txlens_backend.api import (
+    auth,
+    cohorts,
+    concepts,
+    documents,
+    patients,
+    review,
+    surveillance,
+    system,
+)
 from txlens_backend.api.deps import CSRF_HEADER, CSRF_HEADER_EXAMPLE, AppContext
 from txlens_backend.api.documents import TemporalReviewSender
 from txlens_backend.config import Settings, get_settings, require_secret
@@ -112,6 +121,7 @@ def build_app(
     app.include_router(concepts.router)
     app.include_router(surveillance.router)
     app.include_router(documents.router)
+    app.include_router(review.router)
     document_csrf_header(app)
     return app
 

@@ -40,9 +40,10 @@ LOAD_ORDER = (
     "cdm_source",
     "patient_identity",
     "note_phi_span",
+    "mapping_gap",
 )
-# Tables outside the OMOP schema.
-APP_TABLES = {"patient_identity", "note_phi_span"}
+# Tables outside the OMOP schema (mapping_gap: condition texts for the review queue).
+APP_TABLES = {"patient_identity", "note_phi_span", "mapping_gap"}
 # Biopsy extraction and note NLP results live in app tables (their workflows' source of truth)
 # and are copied back into cdm after every reload.
 BIOPSY_RESULTS = "biopsy_results"
@@ -102,7 +103,9 @@ def copy_into_stage(conn: Connection, table: str, data: TableRows) -> int:
     """COPY rows into a temporary table shaped like the target; returns the row count."""
     stage = sql.Identifier(f"stage_{table}")
     conn.execute(
-        sql.SQL("CREATE TEMP TABLE {} (LIKE {}) ON COMMIT DROP").format(stage, target(table))
+        sql.SQL("CREATE TEMP TABLE {} (LIKE {} INCLUDING DEFAULTS) ON COMMIT DROP").format(
+            stage, target(table)
+        )
     )
     columns = sql.SQL(", ").join(map(sql.Identifier, data.columns))
     count = 0

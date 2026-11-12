@@ -11,9 +11,11 @@ from pyspark.sql import Row, SparkSession
 
 from txlens_pipelines.config import PipelineConfig
 from txlens_pipelines.gold.conform import check_omop_contract, conform
+from txlens_pipelines.gold.gaps import condition_gaps
 from txlens_pipelines.omop_schema import OMOP_TABLES
 from txlens_pipelines.pipeline import run
 from txlens_pipelines.quality import ContractViolationError
+from txlens_pipelines.review_gaps import REVIEW_GAP_COLUMNS
 from txlens_pipelines.runtime import LocalRuntime
 
 pytestmark = pytest.mark.spark
@@ -204,6 +206,14 @@ def test_mapping_gaps_carry_the_condition_suggestion(built: LocalRuntime) -> Non
     (gap,) = [r for r in gold(built, "mapping_gaps") if r.source_value == "Hypertensive crisis"]
     assert (gap.suggested_concept_id, gap.review_reason) == (316866, "low_score")
     assert 0 < gap.suggestion_score < 0.9
+
+
+def test_condition_gaps_for_the_review_queue(built: LocalRuntime) -> None:
+    rows = condition_gaps(built.read("gold", "mapping_gaps")).collect()
+    assert [(r.source_value, r.reason, r.suggested_concept_id, r.review_reason) for r in rows] == [
+        ("Hypertensive crisis", "unmapped", 316866, "low_score")
+    ]
+    assert tuple(rows[0].asDict()) == REVIEW_GAP_COLUMNS
 
 
 def test_mapping_gaps_list_every_unmapped_source_value(built: LocalRuntime) -> None:

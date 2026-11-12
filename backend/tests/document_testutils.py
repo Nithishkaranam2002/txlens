@@ -138,10 +138,18 @@ HEART_ANSWER = {
 }
 
 
-def ocr_of(lines: tuple[str, ...], confidence: float = 0.95) -> OcrResult:
+HEADER_LINES = 4  # center, patient, MRN/DOB, procedure date: the report's identity header
+
+
+def ocr_of(lines: tuple[str, ...], confidence: float = 0.95, body_top: float = 0.0) -> OcrResult:
+    """Lines 20 points apart; lines after the identity header move `body_top` points down."""
+
+    def y(n: int) -> float:
+        return 20.0 * n + (body_top if n > HEADER_LINES else 0.0)
+
     built = tuple(
-        OcrLine(n, 1, tuple(Word(w, (10.0 * i, 20.0 * n, 10.0 * i + 8, 20.0 * n + 9), confidence)
-                         for i, w in enumerate(t.split())))
+        OcrLine(n, 1, tuple(Word(w, (10.0 * i, y(n), 10.0 * i + 8, y(n) + 9), confidence)
+                            for i, w in enumerate(t.split())))
         for n, t in enumerate(lines, start=1)
     )  # fmt: skip
     return OcrResult("tesseract", (PageSize(612, 792),), built)
@@ -188,9 +196,11 @@ def seed_document(
     person_id: int | None = None,
     procedure_id: int | None = None,
     day: date | None = None,
+    body_top: float = 0.0,
 ) -> SeededDocument:
-    """A kidney document with fields and evidence, as the workflow would leave it."""
-    ocr = ocr_of(lines)
+    """A kidney document with fields and evidence, as the workflow would leave it (lines after
+    the identity header `body_top` points further down the page)."""
+    ocr = ocr_of(lines, body_top=body_top)
     document_id = str(uuid.uuid4())
     conn.execute(
         text(

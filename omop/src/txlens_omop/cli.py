@@ -27,8 +27,9 @@ from txlens_omop.check import (
     suggest_ingredients,
 )
 from txlens_omop.codes import EXTRACTION_LOCAL_CODES, KNOWN_GAPS, all_codes, uncoded_drugs
+from txlens_omop.curation import export
 from txlens_omop.loader import load_local_only, load_vocabulary, vocab_table_sizes
-from txlens_omop.mappings import read_mappings
+from txlens_omop.mappings import STCM_FILE, read_mappings
 from txlens_omop.subset import extract_subset
 
 
@@ -42,6 +43,7 @@ class VocabSettings(BaseSettings):
 
 DEFAULT_SOURCE = Path("omop/athena")
 DEFAULT_SUBSET = Path("omop/vocab_subset")
+DEFAULT_MAPPINGS = Path("omop/src/txlens_omop/mappings") / STCM_FILE
 
 
 def libpq_url(url: str) -> str:
@@ -62,6 +64,12 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         "load-local", help="replace only our local concepts and reviewed mappings"
     )
     local.add_argument("--database-url", help="default: DATABASE_URL from the environment or .env")
+    export = commands.add_parser(
+        "export-curation",
+        help="write review-queue decisions on mappings back into SOURCE_TO_CONCEPT_MAP.csv",
+    )
+    export.add_argument("--database-url", help="default: DATABASE_URL from the environment or .env")
+    export.add_argument("--file", type=Path, default=DEFAULT_MAPPINGS)
     subset = commands.add_parser("subset", help="extract a small subset around our codes")
     subset.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     subset.add_argument("--out", type=Path, default=DEFAULT_SUBSET)
@@ -158,6 +166,14 @@ def main(argv: list[str] | None = None) -> int:
             rows = load_local_only(conn)
         print("Reloaded local rows: " + ", ".join(f"{t}={n}" for t, n in rows.items()))
         return 0
+    if args.command == "export-curation":
+        with psycopg.connect(libpq_url(database_url(args.database_url))) as conn:
+            reviewed, added, conflicts = export(conn, args.file)
+        print(f"{reviewed} curated rows clinician-reviewed, {added} gap mappings added to "
+              f"{args.file}. Next: make vocab-load-local.")  # fmt: skip
+        for text in conflicts:
+            print(f"CONFLICT: centers chose different concepts for '{text}'; not written.")
+        return 1 if conflicts else 0
     source = resolve_source(args.source)
     if args.command == "load":
         run_load(source, database_url(args.database_url))

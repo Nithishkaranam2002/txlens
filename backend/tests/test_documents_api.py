@@ -15,6 +15,7 @@ from txlens_backend.api.deps import Role
 from txlens_backend.documents.service import ReviewDecision
 
 pytestmark = pytest.mark.db
+REVIEW = "/review/items/biopsy_document"
 
 
 def seeded(documents: list[SeededDocument], tenant: str, status: str) -> SeededDocument:
@@ -206,12 +207,15 @@ def test_a_review_is_signalled_to_the_waiting_workflow(
     document_id = unlinked_document(api_owner, "in_review")
     login(client, Role.DATA_STEWARD)
     response = client.post(
-        f"/documents/{document_id}/review",
-        json={"action": "edit", "changes": {"banff_t": "3"}, "note": "t3"},
-    )
-    assert response.json() == {"document_id": document_id, "status": "submitted"}
+        f"{REVIEW}/{document_id}",
+        json={"action": "edit", "changes": {"banff_t": "3"}, "note": "t3",
+              "reason_code": "ocr_error"},
+    )  # fmt: skip
+    assert response.json() == {"item_type": "biopsy_document", "item_key": document_id,
+                               "status": "submitted"}  # fmt: skip
     workflow_id, decision = sender.sent[0]
     assert workflow_id.startswith("wf-") and decision.changes == {"banff_t": "3"}
+    assert decision.reason_code == "ocr_error"
     with api_owner.connect() as conn:
         audited = conn.execute(
             text(
@@ -229,8 +233,8 @@ def test_without_a_waiting_workflow_the_review_is_applied_directly(
 ) -> None:
     document_id = unlinked_document(api_owner, "in_review")
     login(client, Role.CLINICIAN)
-    response = client.post(f"/documents/{document_id}/review", json={"action": "reject"})
-    assert response.json()["status"] == "rejected"
+    reject = {"action": "reject", "reason_code": "insufficient_evidence"}
+    assert client.post(f"{REVIEW}/{document_id}", json=reject).json()["status"] == "applied"
     with api_owner.connect() as conn:
         status = conn.execute(
             text("SELECT status FROM app.document WHERE document_id = :d"), {"d": document_id}
@@ -244,14 +248,14 @@ def test_reviews_need_a_document_in_review_and_valid_edits(
     done = unlinked_document(api_owner, "approved")
     waiting = unlinked_document(api_owner, "in_review")
     login(client, Role.DATA_STEWARD)
-    assert client.post(f"/documents/{done}/review", json={"action": "approve"}).status_code == 409
-    bad = {"action": "edit", "changes": {"banff_t": "9"}}
-    assert client.post(f"/documents/{waiting}/review", json=bad).status_code == 422
+    assert client.post(f"{REVIEW}/{done}", json={"action": "approve"}).status_code == 409
+    bad = {"action": "edit", "changes": {"banff_t": "9"}, "reason_code": "wrong_value"}
+    assert client.post(f"{REVIEW}/{waiting}", json=bad).status_code == 422
+    no_reason = {"action": "edit", "changes": {"banff_t": "3"}}
+    assert client.post(f"{REVIEW}/{waiting}", json=no_reason).status_code == 422
     assert sender.sent == []
     login(client, Role.RESEARCHER)
-    assert (
-        client.post(f"/documents/{waiting}/review", json={"action": "approve"}).status_code == 403
-    )
+    assert client.post(f"{REVIEW}/{waiting}", json={"action": "approve"}).status_code == 403
 
 
 def test_reviews_need_the_csrf_header(
@@ -260,6 +264,6 @@ def test_reviews_need_the_csrf_header(
     waiting = unlinked_document(api_owner, "in_review")
     login(client, Role.DATA_STEWARD)
     response = client.post(
-        f"/documents/{waiting}/review", json={"action": "approve"}, headers={"X-Requested-With": ""}
+        f"{REVIEW}/{waiting}", json={"action": "approve"}, headers={"X-Requested-With": ""}
     )
     assert response.status_code == 403

@@ -1,13 +1,12 @@
-"""Pathology documents: human review, and the evidence behind each extracted value.
+"""Pathology documents: the evidence behind each extracted value, and delivering review
+decisions (made in the review queue, api/review.py) to the document's workflow.
 
-- `POST /documents/{id}/review` (clinicians, data stewards): approve, edit or reject a
-  document waiting for review. The decision is sent to the document's workflow as a Temporal
-  signal; if no workflow is waiting (e.g. a document from an evaluation run), the same review
-  step runs here. Either way it is audited with the reviewer.
 - `GET /documents/{id}/evidence`: clinicians see every field with page, box and full OCR
   line (audited as phi_view); data stewards see redacted evidence lines only (deid_view);
   researchers get 403.
 - `GET /documents/{id}/pages/{n}`: the page image, clinicians only.
+- `GET /documents/{id}/fields/{field}/crop`: one evidence line as an image with identifiers
+  painted over, refused for any line in the report's identity header (review/crop.py).
 A document of another center, or a malformed id, is a 404.
 """
 
@@ -18,22 +17,25 @@ from typing import Annotated, Any, Literal, Protocol
 import pymupdf
 from anyio import from_thread
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, Field
+from sqlalchemy import Connection
 from temporalio.client import Client, WorkflowExecutionStatus
 from temporalio.service import RPCError, RPCStatusCode
 
 from txlens_backend import audit, deid
 from txlens_backend.api.deps import (
+    AppContext,
     Context,
     Info,
     Principal,
     Role,
     TenantDb,
-    require_csrf_header,
     require_roles,
 )
+from txlens_backend.audit import RequestInfo
 from txlens_backend.documents import service, store
-from txlens_backend.documents.service import InvalidEditError, ReviewDecision
+from txlens_backend.documents.service import ReviewDecision
+from txlens_backend.review import crop
+from txlens_backend.review.decide import Decision
 from txlens_backend.services import biopsies
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -42,24 +44,7 @@ Clinician = Annotated[Principal, Depends(require_roles(Role.CLINICIAN))]
 PAGE_DPI = 110
 ERRORS: dict[int | str, dict[str, Any]] = {
     404: {"description": "No such document in your center"},
-    409: {"description": "The document is not waiting for review"},
-    422: {"description": "An edit names an unknown field or a value it does not allow"},
 }
-
-
-class ReviewRequest(BaseModel):
-    """A reviewer's decision. `changes` (field -> value, null = not reported) only for edit."""
-
-    action: Literal["approve", "edit", "reject"]
-    changes: dict[str, str | None] = Field(default_factory=dict)
-    note: str | None = Field(default=None, max_length=2000)
-
-
-class ReviewAccepted(BaseModel):
-    """`submitted`: the waiting workflow got the decision and applies it; otherwise applied."""
-
-    document_id: str
-    status: Literal["submitted", "approved", "rejected"]
 
 
 class ReviewSender(Protocol):
@@ -109,39 +94,25 @@ def find(conn: TenantDb, document_id: str) -> store.DocumentRow:
     return row
 
 
-@router.post(
-    "/{document_id}/review",
-    summary="Approve, edit or reject a document waiting for review",
-    responses=ERRORS,
-    dependencies=[Depends(require_csrf_header)],
-)
-def submit_review(
-    document_id: str,
-    body: ReviewRequest,
-    principal: Reviewer,
-    conn: TenantDb,
-    ctx: Context,
-    info: Info,
-    sender: Sender,
-) -> ReviewAccepted:
-    """Send the decision to the waiting workflow (or apply it if none is waiting)."""
+def deliver(
+    conn: Connection, ctx: AppContext, principal: Principal, info: RequestInfo,
+    sender: ReviewSender, document_id: str, decision: Decision,
+) -> Literal["submitted", "applied"]:  # fmt: skip
+    """Send a recorded decision to the document's waiting workflow as a Temporal signal; if
+    none is waiting (e.g. a document from an evaluation run), apply it here."""
     row = find(conn, document_id)
-    if row.status != "in_review":
-        raise HTTPException(status.HTTP_409_CONFLICT, f"Document is {row.status}")
-    changes = body.changes if body.action == "edit" else {}
-    try:
-        service.checked_changes(row.organ or "kidney", changes)
-    except InvalidEditError as error:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(error)) from error
-    decision = ReviewDecision(body.action, principal.user_id, info.request_id, changes, body.note)
+    if decision.action == "revert":
+        raise ValueError("a document decision is approve, edit or reject")
+    changes = dict(decision.changes) if decision.action == "edit" else {}
+    signal = ReviewDecision(decision.action, principal.user_id, info.request_id, changes,
+                            decision.note, decision.reason_code)  # fmt: skip
     audit.record(conn, info, principal.user_id, "document_review_submit", "document",
-                 document_id, {"action": body.action, "fields": sorted(changes)})  # fmt: skip
-    if from_thread.run(sender.send, row.workflow_id, decision):
-        return ReviewAccepted(document_id=document_id, status="submitted")
-    applied = service.apply_review(ctx.engine, principal.tenant_id, document_id, decision, "api")
-    return ReviewAccepted(
-        document_id=document_id, status="rejected" if applied == "rejected" else "approved"
-    )
+                 document_id, {"action": decision.action, "fields": sorted(changes),
+                               "reason_code": decision.reason_code})  # fmt: skip
+    if from_thread.run(sender.send, row.workflow_id, signal):
+        return "submitted"
+    service.apply_review(ctx.engine, principal.tenant_id, document_id, signal, "api")
+    return "applied"
 
 
 @router.get(
@@ -190,4 +161,30 @@ def document_page(
     image = page_png(path, page)
     audit.record(conn, info, principal.user_id, "phi_view", "document_page", document_id,
                  {"page": page})  # fmt: skip
+    return Response(image, media_type="image/png")
+
+
+@router.get(
+    "/{document_id}/fields/{field}/crop",
+    summary="One evidence line as an image, identifiers painted over (no header lines)",
+    responses={404: {"description": "No such document or field, or the line may not be shown"}},
+    response_class=Response,
+)
+def field_crop(
+    document_id: str, field: str, principal: Reviewer, conn: TenantDb, ctx: Context, info: Info
+) -> Response:
+    """The cropped, redacted line image behind one field (what data stewards may see)."""
+    row = find(conn, document_id)
+    root = ctx.settings.documents_root.resolve()
+    path = (root / row.source_path).resolve()
+    if not path.is_relative_to(root) or not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document file not found")
+    redact = biopsies.redactor(store.identity_of(conn, row.person_id))
+    try:
+        image = crop.field_crop(conn, row, field, path, redact)
+    except crop.CropRefusedError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"No image: {error}") from error
+    action = "phi_view" if principal.sees_identifiers else "deid_view"
+    audit.record(conn, info, principal.user_id, action, "document_crop", document_id,
+                 {"field": field})  # fmt: skip
     return Response(image, media_type="image/png")

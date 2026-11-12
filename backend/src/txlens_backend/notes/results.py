@@ -6,8 +6,9 @@ below the review threshold (LLM findings always are), or a rule gave a review re
 reviewer's decision (app.review_decision, keyed by note and span) is re-applied whenever the
 note is processed again, so re-running the NLP never undoes a person's work. A note gives one
 condition_occurrence per concept, only from accepted condition mentions that are affirmed,
-current and about the patient, with a standard concept. TxLens local concepts (borderline rejection) are non-standard: OMOP
-keeps them out of `*_concept_id`, so they stay in note_nlp as source concepts.
+current and about the patient, with a standard concept. TxLens local concepts (borderline
+rejection) are non-standard: OMOP keeps them out of `*_concept_id`, so they stay in note_nlp
+as source concepts.
 """
 
 import hashlib

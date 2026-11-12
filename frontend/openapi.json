@@ -1,6 +1,59 @@
 {
   "components": {
     "schemas": {
+      "Agreement": {
+        "description": "Reviewer vs model agreement on one field: QC sample and other items apart.",
+        "properties": {
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "item_type": {
+            "title": "Item Type",
+            "type": "string"
+          },
+          "other_agreement": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Agreement"
+          },
+          "other_examples": {
+            "title": "Other Examples",
+            "type": "integer"
+          },
+          "qc_agreement": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qc Agreement"
+          },
+          "qc_examples": {
+            "title": "Qc Examples",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "item_type",
+          "field",
+          "qc_examples",
+          "qc_agreement",
+          "other_examples",
+          "other_agreement"
+        ],
+        "title": "Agreement",
+        "type": "object"
+      },
       "BiopsyResult": {
         "description": "What a biopsy's pathology report says, and how far it has been checked.",
         "properties": {
@@ -288,6 +341,31 @@
         "title": "ConceptHit",
         "type": "object"
       },
+      "ConceptRef": {
+        "properties": {
+          "concept_id": {
+            "title": "Concept Id",
+            "type": "integer"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "concept_id",
+          "name"
+        ],
+        "title": "ConceptRef",
+        "type": "object"
+      },
       "Condition": {
         "description": "One condition: from the record, or read from clinic notes (\"note\").",
         "properties": {
@@ -380,6 +458,132 @@
           }
         },
         "title": "DateRange",
+        "type": "object"
+      },
+      "DayCount": {
+        "properties": {
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "item_type": {
+            "title": "Item Type",
+            "type": "string"
+          },
+          "reviewed": {
+            "title": "Reviewed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "item_type",
+          "reviewed"
+        ],
+        "title": "DayCount",
+        "type": "object"
+      },
+      "DecisionRequest": {
+        "description": "`changes` (field -> value) only for edit. Edit, reject and revert need a reason.",
+        "properties": {
+          "action": {
+            "enum": [
+              "approve",
+              "edit",
+              "reject",
+              "revert"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "changes": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Changes",
+            "type": "object"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ocr_error",
+                  "wrong_value",
+                  "wrong_concept",
+                  "wrong_negation",
+                  "wrong_temporality",
+                  "wrong_experiencer",
+                  "not_a_finding",
+                  "insufficient_evidence",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "DecisionRequest",
+        "type": "object"
+      },
+      "DecisionResult": {
+        "description": "`submitted`: a waiting workflow got the decision and applies it; otherwise applied.",
+        "properties": {
+          "item_key": {
+            "title": "Item Key",
+            "type": "string"
+          },
+          "item_type": {
+            "enum": [
+              "biopsy_document",
+              "note_mention",
+              "condition_mapping",
+              "curated_mapping"
+            ],
+            "title": "Item Type",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "submitted",
+              "applied"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_type",
+          "item_key",
+          "status"
+        ],
+        "title": "DecisionResult",
         "type": "object"
       },
       "DeidentifiedPatient": {
@@ -636,6 +840,32 @@
           "fields"
         ],
         "title": "DocumentEvidence",
+        "type": "object"
+      },
+      "DocumentPane": {
+        "properties": {
+          "crop_urls": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Crop Urls",
+            "type": "object"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/DocumentEvidence"
+          },
+          "kind": {
+            "const": "document",
+            "default": "document",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence",
+          "crop_urls"
+        ],
+        "title": "DocumentPane",
         "type": "object"
       },
       "Drug": {
@@ -1007,6 +1237,68 @@
         "title": "Health",
         "type": "object"
       },
+      "HistoryEntry": {
+        "description": "One earlier review of a curated row. Reviewer shown by role and center, never name.",
+        "properties": {
+          "action": {
+            "enum": [
+              "approve",
+              "correct",
+              "revert"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          },
+          "new_concept": {
+            "$ref": "#/components/schemas/ConceptRef"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "old_concept": {
+            "$ref": "#/components/schemas/ConceptRef"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "reviewer_center": {
+            "title": "Reviewer Center",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "old_concept",
+          "new_concept",
+          "reviewer_center",
+          "reason_code",
+          "note",
+          "decided_at"
+        ],
+        "title": "HistoryEntry",
+        "type": "object"
+      },
       "IdentifiedPatient": {
         "description": "Clinician view: real ids, identifiers and dates.",
         "properties": {
@@ -1309,6 +1601,127 @@
           "password"
         ],
         "title": "LoginRequest",
+        "type": "object"
+      },
+      "MappingPane": {
+        "properties": {
+          "concept": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConceptRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryEntry"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "kind": {
+            "const": "mapping",
+            "default": "mapping",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "original_concept": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConceptRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows"
+          },
+          "source_value": {
+            "title": "Source Value",
+            "type": "string"
+          },
+          "source_vocabulary_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Vocabulary Id"
+          },
+          "suggestion_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggestion Score"
+          }
+        },
+        "required": [
+          "source_value",
+          "source_vocabulary_id",
+          "description",
+          "concept",
+          "original_concept",
+          "suggestion_score",
+          "reason",
+          "rows",
+          "label",
+          "history"
+        ],
+        "title": "MappingPane",
         "type": "object"
       },
       "Marker": {
@@ -1845,6 +2258,36 @@
         "title": "Procedure",
         "type": "object"
       },
+      "QueuePage": {
+        "description": "A page of the queue, with the number of pending items per type (all filters but type).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "pending_by_type": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Pending By Type",
+            "type": "object"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "pending_by_type"
+        ],
+        "title": "QueuePage",
+        "type": "object"
+      },
       "RangeByPhase": {
         "additionalProperties": false,
         "description": "The latest result is outside the target range for the time since the anchor date.",
@@ -2018,73 +2461,325 @@
         "title": "Review",
         "type": "object"
       },
-      "ReviewAccepted": {
-        "description": "`submitted`: the waiting workflow got the decision and applies it; otherwise applied.",
+      "ReviewDetail": {
         "properties": {
-          "document_id": {
-            "title": "Document Id",
-            "type": "string"
+          "actions": {
+            "items": {
+              "enum": [
+                "approve",
+                "edit",
+                "reject",
+                "revert"
+              ],
+              "type": "string"
+            },
+            "title": "Actions",
+            "type": "array"
           },
-          "status": {
-            "enum": [
-              "submitted",
-              "approved",
-              "rejected"
+          "evidence": {
+            "discriminator": {
+              "mapping": {
+                "document": "#/components/schemas/DocumentPane",
+                "mapping": "#/components/schemas/MappingPane",
+                "sentence": "#/components/schemas/SentencePane"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DocumentPane"
+              },
+              {
+                "$ref": "#/components/schemas/SentencePane"
+              },
+              {
+                "$ref": "#/components/schemas/MappingPane"
+              }
             ],
-            "title": "Status",
-            "type": "string"
+            "title": "Evidence"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewField"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "item": {
+            "$ref": "#/components/schemas/ReviewItem"
+          },
+          "reason_codes": {
+            "items": {
+              "enum": [
+                "ocr_error",
+                "wrong_value",
+                "wrong_concept",
+                "wrong_negation",
+                "wrong_temporality",
+                "wrong_experiencer",
+                "not_a_finding",
+                "insufficient_evidence",
+                "other"
+              ],
+              "type": "string"
+            },
+            "title": "Reason Codes",
+            "type": "array"
           }
         },
         "required": [
-          "document_id",
-          "status"
+          "item",
+          "fields",
+          "evidence",
+          "actions",
+          "reason_codes"
         ],
-        "title": "ReviewAccepted",
+        "title": "ReviewDetail",
         "type": "object"
       },
-      "ReviewRequest": {
-        "description": "A reviewer's decision. `changes` (field -> value, null = not reported) only for edit.",
+      "ReviewField": {
+        "description": "A form field: what the model said, what it is now, and the allowed values if closed.",
         "properties": {
-          "action": {
-            "enum": [
-              "approve",
-              "edit",
-              "reject"
-            ],
-            "title": "Action",
-            "type": "string"
-          },
-          "changes": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "title": "Changes",
-            "type": "object"
-          },
-          "note": {
+          "choices": {
             "anyOf": [
               {
-                "maxLength": 2000,
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Choices"
+          },
+          "concept": {
+            "default": false,
+            "title": "Concept",
+            "type": "boolean"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "model_value": {
+            "anyOf": [
+              {
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Note"
+            "title": "Model Value"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
           }
         },
         "required": [
-          "action"
+          "name",
+          "label",
+          "model_value",
+          "value"
         ],
-        "title": "ReviewRequest",
+        "title": "ReviewField",
+        "type": "object"
+      },
+      "ReviewItem": {
+        "description": "One queue entry. Titles carry no identifiers; `patient_id` is shaped for the viewer.",
+        "properties": {
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "high_severity": {
+            "title": "High Severity",
+            "type": "boolean"
+          },
+          "item_key": {
+            "title": "Item Key",
+            "type": "string"
+          },
+          "item_type": {
+            "enum": [
+              "biopsy_document",
+              "note_mention",
+              "condition_mapping",
+              "curated_mapping"
+            ],
+            "title": "Item Type",
+            "type": "string"
+          },
+          "patient_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Patient Id"
+          },
+          "qc_sample": {
+            "title": "Qc Sample",
+            "type": "boolean"
+          },
+          "queued_at": {
+            "format": "date-time",
+            "title": "Queued At",
+            "type": "string"
+          },
+          "rejection_related": {
+            "title": "Rejection Related",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approve",
+              "edit",
+              "reject",
+              "revert"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "integer"
+          },
+          "tier_label": {
+            "title": "Tier Label",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_type",
+          "item_key",
+          "title",
+          "detail",
+          "patient_id",
+          "queued_at",
+          "tier",
+          "tier_label",
+          "rejection_related",
+          "high_severity",
+          "qc_sample",
+          "status"
+        ],
+        "title": "ReviewItem",
+        "type": "object"
+      },
+      "ReviewMetrics": {
+        "properties": {
+          "agreement": {
+            "items": {
+              "$ref": "#/components/schemas/Agreement"
+            },
+            "title": "Agreement",
+            "type": "array"
+          },
+          "queue_by_type": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Queue By Type",
+            "type": "object"
+          },
+          "reviewed_per_day": {
+            "items": {
+              "$ref": "#/components/schemas/DayCount"
+            },
+            "title": "Reviewed Per Day",
+            "type": "array"
+          },
+          "time_to_review": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewTime"
+            },
+            "title": "Time To Review",
+            "type": "array"
+          }
+        },
+        "required": [
+          "queue_by_type",
+          "reviewed_per_day",
+          "time_to_review",
+          "agreement"
+        ],
+        "title": "ReviewMetrics",
+        "type": "object"
+      },
+      "ReviewTime": {
+        "properties": {
+          "item_type": {
+            "title": "Item Type",
+            "type": "string"
+          },
+          "median_hours": {
+            "title": "Median Hours",
+            "type": "number"
+          },
+          "reviewed": {
+            "title": "Reviewed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "item_type",
+          "reviewed",
+          "median_hours"
+        ],
+        "title": "ReviewTime",
         "type": "object"
       },
       "RisingTrend": {
@@ -2250,6 +2945,68 @@
           "kind"
         ],
         "title": "ScheduleAdherence",
+        "type": "object"
+      },
+      "SentencePane": {
+        "properties": {
+          "highlight_end": {
+            "title": "Highlight End",
+            "type": "integer"
+          },
+          "highlight_start": {
+            "title": "Highlight Start",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "sentence",
+            "default": "sentence",
+            "title": "Kind",
+            "type": "string"
+          },
+          "note_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note Date"
+          },
+          "section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section"
+          },
+          "sentence": {
+            "title": "Sentence",
+            "type": "string"
+          },
+          "view": {
+            "enum": [
+              "identified",
+              "deidentified"
+            ],
+            "title": "View",
+            "type": "string"
+          }
+        },
+        "required": [
+          "view",
+          "sentence",
+          "highlight_start",
+          "highlight_end",
+          "section",
+          "note_date"
+        ],
+        "title": "SentencePane",
         "type": "object"
       },
       "Session": {
@@ -3248,6 +4005,54 @@
         ]
       }
     },
+    "/documents/{document_id}/fields/{field}/crop": {
+      "get": {
+        "description": "The cropped, redacted line image behind one field (what data stewards may see).",
+        "operationId": "field_crop_documents__document_id__fields__field__crop_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "field",
+            "required": true,
+            "schema": {
+              "title": "Field",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such document or field, or the line may not be shown"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One evidence line as an image, identifiers painted over (no header lines)",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
     "/documents/{document_id}/pages/{page}": {
       "get": {
         "description": "The page image, read from the raw document store.",
@@ -3291,76 +4096,6 @@
           }
         },
         "summary": "A page of the scanned report as an image (clinicians only)",
-        "tags": [
-          "documents"
-        ]
-      }
-    },
-    "/documents/{document_id}/review": {
-      "post": {
-        "description": "Send the decision to the waiting workflow (or apply it if none is waiting).",
-        "operationId": "submit_review_documents__document_id__review_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "document_id",
-            "required": true,
-            "schema": {
-              "title": "Document Id",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
-            "in": "header",
-            "name": "X-Requested-With",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
-              "title": "X-Requested-With"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ReviewRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReviewAccepted"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "404": {
-            "description": "No such document in your center"
-          },
-          "409": {
-            "description": "The document is not waiting for review"
-          },
-          "422": {
-            "description": "An edit names an unknown field or a value it does not allow"
-          }
-        },
-        "summary": "Approve, edit or reject a document waiting for review",
         "tags": [
           "documents"
         ]
@@ -3807,6 +4542,268 @@
         "summary": "One patient's labs, drugs, conditions, procedures, death and note dates",
         "tags": [
           "patients"
+        ]
+      }
+    },
+    "/review/items": {
+      "get": {
+        "description": "Pending: rejection/high severity first, then the QC sample, then the rest.",
+        "operationId": "list_items_review_items_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "biopsy_document",
+                    "note_mention",
+                    "condition_mapping",
+                    "curated_mapping"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "pending",
+              "enum": [
+                "pending",
+                "decided"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueuePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "The review queue, in priority order",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/review/items/{item_type}/{item_key}": {
+      "get": {
+        "description": "Evidence is identified for clinicians and de-identified for data stewards.",
+        "operationId": "get_item_review_items__item_type___item_key__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_type",
+            "required": true,
+            "schema": {
+              "enum": [
+                "biopsy_document",
+                "note_mention",
+                "condition_mapping",
+                "curated_mapping"
+              ],
+              "title": "Item Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_key",
+            "required": true,
+            "schema": {
+              "title": "Item Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such item in your center"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One item with its form fields and evidence",
+        "tags": [
+          "review"
+        ]
+      },
+      "post": {
+        "description": "Check, record (with labelled examples), audit and apply the decision.",
+        "operationId": "decide_item_review_items__item_type___item_key__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_type",
+            "required": true,
+            "schema": {
+              "enum": [
+                "biopsy_document",
+                "note_mention",
+                "condition_mapping",
+                "curated_mapping"
+              ],
+              "title": "Item Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_key",
+            "required": true,
+            "schema": {
+              "title": "Item Key",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+            "in": "header",
+            "name": "X-Requested-With",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Your role cannot review this item"
+          },
+          "404": {
+            "description": "No such item in your center"
+          },
+          "409": {
+            "description": "The item is not waiting for this decision"
+          },
+          "422": {
+            "description": "A missing reason code, or an edit the item does not allow"
+          }
+        },
+        "summary": "Approve, edit, reject or revert an item",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/review/metrics": {
+      "get": {
+        "description": "Aggregates for the caller's center (no patient data).",
+        "operationId": "review_metrics_review_metrics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewMetrics"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Queue size, throughput, time to review and agreement",
+        "tags": [
+          "review"
         ]
       }
     },

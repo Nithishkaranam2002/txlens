@@ -186,3 +186,37 @@ def test_audit_log_has_request_context_columns(db: Connection, as_app: AsApp) ->
     )
     row = db.execute(text("SELECT user_id, request_id, ip FROM app.audit_log")).one()
     assert (str(row.user_id), row.request_id, row.ip) == (USERS["center_a"], "req-1", "127.0.0.1")
+
+
+@pytest.mark.parametrize("table", ["review_decision", "labelled_example"])
+def test_review_records_are_append_only_for_the_app(
+    app_rows: Connection, as_app: AsApp, table: str
+) -> None:
+    as_app(app_rows, "center_a")
+    with pytest.raises(ProgrammingError, match="permission denied"):
+        app_rows.execute(text(f"DELETE FROM app.{table}"))
+
+
+def test_curated_history_is_shared_append_only_and_records_the_reviewer_center(
+    app_rows: Connection, as_app: AsApp
+) -> None:
+    as_app(app_rows, "center_a")
+    app_rows.execute(text(
+        "INSERT INTO app.curated_mapping_history (source_vocabulary_id, source_code, action, "
+        "old_concept_id, new_concept_id, reviewer_id, reviewer_tenant) VALUES ('V', 'c', "
+        "'approve', 1, 1, :u, 'center_a')"), {"u": USERS["center_a"]})  # fmt: skip
+    as_app(app_rows, "center_b")  # one review for every center
+    assert app_rows.execute(text("SELECT count(*) FROM app.curated_mapping_history")).scalar() == 1
+    with pytest.raises(ProgrammingError, match="permission denied"):
+        app_rows.execute(text("UPDATE app.curated_mapping_history SET new_concept_id = 2"))
+
+
+def test_a_center_cannot_record_a_curated_review_as_another_center(
+    app_rows: Connection, as_app: AsApp
+) -> None:
+    as_app(app_rows, "center_b")
+    with pytest.raises(Exception, match="check constraint"):
+        app_rows.execute(text(
+            "INSERT INTO app.curated_mapping_history (source_vocabulary_id, source_code, "
+            "action, old_concept_id, new_concept_id, reviewer_id, reviewer_tenant) VALUES "
+            "('V', 'c', 'approve', 1, 1, :u, 'center_a')"), {"u": USERS["center_b"]})  # fmt: skip

@@ -221,6 +221,15 @@ def field_values(conn: Connection, document_id: str) -> dict[str, Any]:
     return {r.field: decode(r.field, r.value) for r in rows}
 
 
+def field_lines(conn: Connection, document_id: str) -> dict[str, int | None]:
+    """Field name -> the OCR line its evidence was read from (None if not found)."""
+    rows = conn.execute(
+        text("SELECT field, line_no FROM app.extracted_field WHERE document_id = :d"),
+        {"d": document_id},
+    ).all()
+    return {r.field: r.line_no for r in rows}
+
+
 def set_values(conn: Connection, document_id: str, values: Mapping[str, Any]) -> None:
     """Overwrite field values (a reviewer's edit); the extracted value is kept beside it."""
     for name, value in values.items():

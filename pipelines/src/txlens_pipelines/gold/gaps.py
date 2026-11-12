@@ -2,11 +2,14 @@
 
 This is the human review queue for mappings: a reviewer adds a source_to_concept_map row (or
 accepts the gap), and the next run picks it up. Free-text conditions also carry the matcher's
-best suggestion, its score and why it was not accepted (condition_normalize.py).
+best suggestion, its score and why it was not accepted (condition_normalize.py); the load
+copies those condition gaps to app.mapping_gap, where the review queue shows them.
 """
 
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
+
+from txlens_pipelines.review_gaps import REVIEW_GAP_COLUMNS
 
 # (OMOP table, concept column, source value column, reason when the concept is 0)
 CHECKS = (
@@ -71,3 +74,21 @@ def mapping_gaps(
     return counted.join(
         condition_suggestions(conditions), ["tenant_id", "omop_table", "source_value"], "left"
     )
+
+
+def condition_gaps(gaps: DataFrame) -> DataFrame:
+    """The condition source values to review: one row per (tenant, source value)."""
+    return (
+        gaps.where(F.col("omop_table") == "condition_occurrence")
+        .groupBy("tenant_id", "source_value")
+        .agg(
+            F.min("reason").alias("reason"),
+            F.sum("rows").cast("long").alias("rows"),
+            F.first("suggested_concept_id", ignorenulls=True).cast("int")
+            .alias("suggested_concept_id"),
+            F.first("suggestion_score", ignorenulls=True).cast("double")
+            .alias("suggestion_score"),
+            F.first("review_reason", ignorenulls=True).alias("review_reason"),
+        )
+        .select(*REVIEW_GAP_COLUMNS)
+    )  # fmt: skip

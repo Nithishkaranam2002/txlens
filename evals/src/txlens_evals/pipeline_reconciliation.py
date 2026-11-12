@@ -579,7 +579,8 @@ def postgres_counts(tenants: Sequence[str]) -> dict[tuple[str, str], int] | None
             for tenant in tenants:
                 with conn.transaction():
                     conn.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant,))
-                    for table in LOAD_ORDER:
+                    # mapping_gap is a view of gold.mapping_gaps for review, not a gold table.
+                    for table in (t for t in LOAD_ORDER if t != "mapping_gap"):
                         name = f"{schema_of(table)}.{table}"
                         key = PRIMARY_KEYS.get(table, ())
                         # Only the pipeline's rows: extraction results are copied back later.

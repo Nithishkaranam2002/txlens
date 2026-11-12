@@ -148,9 +148,13 @@ def test_every_extraction_local_code_is_a_non_standard_local_concept() -> None:
         assert row["standard_concept"] == ""
 
 
-def test_curated_rows_are_labelled_pending_clinical_review() -> None:
+def test_curated_rows_are_labelled_pending_or_clinician_reviewed() -> None:
     curated = [m for m in read_mappings() if m.source_vocabulary_id in CURATED_PENDING_REVIEW]
-    assert curated and all(PENDING_REVIEW_LABEL in m.source_code_description for m in curated)
+    assert curated and all(
+        PENDING_REVIEW_LABEL in m.source_code_description
+        or "[clinician-reviewed " in m.source_code_description
+        for m in curated
+    )
 
 
 def test_every_history_value_row_has_its_observation_row() -> None:

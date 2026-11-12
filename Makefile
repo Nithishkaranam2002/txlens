@@ -6,7 +6,7 @@ SEED ?= 42
 VOCAB_SOURCE ?= omop/athena
 N_PATIENTS ?= 2000
 
-.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run prune-login-attempts notes-report rejection-report cohort-report surveillance-report biopsy-report ocr-report vocab-load vocab-load-local vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
+.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run prune-login-attempts notes-report review-report rejection-report cohort-report surveillance-report biopsy-report ocr-report vocab-load vocab-export-curation vocab-load-local vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -83,6 +83,9 @@ prune-login-attempts: ## Delete login attempts older than 30 days (logins also d
 vocab-load: ## Load OMOP vocabularies from omop/athena (or VOCAB_SOURCE=omop/vocab_subset)
 	uv run txlens-vocab load --source $(VOCAB_SOURCE)
 
+vocab-export-curation: ## Write review-queue mapping decisions into SOURCE_TO_CONCEPT_MAP.csv
+	uv run txlens-vocab export-curation
+
 vocab-load-local: ## Reload only our local concepts and reviewed mappings (after editing them)
 	uv run txlens-vocab load-local
 
@@ -106,6 +109,9 @@ pipeline: ## Run bronze -> silver -> gold -> Postgres load in the Spark containe
 
 notes-report: ## Note NLP vs ground truth -> evals/reports/notes_nlp.md (ARGS="--llm --max-cost 1")
 	uv run python -m txlens_evals.notes_nlp $(ARGS)
+
+review-report: ## Reviewer vs model agreement + eval set -> evals/reports/review_agreement.md
+	uv run python -m txlens_evals.review_feedback
 
 rejection-report: ## Rejection records vs ground-truth episodes -> evals/reports/rejection_records.md
 	uv run python -m txlens_evals.rejection_records

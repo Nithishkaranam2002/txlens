@@ -190,6 +190,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/documents/{document_id}/fields/{field}/crop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One evidence line as an image, identifiers painted over (no header lines)
+         * @description The cropped, redacted line image behind one field (what data stewards may see).
+         */
+        get: operations["field_crop_documents__document_id__fields__field__crop_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/documents/{document_id}/pages/{page}": {
         parameters: {
             query?: never;
@@ -204,26 +224,6 @@ export interface paths {
         get: operations["document_page_documents__document_id__pages__page__get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/documents/{document_id}/review": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Approve, edit or reject a document waiting for review
-         * @description Send the decision to the waiting workflow (or apply it if none is waiting).
-         */
-        post: operations["submit_review_documents__document_id__review_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -370,6 +370,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/review/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The review queue, in priority order
+         * @description Pending: rejection/high severity first, then the QC sample, then the rest.
+         */
+        get: operations["list_items_review_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/review/items/{item_type}/{item_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One item with its form fields and evidence
+         * @description Evidence is identified for clinicians and de-identified for data stewards.
+         */
+        get: operations["get_item_review_items__item_type___item_key__get"];
+        put?: never;
+        /**
+         * Approve, edit, reject or revert an item
+         * @description Check, record (with labelled examples), audit and apply the decision.
+         */
+        post: operations["decide_item_review_items__item_type___item_key__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/review/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Queue size, throughput, time to review and agreement
+         * @description Aggregates for the caller's center (no patient data).
+         */
+        get: operations["review_metrics_review_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/surveillance/configs/{program}": {
         parameters: {
             query?: never;
@@ -415,6 +479,24 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * Agreement
+         * @description Reviewer vs model agreement on one field: QC sample and other items apart.
+         */
+        Agreement: {
+            /** Field */
+            field: string;
+            /** Item Type */
+            item_type: string;
+            /** Other Agreement */
+            other_agreement: number | null;
+            /** Other Examples */
+            other_examples: number;
+            /** Qc Agreement */
+            qc_agreement: number | null;
+            /** Qc Examples */
+            qc_examples: number;
+        };
         /**
          * BiopsyResult
          * @description What a biopsy's pathology report says, and how far it has been checked.
@@ -516,6 +598,13 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** ConceptRef */
+        ConceptRef: {
+            /** Concept Id */
+            concept_id: number;
+            /** Name */
+            name: string | null;
+        };
         /**
          * Condition
          * @description One condition: from the record, or read from clinic notes ("note").
@@ -549,6 +638,55 @@ export interface components {
             end?: string | null;
             /** Start */
             start?: string | null;
+        };
+        /** DayCount */
+        DayCount: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Item Type */
+            item_type: string;
+            /** Reviewed */
+            reviewed: number;
+        };
+        /**
+         * DecisionRequest
+         * @description `changes` (field -> value) only for edit. Edit, reject and revert need a reason.
+         */
+        DecisionRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "approve" | "edit" | "reject" | "revert";
+            /** Changes */
+            changes?: {
+                [key: string]: string | null;
+            };
+            /** Note */
+            note?: string | null;
+            /** Reason Code */
+            reason_code?: ("ocr_error" | "wrong_value" | "wrong_concept" | "wrong_negation" | "wrong_temporality" | "wrong_experiencer" | "not_a_finding" | "insufficient_evidence" | "other") | null;
+        };
+        /**
+         * DecisionResult
+         * @description `submitted`: a waiting workflow got the decision and applies it; otherwise applied.
+         */
+        DecisionResult: {
+            /** Item Key */
+            item_key: string;
+            /**
+             * Item Type
+             * @enum {string}
+             */
+            item_type: "biopsy_document" | "note_mention" | "condition_mapping" | "curated_mapping";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "submitted" | "applied";
         };
         /**
          * DeidentifiedPatient
@@ -626,6 +764,19 @@ export interface components {
              * @enum {string}
              */
             view: "full" | "redacted";
+        };
+        /** DocumentPane */
+        DocumentPane: {
+            /** Crop Urls */
+            crop_urls: {
+                [key: string]: string;
+            };
+            evidence: components["schemas"]["DocumentEvidence"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "document";
         };
         /**
          * Drug
@@ -756,6 +907,30 @@ export interface components {
             status: string;
         };
         /**
+         * HistoryEntry
+         * @description One earlier review of a curated row. Reviewer shown by role and center, never name.
+         */
+        HistoryEntry: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "approve" | "correct" | "revert";
+            /**
+             * Decided At
+             * Format: date-time
+             */
+            decided_at: string;
+            new_concept: components["schemas"]["ConceptRef"];
+            /** Note */
+            note: string | null;
+            old_concept: components["schemas"]["ConceptRef"];
+            /** Reason Code */
+            reason_code: string | null;
+            /** Reviewer Center */
+            reviewer_center: string;
+        };
+        /**
          * IdentifiedPatient
          * @description Clinician view: real ids, identifiers and dates.
          */
@@ -855,6 +1030,32 @@ export interface components {
             password: string;
             /** Username */
             username: string;
+        };
+        /** MappingPane */
+        MappingPane: {
+            concept: components["schemas"]["ConceptRef"] | null;
+            /** Description */
+            description: string | null;
+            /** History */
+            history: components["schemas"]["HistoryEntry"][];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "mapping";
+            /** Label */
+            label: string | null;
+            original_concept: components["schemas"]["ConceptRef"] | null;
+            /** Reason */
+            reason: string | null;
+            /** Rows */
+            rows: number | null;
+            /** Source Value */
+            source_value: string;
+            /** Source Vocabulary Id */
+            source_vocabulary_id: string | null;
+            /** Suggestion Score */
+            suggestion_score: number | null;
         };
         /**
          * Marker
@@ -1067,6 +1268,20 @@ export interface components {
             result?: components["schemas"]["BiopsyResult"] | null;
         };
         /**
+         * QueuePage
+         * @description A page of the queue, with the number of pending items per type (all filters but type).
+         */
+        QueuePage: {
+            /** Items */
+            items: components["schemas"]["ReviewItem"][];
+            /** Pending By Type */
+            pending_by_type: {
+                [key: string]: number;
+            };
+            /** Total */
+            total: number;
+        };
+        /**
          * RangeByPhase
          * @description The latest result is outside the target range for the time since the anchor date.
          */
@@ -1143,35 +1358,103 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /** ReviewDetail */
+        ReviewDetail: {
+            /** Actions */
+            actions: ("approve" | "edit" | "reject" | "revert")[];
+            /** Evidence */
+            evidence: components["schemas"]["DocumentPane"] | components["schemas"]["SentencePane"] | components["schemas"]["MappingPane"];
+            /** Fields */
+            fields: components["schemas"]["ReviewField"][];
+            item: components["schemas"]["ReviewItem"];
+            /** Reason Codes */
+            reason_codes: ("ocr_error" | "wrong_value" | "wrong_concept" | "wrong_negation" | "wrong_temporality" | "wrong_experiencer" | "not_a_finding" | "insufficient_evidence" | "other")[];
+        };
         /**
-         * ReviewAccepted
-         * @description `submitted`: the waiting workflow got the decision and applies it; otherwise applied.
+         * ReviewField
+         * @description A form field: what the model said, what it is now, and the allowed values if closed.
          */
-        ReviewAccepted: {
-            /** Document Id */
-            document_id: string;
+        ReviewField: {
+            /** Choices */
+            choices?: string[] | null;
+            /**
+             * Concept
+             * @default false
+             */
+            concept: boolean;
+            /** Confidence */
+            confidence?: number | null;
+            /** Label */
+            label: string;
+            /** Model Value */
+            model_value: string | null;
+            /** Name */
+            name: string;
+            /** Value */
+            value: string | null;
+        };
+        /**
+         * ReviewItem
+         * @description One queue entry. Titles carry no identifiers; `patient_id` is shaped for the viewer.
+         */
+        ReviewItem: {
+            /** Decided At */
+            decided_at?: string | null;
+            /** Detail */
+            detail: string | null;
+            /** High Severity */
+            high_severity: boolean;
+            /** Item Key */
+            item_key: string;
+            /**
+             * Item Type
+             * @enum {string}
+             */
+            item_type: "biopsy_document" | "note_mention" | "condition_mapping" | "curated_mapping";
+            /** Patient Id */
+            patient_id: string | null;
+            /** Qc Sample */
+            qc_sample: boolean;
+            /**
+             * Queued At
+             * Format: date-time
+             */
+            queued_at: string;
+            /** Rejection Related */
+            rejection_related: boolean;
             /**
              * Status
              * @enum {string}
              */
-            status: "submitted" | "approved" | "rejected";
+            status: "pending" | "approve" | "edit" | "reject" | "revert";
+            /** Tier */
+            tier: number;
+            /** Tier Label */
+            tier_label: string;
+            /** Title */
+            title: string;
         };
-        /**
-         * ReviewRequest
-         * @description A reviewer's decision. `changes` (field -> value, null = not reported) only for edit.
-         */
-        ReviewRequest: {
-            /**
-             * Action
-             * @enum {string}
-             */
-            action: "approve" | "edit" | "reject";
-            /** Changes */
-            changes?: {
-                [key: string]: string | null;
+        /** ReviewMetrics */
+        ReviewMetrics: {
+            /** Agreement */
+            agreement: components["schemas"]["Agreement"][];
+            /** Queue By Type */
+            queue_by_type: {
+                [key: string]: number;
             };
-            /** Note */
-            note?: string | null;
+            /** Reviewed Per Day */
+            reviewed_per_day: components["schemas"]["DayCount"][];
+            /** Time To Review */
+            time_to_review: components["schemas"]["ReviewTime"][];
+        };
+        /** ReviewTime */
+        ReviewTime: {
+            /** Item Type */
+            item_type: string;
+            /** Median Hours */
+            median_hours: number;
+            /** Reviewed */
+            reviewed: number;
         };
         /**
          * RisingTrend
@@ -1236,6 +1519,29 @@ export interface components {
             max_age_days?: number | null;
             /** @default medium */
             severity: components["schemas"]["Severity"];
+        };
+        /** SentencePane */
+        SentencePane: {
+            /** Highlight End */
+            highlight_end: number;
+            /** Highlight Start */
+            highlight_start: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "sentence";
+            /** Note Date */
+            note_date: string | null;
+            /** Section */
+            section: string | null;
+            /** Sentence */
+            sentence: string;
+            /**
+             * View
+             * @enum {string}
+             */
+            view: "identified" | "deidentified";
         };
         /**
          * Session
@@ -1769,6 +2075,43 @@ export interface operations {
             };
         };
     };
+    field_crop_documents__document_id__fields__field__crop_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+                field: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such document or field, or the line may not be shown */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     document_page_documents__document_id__pages__page__get: {
         parameters: {
             query?: never;
@@ -1803,56 +2146,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
-            };
-        };
-    };
-    submit_review_documents__document_id__review_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                /** @description Any non-empty value; requests without it get 403 (CSRF defence). */
-                "X-Requested-With"?: string | null;
-            };
-            path: {
-                document_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ReviewRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReviewAccepted"];
-                };
-            };
-            /** @description No such document in your center */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The document is not waiting for review */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description An edit names an unknown field or a value it does not allow */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
@@ -2116,6 +2409,157 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_items_review_items_get: {
+        parameters: {
+            query?: {
+                type?: ("biopsy_document" | "note_mention" | "condition_mapping" | "curated_mapping") | null;
+                status?: "pending" | "decided";
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueuePage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_item_review_items__item_type___item_key__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_type: "biopsy_document" | "note_mention" | "condition_mapping" | "curated_mapping";
+                item_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewDetail"];
+                };
+            };
+            /** @description No such item in your center */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_item_review_items__item_type___item_key__post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Any non-empty value; requests without it get 403 (CSRF defence). */
+                "X-Requested-With"?: string | null;
+            };
+            path: {
+                item_type: "biopsy_document" | "note_mention" | "condition_mapping" | "curated_mapping";
+                item_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionResult"];
+                };
+            };
+            /** @description Your role cannot review this item */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such item in your center */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The item is not waiting for this decision */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A missing reason code, or an edit the item does not allow */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    review_metrics_review_metrics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewMetrics"];
                 };
             };
         };
