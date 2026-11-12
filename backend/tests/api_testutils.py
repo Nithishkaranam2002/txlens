@@ -29,11 +29,18 @@ def set_cookies(response: Response) -> dict[str, str]:
 
 
 def new_flag(owner: Engine, tenant: str = "center_a") -> str:
-    """An open surveillance flag of this center that nobody has reviewed yet."""
+    """An open surveillance flag of this center that nobody has ever reviewed (no review in
+    the audit log either, so its history is only "raised"). Tests that review it should take
+    it through the `fresh_flag` fixture, which puts it back afterwards. High-severity flags
+    come first on purpose: a center has only a few, so a test that reviewed one and left it
+    reviewed would make the worklist severity filter fail every time, not once in a while."""
     with owner.connect() as conn:
         flag_id = conn.execute(
-            text("SELECT flag_id FROM app.surveillance_flag WHERE tenant_id = :t "
-                 "AND status = 'new' AND cleared_at IS NULL ORDER BY flag_id LIMIT 1"),
+            text("SELECT f.flag_id FROM app.surveillance_flag f WHERE f.tenant_id = :t "
+                 "AND f.status = 'new' AND f.cleared_at IS NULL AND NOT EXISTS ("
+                 "SELECT 1 FROM app.audit_log a WHERE a.object_type = 'surveillance_flag' "
+                 "AND a.object_id = f.flag_id::text) "
+                 "ORDER BY f.severity = 'high' DESC, f.flag_id LIMIT 1"),
             {"t": tenant},
         ).scalar_one()  # fmt: skip
     return str(flag_id)

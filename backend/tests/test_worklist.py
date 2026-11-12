@@ -2,11 +2,12 @@
 review workflow, and that de-identified flags carry only shifted dates."""
 
 import re
+from collections.abc import Callable
 from datetime import date
 from typing import Any
 
 import pytest
-from api_testutils import login, new_flag
+from api_testutils import login
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
@@ -68,8 +69,8 @@ def test_data_steward_sees_pseudonyms_and_only_shifted_dates(
         assert len(shifts) == 1 and 0 not in shifts  # one non-zero shift per patient
 
 
-def test_acknowledge_then_resolve(client: TestClient, api_owner: Engine, api_flags: date) -> None:
-    flag_id = new_flag(api_owner)
+def test_acknowledge_then_resolve(client: TestClient, fresh_flag: Callable[..., str]) -> None:
+    flag_id = fresh_flag()
     login(client, Role.CLINICIAN, "center_a")
     acknowledged = client.post(f"/flags/{flag_id}/acknowledge", json={"note": "calling patient"})
     assert acknowledged.status_code == 200
@@ -85,9 +86,9 @@ def test_acknowledge_then_resolve(client: TestClient, api_owner: Engine, api_fla
 
 
 def test_patient_flags_include_resolved_ones(
-    client: TestClient, api_owner: Engine, api_flags: date
+    client: TestClient, api_owner: Engine, fresh_flag: Callable[..., str]
 ) -> None:
-    flag_id = new_flag(api_owner)
+    flag_id = fresh_flag()
     with api_owner.connect() as conn:
         person_id = conn.execute(
             text("SELECT person_id FROM app.surveillance_flag WHERE flag_id = :f"), {"f": flag_id}
@@ -100,10 +101,25 @@ def test_patient_flags_include_resolved_ones(
     assert (resolved["status"], resolved["note"]) == ("resolved", "seen in clinic")
 
 
-def test_overlong_note_is_rejected(client: TestClient, api_owner: Engine, api_flags: date) -> None:
+def test_overlong_note_is_rejected(client: TestClient, fresh_flag: Callable[..., str]) -> None:
     login(client, Role.CLINICIAN, "center_a")
-    too_long = client.post(f"/flags/{new_flag(api_owner)}/acknowledge", json={"note": "x" * 2001})
+    too_long = client.post(f"/flags/{fresh_flag()}/acknowledge", json={"note": "x" * 2001})
     assert too_long.status_code == 422
+
+
+def test_resolving_every_high_flag_leaves_the_shared_worklist_unchanged(
+    client: TestClient, fresh_flag: Callable[..., str]
+) -> None:
+    """Reviews are committed in the shared API database. fresh_flag puts reviewed flags back
+    after the test, so the severity filter test right after this one still finds the high
+    flags (it once failed when other tests had resolved both of center A's)."""
+    login(client, Role.CLINICIAN, "center_a")
+    high = [f["flag_id"] for row in worklist(client) for f in row["flags"]
+            if f["severity"] == "high"]  # fmt: skip
+    assert high
+    for flag_id in high:
+        assert client.post(f"/flags/{fresh_flag(flag_id=flag_id)}/resolve").status_code == 200
+    assert not [f for row in worklist(client) for f in row["flags"] if f["severity"] == "high"]
 
 
 @pytest.mark.parametrize(
@@ -127,9 +143,9 @@ def test_worklist_filters(
 
 
 def test_patient_flags_carry_review_history(
-    client: TestClient, api_owner: Engine, api_settings: Settings, api_flags: date
+    client: TestClient, api_owner: Engine, api_settings: Settings, fresh_flag: Callable[..., str]
 ) -> None:
-    flag_id = new_flag(api_owner)
+    flag_id = fresh_flag()
     login(client, Role.CLINICIAN, "center_a")
     client.post(f"/flags/{flag_id}/acknowledge", json={"note": "calling patient"})
     client.post(f"/flags/{flag_id}/resolve", json={"note": "repeat test normal"})

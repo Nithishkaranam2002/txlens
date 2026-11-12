@@ -58,7 +58,8 @@ test("survival results (charts, risk table, forest plot, methods)", async ({ pag
   await page.goto("/survival");
   await page.getByRole("button", { name: "Run analysis" }).click();
   await expect(page.getByRole("heading", { name: "Results · synthetic data" })).toBeVisible();
-  await page.mouse.move(0, 0); // the pointer off the button: axe would rate its hover shade
   await page.waitForLoadState("networkidle");
+  // The primary button's hover shade must keep AA contrast too: check it while hovered.
+  await page.getByRole("button", { name: "Run analysis" }).hover();
   await expectAccessible(page);
 });

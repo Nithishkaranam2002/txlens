@@ -17,7 +17,7 @@ import pytest
 from api_dataset import Dataset
 from api_dataset import build as build_dataset
 from api_dataset import load as load_dataset
-from api_testutils import API_TENANTS, BASE_URL, PASSWORDS
+from api_testutils import API_TENANTS, BASE_URL, PASSWORDS, new_flag
 from db_testutils import (
     SEED_ORDER,
     TENANTS,
@@ -226,6 +226,28 @@ def api_flags(api_app: FastAPI, api_app_engine: Engine) -> date:
     for tenant in API_TENANTS:
         run_tenant(api_app_engine, tenant, SURVEILLANCE_AS_OF, transplant_configs())
     return SURVEILLANCE_AS_OF
+
+
+@pytest.fixture
+def fresh_flag(api_owner: Engine, api_flags: date) -> Iterator[Callable[..., str]]:
+    """Hands out unreviewed open flags (`fresh_flag(tenant="center_a")`), or takes a given
+    one (`fresh_flag(flag_id=...)`), and puts them back unreviewed after the test. Reviews
+    are committed in the shared API database, so a test that resolved a flag and kept it
+    resolved would change what later tests see (e.g. the worklist could lose its only
+    high-severity flags)."""
+    taken: list[str] = []
+
+    def take(tenant: str = "center_a", flag_id: str | None = None) -> str:
+        taken.append(flag_id or new_flag(api_owner, tenant))
+        return taken[-1]
+
+    yield take
+    with api_owner.begin() as conn:
+        conn.execute(
+            text("UPDATE app.surveillance_flag SET status = 'new', status_changed_by = NULL, "
+                 "status_changed_at = NULL, note = NULL WHERE flag_id::text = ANY(:f)"),
+            {"f": taken},
+        )  # fmt: skip
 
 
 @pytest.fixture

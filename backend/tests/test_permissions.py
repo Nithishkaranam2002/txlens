@@ -1,8 +1,10 @@
 """Role x endpoint permission matrix: the exact status code for every role and endpoint."""
 
+from collections.abc import Callable
+
 import pytest
 from api_dataset import Dataset
-from api_testutils import BASE_URL, login, new_flag
+from api_testutils import BASE_URL, login
 from document_testutils import KIDNEY_OCR_LINES, seed_document, write_report_pdf
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -94,7 +96,7 @@ def test_permission_matrix(
     api_data: Dataset,
     api_settings: Settings,
     api_owner: Engine,
-    api_flags: object,
+    fresh_flag: Callable[..., str],
     cohort_id: str,
     document_id: str,
     endpoint: str,
@@ -103,7 +105,7 @@ def test_permission_matrix(
     if isinstance(caller, Role):
         assert login(client, caller).status_code == 200
     method, path = endpoint.split(" ")
-    fid = new_flag(api_owner) if "{fid}" in path else ""
+    fid = fresh_flag() if "{fid}" in path else ""
     rid = new_document(api_owner, "in_review") if "{rid}" in path else ""
     path = path.format(pid=patient_id(caller, api_data, api_settings), cid=cohort_id, fid=fid,
                        did=document_id, rid=rid)  # fmt: skip

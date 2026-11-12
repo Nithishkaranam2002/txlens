@@ -1,10 +1,11 @@
 """Audit rows: who, tenant, action, resource, time and request id for every audited action."""
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from api_dataset import Dataset
-from api_testutils import login, new_flag
+from api_testutils import login
 from fastapi.testclient import TestClient
 from httpx import Response
 from sqlalchemy import Engine, Row, text
@@ -91,12 +92,12 @@ def test_deidentified_views_are_recorded_too(client: TestClient, api_owner: Engi
 
 
 def test_worklist_views_and_flag_reviews(
-    client: TestClient, api_owner: Engine, api_flags: object
+    client: TestClient, api_owner: Engine, fresh_flag: Callable[..., str]
 ) -> None:
     user_id = login(client, Role.CLINICIAN, "center_a").json()["user_id"]
     worklist = client.get("/worklist", params={"limit": 5})
     check(audit_row(api_owner, worklist), "center_a", user_id, "phi_view", "worklist")
-    flag_id = new_flag(api_owner)
+    flag_id = fresh_flag()
     for action, old, new in (("acknowledge", "new", "acknowledged"),
                              ("resolve", "acknowledged", "resolved")):  # fmt: skip
         response = client.post(f"/flags/{flag_id}/{action}", json={"note": f"{action} note"})
