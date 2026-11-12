@@ -1,11 +1,13 @@
 "use client";
 
+import { Info } from "lucide-react";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
 import { AttritionChart, SuppressedCount } from "@/components/charts/attrition-chart";
 import { CohortFormFields } from "@/components/cohort-form";
 import { EmptyState, ErrorState } from "@/components/states";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -77,6 +79,12 @@ export function CohortBuilder() {
                 <p className="text-lg font-semibold">
                   Cohort size: <Count value={preview.data.count} />
                 </p>
+                {preview.data.notices && preview.data.notices.length > 0 && (
+                  <Alert>
+                    <Info aria-hidden className="size-4" />
+                    <AlertDescription>{preview.data.notices.join(" ")}</AlertDescription>
+                  </Alert>
+                )}
                 <AttritionChart
                   preview={{
                     ...preview.data,

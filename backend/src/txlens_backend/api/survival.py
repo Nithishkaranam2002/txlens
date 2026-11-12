@@ -1,8 +1,9 @@
 """Survival analysis of graft outcomes: run an analysis, export it as CSV or PDF.
 
 Clinicians and researchers. The output is aggregate only and small-cell suppressed for every
-role (it can be exported): counts of 1-10 are "<11" and curve steps are pooled. Every analysis
-and export is audited. Results are labelled as synthetic data.
+role (it can be exported): counts of 1-10 are "<11" and curve steps are pooled. Counts that,
+with one shown to the same user earlier, would reveal a small group are withheld (differencing
+guard). Every analysis and export is audited. Results are labelled as synthetic data.
 """
 
 from typing import Annotated, Any
@@ -19,7 +20,8 @@ from txlens_backend.api.deps import (
     require_csrf_header,
     require_roles,
 )
-from txlens_backend.survival import export, service
+from txlens_backend.services import disclosure
+from txlens_backend.survival import export, release, service
 from txlens_backend.survival.analysis import Report
 
 router = APIRouter(prefix="/survival", tags=["survival"])
@@ -44,10 +46,18 @@ def analysed(
     """Run the analysis and audit it; 404 / 422 for unknown cohorts and early landmarks."""
     try:
         report = service.run(conn, request, ctx.settings.small_cell_threshold)
+        rules = service.population_rules(conn, request)
+        compare = (service.saved_cohort(conn, request.compare_cohort_id).rules
+                   if request.compare_cohort_id else None)  # fmt: skip
     except service.CohortNotFoundError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Cohort not found") from error
     except service.LandmarkTooEarlyError as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+    guard = disclosure.Disclosure(
+        conn, principal.user_id, action, threshold=ctx.settings.small_cell_threshold,
+        window_days=ctx.settings.disclosure_window_days,
+    )  # fmt: skip
+    report = release.release(report, request, rules, compare, guard)
     audit.record(
         conn, info, principal.user_id, action, "survival_analysis", request.grouping,
         request.model_dump(mode="json") | {"landmark_days_used": report.landmark_days},

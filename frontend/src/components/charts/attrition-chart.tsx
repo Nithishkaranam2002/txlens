@@ -68,12 +68,17 @@ export function AttritionChart({ preview }: { preview: Preview }) {
   );
 }
 
-/** "<11" with an explanation (small-cell suppression protects privacy). */
+export const WITHHELD = "withheld";
+const WITHHELD_REASON = "Withheld: with a count you saw earlier it would reveal fewer than 11 patients";
+
+/** "<11" or "withheld", with an explanation (small-cell suppression and the differencing guard
+ * protect privacy). */
 export function SuppressedCount({ value }: { value: string }) {
+  const withheld = value === WITHHELD;
   return (
-    <abbr title="Counts from 1 to 10 are hidden to protect privacy" className="cursor-help no-underline">
+    <abbr title={withheld ? WITHHELD_REASON : "Counts from 1 to 10 are hidden to protect privacy"} className="cursor-help no-underline">
       {value}
-      <span className="sr-only"> ({formatCount(value)}, hidden to protect privacy)</span>
+      <span className="sr-only">{withheld ? ` (${WITHHELD_REASON})` : ` (${formatCount(value)}, hidden to protect privacy)`}</span>
     </abbr>
   );
 }

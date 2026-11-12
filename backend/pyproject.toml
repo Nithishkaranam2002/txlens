@@ -23,6 +23,7 @@ dependencies = [
     "rapidfuzz>=3.14",
     "reportlab>=4.2",
     "sqlalchemy>=2.0",
+    "sqlglot>=30.31.0",
     "temporalio>=1.9,<1.36",
     "txlens-datagen",
     "txlens-omop",

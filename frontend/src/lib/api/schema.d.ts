@@ -615,6 +615,8 @@ export interface components {
              * @description Start of follow-up, in days after transplant (default: when the groups are known).
              */
             landmark_days?: number | null;
+            /** @description Population: patients passing these rules (not saved). */
+            rules?: components["schemas"]["CohortRules"] | null;
         };
         /**
          * BiopsyResult
@@ -1435,11 +1437,13 @@ export interface components {
         };
         /**
          * Preview
-         * @description Cohort size and attrition.
+         * @description Cohort size and attrition; notices say why any count is withheld.
          */
         Preview: {
             /** Count */
             count: number | string;
+            /** Notices */
+            notices?: string[];
             /** Steps */
             steps: components["schemas"]["Step"][];
         };
@@ -1844,7 +1848,7 @@ export interface components {
         Status: "new" | "acknowledged" | "resolved";
         /**
          * Step
-         * @description Patients remaining after one rule (a string like "<11" when suppressed).
+         * @description Patients remaining after one rule (a string, "<11" or "withheld", when not shown).
          */
         Step: {
             /** Count */

@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     # --- De-identification ---
     deid_hmac_key: SecretStr = SecretStr("")  # keys pseudonyms and date shifts
     small_cell_threshold: int = 11  # de-identified counts 1..threshold-1 are shown as "<11"
+    # A count is withheld if, with one shown to the same user within this many days over
+    # overlapping filters, it would reveal fewer than small_cell_threshold patients.
+    disclosure_window_days: int = 30
 
     # --- Document extraction (LLM) ---
     ocr_engine: Literal["tesseract", "docling"] = "tesseract"  # docling: opt-in dependency group

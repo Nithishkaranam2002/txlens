@@ -6,7 +6,7 @@ Counts are step by step ("attrition"): how many patients remain after each rule,
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Literal
 
@@ -16,6 +16,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql.expression import bindparam
 
 from txlens_backend.clinical_codes import DSA_LOCAL, LABS
+from txlens_backend.services import disclosure
 from txlens_backend.services.facts import FACTS_CTE, FACTS_PARAMS
 from txlens_backend.services.patients import DonorType, Organ
 
@@ -72,17 +73,18 @@ class CohortRules(BaseModel):
 
 
 class Step(BaseModel):
-    """Patients remaining after one rule (a string like "<11" when suppressed)."""
+    """Patients remaining after one rule (a string, "<11" or "withheld", when not shown)."""
 
     rule: str
     count: int | str
 
 
 class Preview(BaseModel):
-    """Cohort size and attrition."""
+    """Cohort size and attrition; notices say why any count is withheld."""
 
     count: int | str
     steps: list[Step]
+    notices: list[str] = Field(default_factory=list)
 
 
 class Cohort(BaseModel):
@@ -98,10 +100,17 @@ class Cohort(BaseModel):
 
 @dataclass
 class Query:
-    """SQL rule fragments (in order, with labels) and their bind parameters."""
+    """SQL rule fragments (in order, with labels), their bind parameters, and each rule as a
+    differencing-guard constraint (dimension, constraint), in the same order as the steps."""
 
     steps: list[tuple[str, str]]
     params: dict[str, object]
+    atoms: list[tuple[str, disclosure.Constraint]] = field(default_factory=list)
+
+    def add(self, label: str, sql: str, dim: str, constraint: disclosure.Constraint) -> None:
+        """Append one rule."""
+        self.steps.append((label, sql))
+        self.atoms.append((dim, constraint))
 
 
 def horizon_days(rules: CohortRules) -> int:
@@ -115,43 +124,88 @@ def compile_rules(rules: CohortRules, as_of_day: int | None = None) -> Query:
     counts only if recorded by that day after transplant (what was known then)."""
     q = Query([], dict(FACTS_PARAMS))
     if rules.organ:
-        q.steps.append((f"organ = {rules.organ}", "f.organ = :organ"))
+        q.add(f"organ = {rules.organ}", "f.organ = :organ", "organ", {"eq": rules.organ})
         q.params["organ"] = rules.organ
     if rules.donor_type:
-        q.steps.append((f"donor type = {rules.donor_type}", "f.donor_type = :donor_type"))
+        q.add(
+            f"donor type = {rules.donor_type}",
+            "f.donor_type = :donor_type",
+            "donor_type",
+            {"eq": rules.donor_type},
+        )
         q.params["donor_type"] = rules.donor_type
     age = "(extract(year FROM f.transplant_date) - f.year_of_birth)"
     if rules.age_min is not None:
-        q.steps.append((f"age at transplant >= {rules.age_min}", f"{age} >= :age_min"))
+        q.add(
+            f"age at transplant >= {rules.age_min}",
+            f"{age} >= :age_min",
+            "age",
+            disclosure.interval(lo=rules.age_min),
+        )
         q.params["age_min"] = rules.age_min
     if rules.age_max is not None:
-        q.steps.append((f"age at transplant <= {rules.age_max}", f"{age} <= :age_max"))
+        q.add(
+            f"age at transplant <= {rules.age_max}",
+            f"{age} <= :age_max",
+            "age",
+            disclosure.interval(hi=rules.age_max),
+        )
         q.params["age_max"] = rules.age_max
     if rules.transplant_date and rules.transplant_date.start:
-        q.steps.append(("transplant on/after start", "f.transplant_date >= :tx_start"))
+        q.add(
+            "transplant on/after start",
+            "f.transplant_date >= :tx_start",
+            "transplant_date",
+            disclosure.interval(lo=rules.transplant_date.start.isoformat()),
+        )
         q.params["tx_start"] = rules.transplant_date.start
     if rules.transplant_date and rules.transplant_date.end:
-        q.steps.append(("transplant on/before end", "f.transplant_date <= :tx_end"))
+        q.add(
+            "transplant on/before end",
+            "f.transplant_date <= :tx_end",
+            "transplant_date",
+            disclosure.interval(hi=rules.transplant_date.end.isoformat()),
+        )
         q.params["tx_end"] = rules.transplant_date.end
     if rules.condition_concept_ids:
-        q.steps.append((
+        q.add(
             f"condition in {rules.condition_concept_ids} (or descendants)",
             "EXISTS (SELECT 1 FROM cdm.condition_occurrence co "
             "JOIN vocab.concept_ancestor ca ON ca.descendant_concept_id = co.condition_concept_id "
             "WHERE co.person_id = f.person_id AND ca.ancestor_concept_id = ANY(:conditions)"
             + ("" if as_of_day is None
                else " AND co.condition_start_date <= f.transplant_date + :as_of_day") + ")",
-        ))  # fmt: skip
+            "conditions", {"any": sorted(set(rules.condition_concept_ids))},
+        )  # fmt: skip
         q.params["conditions"] = rules.condition_concept_ids
         if as_of_day is not None:
             q.params["as_of_day"] = as_of_day
     for n, lab in enumerate(rules.lab_rules):
-        q.steps.append((lab_label(lab), lab_condition(n, lab)))
+        q.add(lab_label(lab), lab_condition(n, lab), "labs", {"exists": [lab_atom(lab)]})
         vocabulary, code = LAB_CODES[lab.lab]
         q.params |= {f"lab{n}_vocab": vocabulary, f"lab{n}_code": code, f"lab{n}_value": lab.value,
                      f"lab{n}_from": lab.days_from_transplant[0],
                      f"lab{n}_to": lab.days_from_transplant[1]}  # fmt: skip
     return q
+
+
+def lab_atom(lab: LabRule) -> dict[str, object]:
+    """The lab rule as a differencing-guard constraint: its value range and day window."""
+    bound = disclosure.interval(
+        lo=lab.value if lab.op in (">=", ">") else None,
+        hi=lab.value if lab.op in ("<=", "<") else None,
+        lo_inclusive=lab.op != ">",
+        hi_inclusive=lab.op != "<",
+    )["range"]
+    return {"lab": lab.lab, "range": bound, "window": list(lab.days_from_transplant)}
+
+
+def step_constraints(rules: CohortRules) -> list[disclosure.Constraints]:
+    """The filters in force after each attrition step ("all patients" first)."""
+    steps: list[disclosure.Constraints] = [{}]
+    for dim, constraint in compile_rules(rules).atoms:
+        steps.append(disclosure.add(steps[-1], dim, constraint))
+    return steps
 
 
 def lab_label(lab: LabRule) -> str:

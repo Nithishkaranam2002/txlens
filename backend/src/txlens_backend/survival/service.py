@@ -32,6 +32,9 @@ class AnalysisRequest(BaseModel):
     cohort_id: str | None = Field(
         default=None, description="Population: a saved cohort (default: every patient)."
     )
+    rules: cohorts.CohortRules | None = Field(
+        default=None, description="Population: patients passing these rules (not saved)."
+    )
     grouping: GroupingKey = "none"
     compare_cohort_id: str | None = Field(
         default=None, description="grouping = cohort: members of this cohort vs the rest."
@@ -51,6 +54,8 @@ class AnalysisRequest(BaseModel):
         """grouping = cohort needs compare_cohort_id, and only then."""
         if (self.grouping == "cohort") != (self.compare_cohort_id is not None):
             raise ValueError("compare_cohort_id is required with grouping = cohort, only then")
+        if self.cohort_id is not None and self.rules is not None:
+            raise ValueError("give the population as cohort_id or as rules, not both")
         return self
 
 
@@ -116,9 +121,17 @@ def resolve_landmark(request: AnalysisRequest, horizon: int, what: str) -> int:
     return request.landmark_days
 
 
+def population_rules(conn: Connection, request: AnalysisRequest) -> cohorts.CohortRules | None:
+    """The rules defining the population: given inline, or the saved cohort's (None: all)."""
+    if request.cohort_id:
+        return saved_cohort(conn, request.cohort_id).rules
+    return request.rules
+
+
 def run(conn: Connection, request: AnalysisRequest, threshold: int) -> Report:
     """The suppressed report for the caller's center (RLS applies to every query)."""
-    population = saved_cohort(conn, request.cohort_id) if request.cohort_id else None
+    saved = saved_cohort(conn, request.cohort_id) if request.cohort_id else None
+    rules = saved.rules if saved else request.rules
     compare = (saved_cohort(conn, request.compare_cohort_id)
                if request.compare_cohort_id else None)  # fmt: skip
     grouping = None if compare else GROUPINGS[request.grouping]
@@ -126,11 +139,13 @@ def run(conn: Connection, request: AnalysisRequest, threshold: int) -> Report:
         f"Membership of cohort '{compare.name}'" if compare else GROUPINGS[request.grouping].label
     )
     horizons = [grouping.horizon_days if grouping else 0]
-    horizons += [cohorts.horizon_days(c.rules) for c in (population, compare) if c]
+    horizons += [cohorts.horizon_days(r) for r in (rules, compare and compare.rules) if r]
     landmark = resolve_landmark(request, max(horizons), label)
     frame = extract(conn)
-    if population:
-        frame = frame[frame["person_id"].isin(members_by(conn, population, landmark))]
+    if saved:
+        frame = frame[frame["person_id"].isin(members_by(conn, saved, landmark))]
+    elif rules:
+        frame = frame[frame["person_id"].isin(cohorts.member_ids(conn, rules, landmark))]
     frame = frame.reset_index(drop=True)
     if grouping:
         groups = grouping.assign(frame)
@@ -139,7 +154,8 @@ def run(conn: Connection, request: AnalysisRequest, threshold: int) -> Report:
         inside = frame["person_id"].isin(members_by(conn, compare, landmark))
         groups = inside.map({True: f"In '{compare.name}'", False: f"Not in '{compare.name}'"})
     spec = Spec(
-        population=f"saved cohort '{population.name}'" if population
+        population=f"saved cohort '{saved.name}'" if saved
+        else "patients matching the given rules" if rules
         else "every transplant recipient of the center",
         grouping=request.grouping, grouping_label=label, landmark_days=landmark,
         covariates=list(request.covariates), threshold=threshold,

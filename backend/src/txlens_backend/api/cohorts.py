@@ -5,7 +5,9 @@ For de-identified roles (researchers):
   single out a patient by its count;
 - transplant date rules must cover whole calendar years. Otherwise narrowing the date range
   day by day and watching the count change would reveal true transplant dates, which the
-  shifted dates are meant to hide.
+  shifted dates are meant to hide;
+- a count is withheld when, with a count shown to the same user earlier over nested rules,
+  it would reveal fewer than 11 patients (differencing guard, services/disclosure.py).
 """
 
 from typing import Annotated, Any
@@ -13,7 +15,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from txlens_backend import audit, deid
+from txlens_backend import audit
 from txlens_backend.api.deps import (
     Context,
     Info,
@@ -25,11 +27,13 @@ from txlens_backend.api.deps import (
 )
 from txlens_backend.api.patients import PatientPage, viewer
 from txlens_backend.services import cohorts as svc
-from txlens_backend.services import patients
+from txlens_backend.services import disclosure, patients
 
 router = APIRouter(prefix="/cohorts", tags=["cohorts"])
 Builder = Annotated[Principal, Depends(require_roles(Role.CLINICIAN, Role.RESEARCHER))]
 NOT_FOUND: dict[int | str, dict[str, Any]] = {404: {"description": "No such cohort in your center"}}
+# Every cohort count is "patients passing the rules": one kind of count, compared by its rules.
+FAMILY, BASE, CELL = "cohort", disclosure.base_key(counts="patients"), "patients"
 
 
 class NewCohort(BaseModel):
@@ -48,9 +52,27 @@ class CohortPage(BaseModel):
     offset: int
 
 
-def shown(count: int, principal: Principal, threshold: int) -> int | str:
-    """The count as this caller may see it."""
-    return count if principal.sees_identifiers else deid.suppress(count, threshold)
+def released(
+    counts: list[tuple[disclosure.Constraints, int]], principal: Principal, conn: TenantDb,
+    ctx: Context, source: str,
+) -> tuple[list[int | str], str | None]:  # fmt: skip
+    """The counts as this caller may see them, and why any were withheld. Clinicians see exact
+    counts; for de-identified roles they go through suppression and the differencing guard."""
+    if principal.sees_identifiers:
+        return [n for _, n in counts], None
+    guard = disclosure.Disclosure(
+        conn, principal.user_id, source, threshold=ctx.settings.small_cell_threshold,
+        window_days=ctx.settings.disclosure_window_days,
+    )  # fmt: skip
+    cells = [disclosure.Cell(CELL, constraints, n) for constraints, n in counts]
+    return guard.release(FAMILY, BASE, cells), guard.notice
+
+
+def shown(count: int, rules: svc.CohortRules, principal: Principal, conn: TenantDb,
+          ctx: Context, source: str) -> int | str:  # fmt: skip
+    """One count of patients passing these rules, as this caller may see it."""
+    constraints = svc.step_constraints(rules)[-1]
+    return released([(constraints, count)], principal, conn, ctx, source)[0][0]
 
 
 def check_date_granularity(rules: svc.CohortRules, principal: Principal) -> None:
@@ -68,11 +90,12 @@ def check_date_granularity(rules: svc.CohortRules, principal: Principal) -> None
         )
 
 
-def present(cohort: svc.Cohort, principal: Principal, threshold: int) -> svc.Cohort:
-    """The cohort with its member count suppressed where needed."""
+def present(cohort: svc.Cohort, principal: Principal, conn: TenantDb, ctx: Context) -> svc.Cohort:
+    """The cohort with its member count as this caller may see it."""
     count = cohort.member_count
-    visible = shown(count, principal, threshold) if isinstance(count, int) else count
-    return cohort.model_copy(update={"member_count": visible})
+    if isinstance(count, int):
+        count = shown(count, cohort.rules, principal, conn, ctx, "cohort_saved")
+    return cohort.model_copy(update={"member_count": count})
 
 
 @router.post(
@@ -85,11 +108,16 @@ def preview(
 ) -> svc.Preview:
     """Nothing is saved. Each step shows how many patients remain after that rule."""
     check_date_granularity(rules, principal)
-    threshold = ctx.settings.small_cell_threshold
-    count, steps = svc.preview(conn, rules)
+    _, steps = svc.preview(conn, rules)
+    constraints = svc.step_constraints(rules)
+    counts, notice = released(
+        [(c, n) for c, (_, n) in zip(constraints, steps, strict=True)], principal, conn, ctx,
+        "cohort_preview",
+    )  # fmt: skip
     return svc.Preview(
-        count=shown(count, principal, threshold),
-        steps=[svc.Step(rule=label, count=shown(n, principal, threshold)) for label, n in steps],
+        count=counts[-1],
+        steps=[svc.Step(rule=label, count=n) for (label, _), n in zip(steps, counts, strict=True)],
+        notices=[notice] if notice else [],
     )
 
 
@@ -111,7 +139,7 @@ def create(
         conn, info, principal.user_id, "cohort_create", "cohort", cohort_id,
         {"name": body.name, "member_count": cohort.member_count},
     )  # fmt: skip
-    return present(cohort, principal, ctx.settings.small_cell_threshold)
+    return present(cohort, principal, conn, ctx)
 
 
 @router.get("", summary="Saved cohorts of your center, newest first")
@@ -124,9 +152,8 @@ def list_cohorts(
 ) -> CohortPage:
     """Member counts are suppressed for de-identified roles."""
     items, total = svc.list_cohorts(conn, limit, offset)
-    threshold = ctx.settings.small_cell_threshold
     return CohortPage(
-        items=[present(c, principal, threshold) for c in items],
+        items=[present(c, principal, conn, ctx) for c in items],
         total=total,
         limit=limit,
         offset=offset,
@@ -139,7 +166,7 @@ def get_cohort(cohort_id: str, principal: Builder, conn: TenantDb, ctx: Context)
     cohort = svc.get(conn, cohort_id)
     if cohort is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Cohort not found")
-    return present(cohort, principal, ctx.settings.small_cell_threshold)
+    return present(cohort, principal, conn, ctx)
 
 
 @router.get("/{cohort_id}/members", summary="Members of a saved cohort", responses=NOT_FOUND)
@@ -153,7 +180,8 @@ def members(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> PatientPage:
     """Identified for clinicians (audited as phi_view), de-identified for researchers."""
-    if svc.get(conn, cohort_id) is None:
+    cohort = svc.get(conn, cohort_id)
+    if cohort is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Cohort not found")
     view = viewer(principal, ctx)
     items, total = patients.list_patients(
@@ -163,5 +191,5 @@ def members(
         conn, info, principal.user_id, "phi_view" if view.identified else "deid_view",
         "cohort_members", cohort_id, {"patients": [p.patient_id for p in items]},
     )  # fmt: skip
-    total_shown = shown(total, principal, ctx.settings.small_cell_threshold)
+    total_shown = shown(total, cohort.rules, principal, conn, ctx, "cohort_members")
     return PatientPage(items=items, total=total_shown, limit=limit, offset=offset)
