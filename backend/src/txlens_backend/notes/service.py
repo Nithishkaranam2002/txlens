@@ -79,7 +79,7 @@ def process_notes(
                 conn, audit.RequestInfo(request_id=workflow_id, ip=""), None, "note_nlp_save",
                 "note", note.source_value,
                 {"system": used, "mentions": saved.mentions, "review": saved.review,
-                 "conditions": saved.conditions},
+                 "conditions": saved.conditions, "histories": saved.histories},
             )  # fmt: skip
             mentions += saved.mentions
             review += saved.review

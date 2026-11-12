@@ -36,6 +36,10 @@ CONCEPTS = [
     (316866, "Condition", "SNOMED", "Disorder", "S", "38341003"),  # hypertension
     (4127554, "Condition", "SNOMED", "Disorder", "S", "236583003"),  # failed renal transplant
     (4121617, "Condition", "SNOMED", "Disorder", "S", "233934000"),  # cardiac tx failure
+    (4309320, "Condition", "SNOMED", "Disorder", "S", "213148006"),  # transplant rejection
+    (37472871, "Condition", "SNOMED", "Disorder", "S", "1381981002"),  # ABMR
+    (4138908, "Condition", "SNOMED", "Disorder", "S", "426136000"),  # delayed graft function
+    (1340204, "Observation", "OMOP Extension", "Context-dependent", "S", "OMOP5165859"),
     (3016723, "Measurement", "LOINC", "Lab Test", "S", "2160-0"),  # creatinine
     (1619025, "Measurement", "LOINC", "Lab Test", "S", "98979-8"),  # eGFR
     (46236053, "Measurement", "LOINC", "Lab Test", "S", "77348-1"),  # tacrolimus trough
@@ -50,7 +54,7 @@ CONCEPTS = [
     (1703063, "Drug", "RxNorm", "Ingredient", "S", "275891"),
 ]
 # (ancestor, descendant) besides every concept being its own ancestor.
-ANCESTORS = [(4322471, 4022805), (4322471, 4021107), (201820, 201826)]
+ANCESTORS = [(4322471, 4022805), (4322471, 4021107), (201820, 201826), (4309320, 37472871)]
 LAB_CONCEPTS = {"creatinine": 3016723, "egfr": 1619025, "tacrolimus_trough": 46236053,
                 "dd_cfdna": 3966008}  # fmt: skip
 DSA_LOCAL_CONCEPT = 2000000001
@@ -59,6 +63,9 @@ TRANSPLANT = {("kidney", "living"): 4022805, ("kidney", "deceased"): 4021107,
 BIOPSY = {"kidney": 1244937, "heart": 4308808}
 PRIMARY = {"kidney": 193782, "heart": 316139}
 GRAFT_FAILURE = {"kidney": 4127554, "heart": 4121617}
+# Biopsy-proven rejection as recorded conditions: ABMR (and mixed) under its own concept.
+REJECTION = {"ABMR": 37472871, "mixed": 37472871, "TCMR": 4309320}
+DGF, HISTORY_OF_EVENT = 4138908, 1340204
 DRUGS = {code: cid for cid, domain, *_, code in CONCEPTS if domain == "Drug"}
 GENDER = {"M": 8507, "F": 8532}
 
@@ -187,6 +194,22 @@ def load(conn: Connection, data: Dataset) -> None:
                                 "death_type_concept_id": 32817}
         for o in data.truth("outcomes") if o["death_date"]
     ])  # fmt: skip
+    # Follow-up ends at the patient's last follow-up date (the pipeline's observation period).
+    insert(conn, "cdm.observation_period", numbered((
+        who(o["patient_id"]) | {
+            "observation_period_start_date": date.fromisoformat(
+                patients[o["patient_id"]]["transplant_date"]),
+            "observation_period_end_date": date.fromisoformat(o["last_follow_up_date"]),
+            "period_type_concept_id": 32817}
+        for o in data.truth("outcomes")
+    ), "observation_period_id"))  # fmt: skip
+    # Delayed graft function as the note NLP records it: "History of event" valued with DGF.
+    insert(conn, "cdm.observation", numbered((
+        who(p) | {"observation_concept_id": HISTORY_OF_EVENT, "value_as_concept_id": DGF,
+                  "observation_date": date.fromisoformat(r["transplant_date"]),
+                  "observation_type_concept_id": 32858}
+        for p, r in patients.items() if r["dgf"] == "true"
+    ), "observation_id"))  # fmt: skip
     insert(conn, "cdm.note", numbered((
         who(n["patient_id"]) | {
             "note_date": date.fromisoformat(n["note_date"]), "note_type_concept_id": 32831,
@@ -199,8 +222,15 @@ def load(conn: Connection, data: Dataset) -> None:
 
 
 def conditions(data: Dataset, patients: dict[str, dict[str, str]]) -> Iterator[dict[str, object]]:
-    """Primary disease, diabetes and hypertension at transplant; graft failure when it happened."""
+    """Primary disease, diabetes and hypertension at transplant; graft failure when it happened;
+    biopsy-proven rejection (TCMR, ABMR, mixed) on the biopsy date."""
     graft_loss = {o["patient_id"]: o["graft_loss_date"] for o in data.truth("outcomes")}
+    for e in data.truth("rejection_episodes"):
+        if e["rejection_type"] in REJECTION:
+            tenant, person_id = data.persons[e["patient_id"]]
+            yield {"tenant_id": tenant, "person_id": person_id, "condition_type_concept_id": 32817,
+                   "condition_concept_id": REJECTION[e["rejection_type"]],
+                   "condition_start_date": date.fromisoformat(e["biopsy_date"])}  # fmt: skip
     for p, r in patients.items():
         tenant, person_id = data.persons[p]
         base = {"tenant_id": tenant, "person_id": person_id, "condition_type_concept_id": 32840}

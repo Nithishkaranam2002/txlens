@@ -44,6 +44,8 @@ constraint-dependencies = [
     "transformers<=5.21.0",
     "tree-sitter<=0.26.0",
     "xlsxwriter<=3.3.0",
+    # pandas-stubs (Step 3.1, added 2026-11-12): its types-pytz dependency was 12 days old
+    "types-pytz<2026.6.0.20261031",
 ]
 
 [dependency-groups]
@@ -58,6 +60,7 @@ dev = [
     "pytest>=8.4",
     "httpx>=0.28",
     "types-pyyaml>=6.0,<6.0.12.20261001",
+    "pandas-stubs>=2.2,<2.4",
 ]
 # Opt-in (pulls in PyTorch and layout models, ~1-2 GB): `uv sync --all-packages --group docling`.
 # Without it, document OCR uses Tesseract directly. CI does not install it.
@@ -102,9 +105,9 @@ explicit_package_bases = true
 # container and in CI.
 [[tool.mypy.overrides]]
 # docling is an opt-in group (absent in CI); pytesseract, langfuse 2.x and medspaCy ship no
-# type information.
+# type information; nor do lifelines and reportlab.
 module = ["pyspark.*", "delta.*", "pandera.*", "docling.*", "docling_core.*", "pytesseract.*",
-          "langfuse.*", "medspacy.*"]
+          "langfuse.*", "medspacy.*", "lifelines.*", "reportlab.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

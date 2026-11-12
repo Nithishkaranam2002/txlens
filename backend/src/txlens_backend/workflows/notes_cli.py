@@ -1,6 +1,9 @@
 """`txlens-notes process`: run clinic notes through the note NLP (Temporal batch workflow).
 
-Needs a running worker (`txlens-worker`). The batch shares one LLM budget (LLM_BUDGET_USD,
+`txlens-notes rebuild` recomputes the OMOP rows of notes already processed (after a change in
+how mentions become OMOP rows) without running the NLP again.
+
+`process` needs a running worker (`txlens-worker`). The batch shares one LLM budget (LLM_BUDGET_USD,
 capped again by --max-cost); notes already processed with the same text and system are skipped.
 """
 
@@ -8,7 +11,12 @@ import argparse
 import asyncio
 from datetime import UTC, datetime
 
+from sqlalchemy import text
+
 from txlens_backend.config import get_settings
+from txlens_backend.db import check_role_is_rls_bound, make_engine, tenant_transaction
+from txlens_backend.db_setup import center_tenants
+from txlens_backend.notes.results import rebuild_cdm_rows
 from txlens_backend.workflows.biopsy import TASK_QUEUE
 from txlens_backend.workflows.cli import connect
 from txlens_backend.workflows.notes import NoteNlpBatchWorkflow, NotesBatchRequest, NotesBatchResult
@@ -25,6 +33,20 @@ async def process(request: NotesBatchRequest) -> NotesBatchResult:
     )
 
 
+def rebuild(tenants: list[str]) -> None:
+    """Recompute every processed note's OMOP rows, one tenant at a time (RLS on)."""
+    engine = make_engine(get_settings().app_database_url.get_secret_value())
+    check_role_is_rls_bound(engine)
+    for tenant in tenants or list(center_tenants()):
+        with tenant_transaction(engine, tenant) as conn:
+            notes = conn.execute(text("SELECT note_source_value FROM app.note_processed"))
+            totals = [rebuild_cdm_rows(conn, n) for (n,) in notes.all()]
+        print(
+            f"{tenant}: {len(totals):,} notes, {sum(c for c, _ in totals):,} conditions, "
+            f"{sum(h for _, h in totals):,} history observations"
+        )
+
+
 def main() -> None:
     """Entry point."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
@@ -34,7 +56,12 @@ def main() -> None:
     run.add_argument("--limit", type=int, default=0, help="notes per tenant (0: all)")
     run.add_argument("--no-llm", action="store_true", help="rules only (no paid calls)")
     run.add_argument("--batch-id", default=f"notes-{datetime.now(UTC):%Y%m%d-%H%M%S}")
+    again = commands.add_parser("rebuild", help="recompute OMOP rows of processed notes")
+    again.add_argument("--tenant", action="append", default=[], help="repeat for several")
     args = parser.parse_args()
+    if args.command == "rebuild":
+        rebuild(args.tenant)
+        return
     request = NotesBatchRequest(args.batch_id, args.tenant, args.limit, not args.no_llm)
     result = asyncio.run(process(request))
     budget = get_settings().llm_budget_usd

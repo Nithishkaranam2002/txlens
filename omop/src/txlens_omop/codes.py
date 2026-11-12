@@ -110,6 +110,16 @@ TEXT_CONDITION_CODES = {
     ("SNOMED", "213148006"): ("transplanted organ rejection", "Condition"),
     ("SNOMED", "1085381000119108"): ("cytomegalovirus viremia", "Condition"),
 }  # fmt: skip
+# Concepts the survival analysis (Step 3.1) relies on. Delayed graft function must be a
+# standard Condition concept: clinic notes record it as history, so it goes into observation
+# as "History of event" (also checked here) valued with the condition (migration 0015).
+SURVIVAL_CODES = {
+    ("SNOMED", "426136000"): ("delayed renal graft function (Cox covariate)", "Condition"),
+    ("OMOP Extension", "OMOP5165859"): ("History of event (note history observations)",
+                                         "Observation"),
+    ("SNOMED", "236583003"): ("failed renal transplant (graft loss outcome)", "Condition"),
+    ("SNOMED", "233934000"): ("cardiac transplant failure (graft loss outcome)", "Condition"),
+}  # fmt: skip
 # TxLens local concepts (LOCAL_CONCEPT.csv, by concept_code) the extraction and the note NLP
 # write. They are non-standard: OMOP rows get concept_id 0 and the local id as the source
 # concept.
@@ -201,14 +211,23 @@ def text_condition_codes() -> list[CodeUse]:
     ]
 
 
+def survival_codes() -> list[CodeUse]:
+    """Outcome and covariate concepts of the survival analysis."""
+    return [
+        CodeUse(vocabulary, code, label, domain, "codes.py SURVIVAL_CODES")
+        for (vocabulary, code), (label, domain) in SURVIVAL_CODES.items()
+    ]
+
+
 def all_codes() -> list[CodeUse]:
-    """Generator, planned source, pipeline, extraction and text-condition codes."""
+    """Generator, planned source, pipeline, extraction, text-condition and survival codes."""
     return (
         generator_codes()
         + planned_codes()
         + pipeline_codes()
         + extraction_codes()
         + text_condition_codes()
+        + survival_codes()
     )
 
 

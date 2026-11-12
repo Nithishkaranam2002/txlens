@@ -59,6 +59,8 @@ def notes(clinic: None, documents_owner: Engine) -> Iterator[list[str]]:
         for statement in (
             "DELETE FROM cdm.condition_occurrence WHERE condition_occurrence_id IN "
             "(SELECT cdm_id FROM app.note_cdm_row WHERE note_source_value = ANY(:s))",
+            "DELETE FROM cdm.observation WHERE observation_id IN "
+            "(SELECT cdm_id FROM app.note_cdm_row WHERE note_source_value = ANY(:s))",
             "DELETE FROM cdm.note_nlp WHERE note_nlp_id IN "
             "(SELECT mention_id FROM app.note_mention WHERE note_source_value = ANY(:s))",
             "DELETE FROM app.note_processed WHERE note_source_value = ANY(:s)",
@@ -102,7 +104,13 @@ def stored(owner: Engine, source: str) -> dict[str, list[tuple[object, ...]]]:
             "c.condition_source_value, r.mentions FROM cdm.condition_occurrence c "
             "JOIN app.note_cdm_row r ON r.cdm_id = c.condition_occurrence_id "
             "WHERE r.note_source_value = :s"), {"s": source}).all()  # fmt: skip
-    return {"nlp": [tuple(r) for r in nlp], "conditions": [tuple(r) for r in conditions]}
+        histories = conn.execute(text(
+            "SELECT o.observation_concept_id, o.value_as_concept_id, o.observation_date, "
+            "o.observation_type_concept_id, r.mentions FROM cdm.observation o "
+            "JOIN app.note_cdm_row r ON r.cdm_id = o.observation_id "
+            "WHERE r.note_source_value = :s"), {"s": source}).all()  # fmt: skip
+    return {"nlp": [tuple(r) for r in nlp], "conditions": [tuple(r) for r in conditions],
+            "histories": [tuple(r) for r in histories]}  # fmt: skip
 
 
 def test_every_mention_reaches_note_nlp_and_only_patient_conditions_reach_cdm(
@@ -110,7 +118,7 @@ def test_every_mention_reaches_note_nlp_and_only_patient_conditions_reach_cdm(
 ) -> None:
     with tenant_transaction(documents_engine, "center_a") as conn:
         saved = save_note(conn, notes[0], NOTE_TEXT, MENTIONS, "txlens-test", 0.70)
-    assert (saved.mentions, saved.review, saved.conditions) == (6, 1, 1)
+    assert (saved.mentions, saved.review, saved.conditions, saved.histories) == (6, 1, 1, 0)
     rows = stored(documents_owner, notes[0])
     assert len(rows["nlp"]) == 6
     by_text = {str(r[0]): r for r in rows["nlp"]}
@@ -120,6 +128,29 @@ def test_every_mention_reaches_note_nlp_and_only_patient_conditions_reach_cdm(
     assert "status=review" in str(by_text["graft tenderness"][4])
     # One condition for the two current patient mentions; family and negated are left out.
     assert rows["conditions"] == [(REJECTION, date(2024, 6, 1), 32858, "Rejection", 2)]
+
+
+def test_past_conditions_become_history_of_event_observations(
+    notes: list[str], documents_engine: Engine, documents_owner: Engine
+) -> None:
+    past = [
+        mention("Rejection", REJECTION, temporality="historical"),
+        mention("Rejection", REJECTION, occurrence=1, temporality="historical"),
+        mention("ATN", ATN, temporality="historical", negated=True),  # denied: no history
+        mention("rejection", REJECTION, occurrence=2, temporality="historical",
+                experiencer="family"),
+    ]  # fmt: skip
+    with tenant_transaction(documents_engine, "center_a") as conn:
+        saved = save_note(conn, notes[0], NOTE_TEXT, past, "txlens-test", 0.70)
+    assert (saved.conditions, saved.histories) == (0, 1)
+    rows = stored(documents_owner, notes[0])
+    assert rows["conditions"] == []
+    # History of event (1340204), valued with the condition, dated at the note, type NLP.
+    assert rows["histories"] == [(1340204, REJECTION, date(2024, 6, 1), 32858, 2)]
+    with tenant_transaction(documents_engine, "center_a") as conn:  # a pipeline reload
+        conn.execute(text("DELETE FROM cdm.observation WHERE observation_id >= 2100000000"))
+        conn.execute(text("SELECT app.load_note_nlp_results()"))
+    assert stored(documents_owner, notes[0])["histories"] == rows["histories"]
 
 
 def test_saving_again_replaces_rows_and_unchanged_notes_are_skipped(

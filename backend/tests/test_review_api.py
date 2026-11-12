@@ -241,7 +241,7 @@ def test_edit_needs_a_reason_and_is_signalled_recorded_and_audited(
     assert audit_rows(api_owner, "review_decision", seeded.rejection_doc) == ["center_a"]
 
 
-def test_editing_a_note_mention_accepts_it_and_rebuilds_conditions(
+def test_editing_a_note_mention_accepts_it_and_rebuilds_its_omop_rows(
     client: TestClient, seeded: Seeded, api_owner: Engine
 ) -> None:
     login(client, Role.DATA_STEWARD)
@@ -256,10 +256,11 @@ def test_editing_a_note_mention_accepts_it_and_rebuilds_conditions(
         status, temporality = conn.execute(text(
             "SELECT status, temporality FROM app.note_mention WHERE note_source_value = :s"),
             {"s": seeded.note.sources[0]}).one()  # fmt: skip
-        conditions = conn.execute(text(
-            "SELECT count(*) FROM app.note_cdm_row WHERE note_source_value = :s"),
-            {"s": seeded.note.sources[0]}).scalar_one()  # fmt: skip
-    assert (status, temporality, conditions) == ("accepted", "historical", 0)
+        rows = dict(conn.execute(text(
+            "SELECT cdm_table, count(*) FROM app.note_cdm_row WHERE note_source_value = :s "
+            "GROUP BY cdm_table"), {"s": seeded.note.sources[0]}).all())  # fmt: skip
+    # No longer a current condition: a "History of event" observation instead.
+    assert (status, temporality, rows) == ("accepted", "historical", {"observation": 1})
 
 
 def test_curated_mapping_history_is_shared_and_can_be_reverted(

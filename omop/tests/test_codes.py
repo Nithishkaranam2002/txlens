@@ -13,6 +13,7 @@ from txlens_omop.codes import (
     generator_codes,
     pipeline_codes,
     planned_codes,
+    survival_codes,
     text_condition_codes,
     uncoded_drugs,
 )
@@ -58,7 +59,14 @@ def test_planned_icd10cm_codes_are_included() -> None:
         + len(pipeline_codes())
         + len(extraction_codes())
         + len(text_condition_codes())
+        + len(survival_codes())
     )
+
+
+def test_survival_codes_route_delayed_graft_function_through_history_of_event() -> None:
+    codes = {(c.vocabulary_id, c.code): c.expected_domain for c in survival_codes()}
+    assert codes[("SNOMED", "426136000")] == "Condition"
+    assert codes[("OMOP Extension", "OMOP5165859")] == "Observation"
 
 
 def test_text_condition_codes_include_the_qualifier_variants() -> None:

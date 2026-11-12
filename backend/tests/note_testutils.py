@@ -13,6 +13,8 @@ DEID_TEXT = f"VISIT NOTE\n\nHPI: {SURROGATE} reports graft rejection today.\n"
 CLEANUP = (
     "DELETE FROM cdm.condition_occurrence WHERE condition_occurrence_id IN "
     "(SELECT cdm_id FROM app.note_cdm_row WHERE note_source_value = ANY(:s))",
+    "DELETE FROM cdm.observation WHERE observation_id IN "
+    "(SELECT cdm_id FROM app.note_cdm_row WHERE note_source_value = ANY(:s))",
     "DELETE FROM cdm.note_nlp WHERE note_nlp_id IN "
     "(SELECT mention_id FROM app.note_mention WHERE note_source_value = ANY(:s))",
     "DELETE FROM app.note_processed WHERE note_source_value = ANY(:s)",

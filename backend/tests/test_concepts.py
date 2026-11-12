@@ -21,7 +21,7 @@ def test_search_by_name_finds_only_standard_conditions(
 ) -> None:
     login(client, Role.CLINICIAN)
     hits = client.get("/concepts/conditions", params={"q": "test only"}).json()
-    assert len(hits) == 7  # the seven condition concepts; no procedures, labs or drugs
+    assert len(hits) == 10  # the ten condition concepts; no procedures, labs or drugs
     assert client.get("/concepts/conditions", params={"q": "%_"}).json() == []  # literal
 
 

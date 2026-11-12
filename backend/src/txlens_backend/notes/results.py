@@ -6,9 +6,11 @@ below the review threshold (LLM findings always are), or a rule gave a review re
 reviewer's decision (app.review_decision, keyed by note and span) is re-applied whenever the
 note is processed again, so re-running the NLP never undoes a person's work. A note gives one
 condition_occurrence per concept, only from accepted condition mentions that are affirmed,
-current and about the patient, with a standard concept. TxLens local concepts (borderline
-rejection) are non-standard: OMOP keeps them out of `*_concept_id`, so they stay in note_nlp
-as source concepts.
+current and about the patient, with a standard concept. The same mentions placed in the past
+("history of delayed graft function") give one "History of event" observation per concept
+instead, valued with the Condition concept and dated at the note (migration 0015). TxLens
+local concepts (borderline rejection) are non-standard: OMOP keeps them out of `*_concept_id`,
+so they stay in note_nlp as source concepts.
 """
 
 import hashlib
@@ -31,7 +33,13 @@ PROCESSED_SQL = text(
 UNLOAD_SQL = (
     text(
         "DELETE FROM cdm.condition_occurrence WHERE condition_occurrence_id IN "
-        "(SELECT cdm_id FROM app.note_cdm_row WHERE note_source_value = :n)"
+        "(SELECT cdm_id FROM app.note_cdm_row WHERE note_source_value = :n "
+        "AND cdm_table = 'condition_occurrence')"
+    ),
+    text(
+        "DELETE FROM cdm.observation WHERE observation_id IN "
+        "(SELECT cdm_id FROM app.note_cdm_row WHERE note_source_value = :n "
+        "AND cdm_table = 'observation')"
     ),
     text(
         "DELETE FROM cdm.note_nlp WHERE note_nlp_id IN "
@@ -64,6 +72,7 @@ class Saved:
     mentions: int
     review: int
     conditions: int
+    histories: int
 
 
 def text_sha256(note_text: str) -> str:
@@ -128,7 +137,7 @@ def save_note(
         )  # fmt: skip
     reapply_reviews(conn, note_source_value)
     review = conn.execute(REVIEW_COUNT_SQL, {"n": note_source_value}).scalar_one()
-    return Saved(len(mentions), int(review), rebuild_conditions(conn, note_source_value))
+    return Saved(len(mentions), int(review), *rebuild_cdm_rows(conn, note_source_value))
 
 
 # Accepted condition mentions that are affirmed, current, about the patient and have a
@@ -143,21 +152,36 @@ CONDITIONS_SQL = text(
     GROUP BY concept_id
     """
 )
+# The same, placed in the past and with a Condition-domain concept: one "History of event"
+# observation per note and concept (the OMOP pattern for an undated past condition).
+HISTORIES_SQL = text(
+    """
+    INSERT INTO app.note_cdm_row (note_source_value, mention_id, cdm_table, concept_id, mentions)
+    SELECT :n, min(m.mention_id), 'observation', m.concept_id, count(*)
+    FROM app.note_mention m
+    JOIN vocab.concept c ON c.concept_id = m.concept_id AND c.domain_id = 'Condition'
+    WHERE m.note_source_value = :n AND m.status = 'accepted' AND m.category = 'condition'
+      AND NOT m.negated AND m.temporality = 'historical' AND m.experiencer = 'patient'
+    GROUP BY m.concept_id
+    """
+)
 REVIEW_COUNT_SQL = text(
     "SELECT count(*) FROM app.note_mention WHERE note_source_value = :n AND status = 'review'"
 )
 
 
-def rebuild_conditions(conn: Connection, note_source_value: str) -> int:
-    """Recompute the note's conditions from its accepted mentions and copy them into cdm;
-    returns how many conditions it gives."""
-    conn.execute(UNLOAD_SQL[0], {"n": note_source_value})
+def rebuild_cdm_rows(conn: Connection, note_source_value: str) -> tuple[int, int]:
+    """Recompute the note's conditions and "history of" observations from its accepted
+    mentions and copy them into cdm; returns (conditions, histories)."""
+    for statement in UNLOAD_SQL[:2]:
+        conn.execute(statement, {"n": note_source_value})
     conn.execute(
         text("DELETE FROM app.note_cdm_row WHERE note_source_value = :n"), {"n": note_source_value}
     )
     conditions = conn.execute(CONDITIONS_SQL, {"n": note_source_value}).rowcount
+    histories = conn.execute(HISTORIES_SQL, {"n": note_source_value}).rowcount
     conn.execute(text("SELECT app.load_note_nlp_results(:n)"), {"n": note_source_value})
-    return int(conditions)
+    return int(conditions), int(histories)
 
 
 # The latest reviewer decision on each span of the note (keys are "<note>:<start>-<end>").

@@ -24,7 +24,7 @@ from sqlalchemy import Connection, text
 from txlens_backend.documents import store
 from txlens_backend.documents.schema import Organ
 from txlens_backend.documents.service import checked_changes
-from txlens_backend.notes.results import apply_review, rebuild_conditions
+from txlens_backend.notes.results import apply_review, rebuild_cdm_rows
 from txlens_backend.review import curated
 from txlens_backend.review.detail import (
     TEMPORALITIES,
@@ -181,7 +181,7 @@ def mention(conn: Connection, item: ReviewItem, decision: Decision, reviewer_id:
     decided_at = conn.execute(text("SELECT now()")).scalar_one()
     apply_review(conn, item.item_key, decision.action, {k: v for k, v in final.items() if v},
                  reviewer_id, decided_at)  # fmt: skip
-    rebuild_conditions(conn, note)
+    rebuild_cdm_rows(conn, note)
 
 
 def gap(conn: Connection, item: ReviewItem, decision: Decision, reviewer_id: str) -> None:
