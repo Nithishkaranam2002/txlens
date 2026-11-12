@@ -61,7 +61,7 @@ EXPECTED: dict[str, tuple[tuple[str, str], ...]] = {
     "dysuria": (("SNOMED", "49650001"),),
     "dyspnea": (("SNOMED", "267036007"),),
     "palpitations": (("SNOMED", "80313002"),),
-    "graft_tenderness": (),
+    "graft_tenderness": (("TxLens", "GRAFT_TENDERNESS"),),
     "esrd": (("SNOMED", "46177005"),),
     "hypertension": (("SNOMED", "38341003"),),
     "diabetes": (("SNOMED", "73211009"),),
@@ -437,8 +437,10 @@ LIMITS = """\
   rows of SOURCE_TO_CONCEPT_MAP.csv). No clinician has checked them yet.
 - **The ground truth comes from the same generator,** so there is no annotation noise and no
   disagreement between annotators. Real evaluation needs clinician-annotated notes.
-- **"Graft tenderness" has no SNOMED concept** in our vocabulary. The LLM finds it, but it is
-  stored with concept 0 and goes to review.
+- **"Graft tenderness" has no standard concept.** SNOMED has only "Tenderness of kidney" (any
+  kidney, Observation domain). Since Step 2.3 the term maps to a TxLens local concept
+  (GRAFT_TENDERNESS, curated by AI assistant, pending clinical review); before that the LLM
+  found it with concept 0 and every mention went to review.
 - **Concept accuracy** counts a mapping as correct when it is the expected concept or one of
   its descendants: "rejection" may be any transplanted-organ rejection.
 - **The LLM sees one de-identified sentence at a time.** It never sees a whole note,

@@ -1100,7 +1100,7 @@ experiencer flags).
   - biopsy reports in review, including the QC sample;
   - note mentions in review;
   - condition texts the pipeline could not map;
-  - the 82 AI-curated mapping rows.
+  - the AI-curated mapping rows (82, then 83 with "graft tenderness").
 - **Priority:** rejection-related and high-severity items first, then the QC sample, then the
   rest, oldest first within each group.
 - **Evidence beside the form:**
@@ -1191,9 +1191,15 @@ experiencer flags).
 - Rejection records (`make rejection-report`): all 213 rejection conditions from notes sit
   just after a true rejection biopsy. The late-rejection cohorts have 0 extra patients; 31
   and 6 patients are missing, and all of them have a report waiting in review.
-- Queue now (`make review-report`): 898 biopsy reports and 3,579 note mentions (all "graft
-  tenderness") across the three centers, 0 condition texts, and 82 shared AI-curated rows.
-  No reviews yet.
+- Queue (`make review-report`): it was 898 biopsy reports plus 3,579 note mentions across
+  the three centers. Every mention was "graft tenderness", which had no concept. SNOMED has
+  only "Tenderness of kidney" (any kidney, Observation domain), so kidney notes now map the
+  term to a local concept (AI-curated, pending review). The note queue fell to 0, leaving
+  898 biopsy reports and 83 shared AI-curated rows. No reviews yet.
+- **One mapping can matter more than any model.** 80% of the queue was a single term with no
+  concept. Before the fix, the note batch only noticed changes to the rules or the prompt,
+  not the vocabulary. Its version name now includes a vocabulary fingerprint, so a mapping
+  change also makes it reprocess every note.
 
 ### Likely interview questions
 1. **The bug report said current rejections were read as past. What did you do?** I checked

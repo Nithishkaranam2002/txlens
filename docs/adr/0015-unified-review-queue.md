@@ -78,5 +78,9 @@ is audited.
   reviews yet, so the report says so instead of showing invented numbers.
 - Queries scan the sources on each request. A center with tens of thousands of waiting items
   would need the materialized table above.
-- The 3,579 waiting note mentions are all "graft tenderness" (no SNOMED concept). Mapping
-  that one term (or adding a local concept) would clear almost 80% of the queue.
+- The 3,579 waiting note mentions were all "graft tenderness" (no concept). SNOMED has no
+  transplant-specific concept: only "Tenderness of kidney" (any kidney, Observation
+  domain). Kidney notes therefore map the term to a TxLens local concept
+  (GRAFT_TENDERNESS, AI-curated, pending clinical review). The note queue went from 3,579
+  to 0, and the new mapping row waits in the queue for a clinician. The note NLP's version
+  name now includes a vocabulary fingerprint, so a mapping change reprocesses every note.

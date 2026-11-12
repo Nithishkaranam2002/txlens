@@ -15,6 +15,7 @@ A term whose text names two different concepts is marked ambiguous; the NLP give
 mention concept 0 and sends it to review.
 """
 
+import hashlib
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
@@ -67,6 +68,13 @@ class Vocabulary:
     def texts(self) -> set[str]:
         """Every surface form to match."""
         return {t for _, t in self.terms} | set(self.ambiguous)
+
+    def fingerprint(self) -> str:
+        """A short hash of every term and its concept: it changes whenever a mapping does."""
+        items = sorted(f"{organ}|{text}|{term.concept_id}|{term.category}"
+                       for (organ, text), term in self.terms.items())  # fmt: skip
+        digest = hashlib.sha256("\n".join([*items, *sorted(self.ambiguous)]).encode())
+        return digest.hexdigest()[:8]
 
 
 def seed_codes(uses: Iterable[CodeUse]) -> tuple[list[str], list[str]]:

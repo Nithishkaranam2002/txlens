@@ -110,10 +110,15 @@ TEXT_CONDITION_CODES = {
     ("SNOMED", "213148006"): ("transplanted organ rejection", "Condition"),
     ("SNOMED", "1085381000119108"): ("cytomegalovirus viremia", "Condition"),
 }  # fmt: skip
-# TxLens local concepts (LOCAL_CONCEPT.csv, by concept_code) the extraction writes. They are
-# non-standard: OMOP rows get concept_id 0 and the local id as the source concept.
+# TxLens local concepts (LOCAL_CONCEPT.csv, by concept_code) the extraction and the note NLP
+# write. They are non-standard: OMOP rows get concept_id 0 and the local id as the source
+# concept.
 EXTRACTION_LOCAL_CODES = {
     "BORDERLINE_REJECTION": "Condition",
+    # "Graft tenderness" in kidney notes: SNOMED has only "Tenderness of kidney" (any kidney,
+    # Observation domain), so the allograft finding gets a local concept (AI-curated, pending
+    # clinical review).
+    "GRAFT_TENDERNESS": "Condition",
     "BANFF_I": "Measurement",
     "BANFF_T": "Measurement",
     "BANFF_V": "Measurement",

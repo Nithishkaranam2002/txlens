@@ -19,16 +19,16 @@ Generated 2026-11-12 by `make notes-report` (evals/src/txlens_evals/notes_nlp.py
 
 | System | Category | Precision | Precision (tracked text) | Recall | F1 |
 |---|---|---|---|---|---|
-| rules-only | condition | 88.0% | 100.0% | 96.1% | 91.9% |
+| rules-only | condition | 88.4% | 100.0% | 100.0% | 93.9% |
 | rules-only | medication | 100.0% | 100.0% | 100.0% | 100.0% |
 | rules-only | lab | 80.1% | 99.9% | 100.0% | 88.9% |
 | rules-only | procedure | 97.1% | 97.1% | 100.0% | 98.6% |
-| rules-only | **all** | 88.9% | 99.6% | 98.2% | 93.3% |
-| medspaCy | condition | 88.0% | 100.0% | 96.1% | 91.9% |
+| rules-only | **all** | 89.1% | 99.6% | 100.0% | 94.2% |
+| medspaCy | condition | 88.4% | 100.0% | 100.0% | 93.9% |
 | medspaCy | medication | 100.0% | 100.0% | 100.0% | 100.0% |
 | medspaCy | lab | 80.1% | 99.9% | 100.0% | 88.9% |
 | medspaCy | procedure | 97.1% | 97.1% | 100.0% | 98.6% |
-| medspaCy | **all** | 88.9% | 99.6% | 98.2% | 93.3% |
+| medspaCy | **all** | 89.1% | 99.6% | 100.0% | 94.2% |
 | hybrid (+LLM) | condition | 88.4% | 100.0% | 100.0% | 93.9% |
 | hybrid (+LLM) | medication | 100.0% | 100.0% | 100.0% | 100.0% |
 | hybrid (+LLM) | lab | 80.1% | 99.9% | 100.0% | 88.9% |
@@ -39,8 +39,8 @@ Generated 2026-11-12 by `make notes-report` (evals/src/txlens_evals/notes_nlp.py
 
 | System | Matched facts | Negation | Temporality | Experiencer | Concept |
 |---|---|---|---|---|---|
-| rules-only | 195,083 | 79.1% | 69.3% | 94.3% | 100.0% |
-| medspaCy | 195,083 | 100.0% | 100.0% | 100.0% | 100.0% |
+| rules-only | 198,571 | 77.8% | 69.8% | 94.4% | 100.0% |
+| medspaCy | 198,571 | 100.0% | 100.0% | 100.0% | 100.0% |
 | hybrid (+LLM) | 198,571 | 100.0% | 100.0% | 100.0% | 100.0% |
 
 ### Rejections called current but dated earlier or treated (sent to review)
@@ -66,16 +66,16 @@ Generated 2026-11-12 by `make notes-report` (evals/src/txlens_evals/notes_nlp.py
 
 | System | Category | Precision | Precision (tracked text) | Recall | F1 |
 |---|---|---|---|---|---|
-| rules-only | condition | 87.9% | 100.0% | 95.9% | 91.7% |
+| rules-only | condition | 88.3% | 100.0% | 100.0% | 93.8% |
 | rules-only | medication | 100.0% | 100.0% | 100.0% | 100.0% |
 | rules-only | lab | 80.3% | 100.0% | 100.0% | 89.1% |
 | rules-only | procedure | 98.1% | 98.1% | 100.0% | 99.0% |
-| rules-only | **all** | 89.0% | 99.8% | 98.1% | 93.3% |
-| medspaCy | condition | 87.9% | 100.0% | 95.9% | 91.7% |
+| rules-only | **all** | 89.2% | 99.8% | 100.0% | 94.3% |
+| medspaCy | condition | 88.3% | 100.0% | 100.0% | 93.8% |
 | medspaCy | medication | 100.0% | 100.0% | 100.0% | 100.0% |
 | medspaCy | lab | 80.3% | 100.0% | 100.0% | 89.1% |
 | medspaCy | procedure | 98.1% | 98.1% | 100.0% | 99.0% |
-| medspaCy | **all** | 89.0% | 99.8% | 98.1% | 93.3% |
+| medspaCy | **all** | 89.2% | 99.8% | 100.0% | 94.3% |
 | hybrid (+LLM) | condition | 88.3% | 100.0% | 100.0% | 93.8% |
 | hybrid (+LLM) | medication | 100.0% | 100.0% | 100.0% | 100.0% |
 | hybrid (+LLM) | lab | 80.3% | 100.0% | 100.0% | 89.1% |
@@ -86,8 +86,8 @@ Generated 2026-11-12 by `make notes-report` (evals/src/txlens_evals/notes_nlp.py
 
 | System | Matched facts | Negation | Temporality | Experiencer | Concept |
 |---|---|---|---|---|---|
-| rules-only | 4,827 | 78.9% | 69.0% | 94.6% | 100.0% |
-| medspaCy | 4,827 | 100.0% | 100.0% | 100.0% | 100.0% |
+| rules-only | 4,918 | 77.4% | 69.6% | 94.7% | 100.0% |
+| medspaCy | 4,918 | 100.0% | 100.0% | 100.0% | 100.0% |
 | hybrid (+LLM) | 4,918 | 100.0% | 100.0% | 100.0% | 100.0% |
 
 ### Rejections called current but dated earlier or treated (sent to review)
@@ -108,21 +108,21 @@ Generated 2026-11-12 by `make notes-report` (evals/src/txlens_evals/notes_nlp.py
 
 | | |
 |---|---|
-| Sentences sent (why) | 3,579 (unmatched_item 3,579) |
-| Model calls | 0 paid, 3,579 answered from the cache, 0 failed |
-| Tokens | 1,323,718 in, 364,984 out |
+| Sentences sent (why) | 0 (none) |
+| Model calls | 0 paid, 0 answered from the cache, 0 failed |
+| Tokens | 0 in, 0 out |
 | Spent by this run | $0.0000 |
 | Batch total (every run of this sample) / cap | $0.0016 / $3.00 |
-| Without the cache, these calls cost | $0.3149 ($0.00003 per note) |
-| Projected for all 12,505 notes | $0.31 (an upper bound: repeated sentences are answered from the cache) |
+| Without the cache, these calls cost | $0.0000 ($0.00000 per note) |
+| Projected for all 12,505 notes | $0.00 (an upper bound: repeated sentences are answered from the cache) |
 | Quotes not found in the sentence (dropped) | 0 |
 | Budget reached | no |
 
 ## Speed
 
 - rules-only: 10.2 ms per note
-- medspaCy: 11.8 ms per note
-- hybrid (+LLM): 12.6 ms per note
+- medspaCy: 11.7 ms per note
+- hybrid (+LLM): 12.1 ms per note
 
 ## Honest limits
 
@@ -151,8 +151,10 @@ Generated 2026-11-12 by `make notes-report` (evals/src/txlens_evals/notes_nlp.py
   rows of SOURCE_TO_CONCEPT_MAP.csv). No clinician has checked them yet.
 - **The ground truth comes from the same generator,** so there is no annotation noise and no
   disagreement between annotators. Real evaluation needs clinician-annotated notes.
-- **"Graft tenderness" has no SNOMED concept** in our vocabulary. The LLM finds it, but it is
-  stored with concept 0 and goes to review.
+- **"Graft tenderness" has no standard concept.** SNOMED has only "Tenderness of kidney" (any
+  kidney, Observation domain). Since Step 2.3 the term maps to a TxLens local concept
+  (GRAFT_TENDERNESS, curated by AI assistant, pending clinical review); before that the LLM
+  found it with concept 0 and every mention went to review.
 - **Concept accuracy** counts a mapping as correct when it is the expected concept or one of
   its descendants: "rejection" may be any transplanted-organ rejection.
 - **The LLM sees one de-identified sentence at a time.** It never sees a whole note,

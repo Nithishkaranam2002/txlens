@@ -134,7 +134,7 @@ def test_organ_specific_terms() -> None:
 def test_rules_only_baseline_affirms_everything() -> None:
     m = found(context=False)
     assert not m["edema"].negated and m["T2DM"].experiencer == "patient"
-    assert pipeline(False).system == "txlens-rules-1"
+    assert pipeline(False).system.startswith("txlens-rules-1+vocab-")
 
 
 def mention(text: str, start: int, end: int, s_start: int, s_end: int) -> Mention:
@@ -235,8 +235,11 @@ def test_dates_and_cues() -> None:
     assert not past_episode_cue("Creatinine (02/19) stable", date(2025, 1, 1))
 
 
-def test_hybrid_system_name_changes_with_the_rules_version() -> None:
+def test_system_name_changes_with_the_rules_and_the_vocabulary() -> None:
     from txlens_backend.notes.service import system_name
 
-    assert system_name(pipeline(), True).startswith("txlens-medspacy-2+llm-")
-    assert system_name(pipeline(), False) == "txlens-medspacy-2"
+    rules = system_name(pipeline(), False)
+    assert rules.startswith("txlens-medspacy-2+vocab-")
+    assert system_name(pipeline(), True).startswith(f"{rules}+llm-")
+    remapped = build([*CURATED, Term("graft tenderness", 2000000015, "condition", True)], AUTOMATIC)
+    assert NoteNlp(remapped).system != rules

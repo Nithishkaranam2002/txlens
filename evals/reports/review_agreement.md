@@ -18,6 +18,6 @@ QC-sample agreement is the honest estimate of the automatic path's accuracy; oth
 
 | Center | biopsy_document | note_mention | condition_mapping | curated_mapping |
 |---|---|---|---|---|
-| center_a | 378 | 1,431 | 0 | 82 |
-| center_b | 309 | 1,248 | 0 | 82 |
-| center_c | 211 | 900 | 0 | 82 |
+| center_a | 378 | 0 | 0 | 83 |
+| center_b | 309 | 0 | 0 | 83 |
+| center_c | 211 | 0 | 0 | 83 |

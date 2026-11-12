@@ -137,3 +137,4 @@ cfdna	0	TXLENS_NOTE_ABBREV	Clinic-note term: cfdna [curated by AI assistant, pen
 dsa	0	TXLENS_NOTE_ABBREV	Clinic-note term: dsa [curated by AI assistant, pending clinical review]	2000000001	TxLens	20261111	20991231	
 kidney:prior tx	0	TXLENS_NOTE_ABBREV	Clinic-note term: kidney:prior tx [curated by AI assistant, pending clinical review]	4322471	SNOMED	20261111	20991231	
 heart:prior tx	0	TXLENS_NOTE_ABBREV	Clinic-note term: heart:prior tx [curated by AI assistant, pending clinical review]	4137127	SNOMED	20261111	20991231	
+kidney:graft tenderness	0	TXLENS_NOTE_ABBREV	Clinic-note term: kidney:graft tenderness (tenderness over the kidney allograft; no standard SNOMED concept) [curated by AI assistant, pending clinical review]	2000000015	TxLens	20261112	20991231	

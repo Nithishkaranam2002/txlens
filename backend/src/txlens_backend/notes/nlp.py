@@ -162,8 +162,10 @@ class NoteNlp:
 
     @property
     def system(self) -> str:
-        """The nlp_system name written to note_nlp."""
-        return SYSTEM_RULES if self.context else SYSTEM_BASELINE
+        """The nlp_system name written to note_nlp: the rules version and a fingerprint of
+        the vocabulary, so a changed rule or mapping makes the batch redo every note."""
+        rules = SYSTEM_RULES if self.context else SYSTEM_BASELINE
+        return f"{rules}+vocab-{self.vocabulary.fingerprint()}"
 
     def target_rules(self) -> list[TargetRule]:
         """Case-insensitive token patterns per term. The tokenizer splits by case ("t2dm" is

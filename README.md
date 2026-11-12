@@ -273,24 +273,26 @@ rules are reported separately (F1 94.3%).
 
 | Held-out notes | Rules only | medspaCy | Hybrid (+LLM) |
 |---|---|---|---|
-| Recall | 98.2% | 98.2% | **100.0%** |
-| Precision (strict) | 88.9% | 88.9% | 89.1% |
+| Recall | 100.0% | 100.0% | 100.0% |
+| Precision (strict) | 89.1% | 89.1% | 89.1% |
 | Precision (text the ground truth tracks) | 99.6% | 99.6% | 99.6% |
-| F1 | 93.3% | 93.3% | **94.2%** |
-| Negation / temporality / experiencer | 79.1% / 69.3% / 94.3% | 100% / 100% / 100% | 100% / 100% / 100% |
+| F1 | 94.2% | 94.2% | 94.2% |
+| Negation / temporality / experiencer | 77.8% / 69.8% / 94.4% | 100% / 100% / 100% | 100% / 100% / 100% |
 | Concept | 100% | 100% | 100% |
 
 - Strict precision counts real mentions the generator does not list as facts (the primary
   disease, a dd-cfDNA threshold sentence, biopsy indications) as false positives.
-- **LLM cost:** 3,579 sentences, 15 paid calls (the rest from the cache), $0.0016 for the
-  full run; $0.31 without any cache. De-identification leak check: 0 identifiers in all
+- **LLM cost:** in Step 2.2 the LLM got 3,579 sentences, all with "graft tenderness" (15 paid
+  calls, $0.0016; $0.31 without any cache), which lifted recall from 98.2% to 100%. Since that
+  term has a curated concept (Step 2.3), the rules find it and the LLM gets 0 sentences: it
+  remains only for phrasing no rule knows. De-identification leak check: 0 identifiers in all
   12,505 notes.
 - **Temporality fix (Step 2.3):** past rejections in the HPI ("Bx 3/22/24 showed ABMR,
   treated.") were read as current, and "Will arrange for-cause biopsy" as done. Two rules
   found on the tuning notes only (", treated" closes a past episode; "will arrange" is a
   plan) took held-out temporality from 99.8% to 100.0% (382 errors to 0). A rejection still
   called current next to an earlier date or a treatment word now goes to review.
-- **Loaded:** `txlens-notes process` (Temporal) wrote 228,428 `note_nlp` rows (3,579 to
+- **Loaded:** `txlens-notes process` (Temporal) wrote 228,428 `note_nlp` rows (0 to
   review) and 26,022 NLP conditions for 1,999 patients, with no new LLM spend (cache). All 8
   cohort rules still match the ground truth (diabetes 820 of 820): family-history diabetes
   adds no patients. [evals/reports/rejection_records.md](evals/reports/rejection_records.md)
@@ -305,7 +307,7 @@ Design: [ADR 0014](docs/adr/0014-clinical-note-nlp.md).
 
 One queue for everything a person must check, for clinicians and data stewards of a center:
 biopsy reports in review (including the 10% QC sample), note mentions in review, condition
-texts the pipeline could not map, and the 82 AI-curated mapping rows. Rejection-related and
+texts the pipeline could not map, and the 83 AI-curated mapping rows. Rejection-related and
 high-severity items come first, then the QC sample, then the rest.
 
 | | Queue | Biopsy evidence | Note evidence | Decide | AI-curated rows |
@@ -325,9 +327,12 @@ high-severity items come first, then the QC sample, then the rest.
   (`make review-report`) reports agreement per field, the QC sample apart, and re-runs the
   note rules on reviewed mentions. **No one has reviewed items in the dev database yet, so
   there are no agreement numbers yet.**
-- Waiting now (same report, all centers): 898 biopsy reports and 3,579 note mentions
-  (all "graft tenderness", which has no SNOMED concept), 0 condition texts; the 82
-  AI-curated rows are shared, so every center sees the same 82.
+- Waiting now (same report, all centers): 898 biopsy reports, 0 note mentions and 0
+  condition texts; the 83 AI-curated rows are shared, so every center sees the same 83.
+- "Graft tenderness" filled 3,579 of the 4,477 center items (80%): the LLM found it, but no
+  concept existed. SNOMED has only "Tenderness of kidney" (any kidney, Observation domain),
+  so kidney notes now map it to a TxLens local concept (GRAFT_TENDERNESS), labelled "curated
+  by AI assistant, pending clinical review" and itself waiting in the queue.
 
 Design: [ADR 0015](docs/adr/0015-unified-review-queue.md).
 

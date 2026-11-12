@@ -13,3 +13,4 @@ concept_id	concept_name	domain_id	vocabulary_id	concept_class_id	standard_concep
 2000000012	Kidney biopsy specimen adequacy, Banff (TxLens local)	Measurement	TxLens	Observable Entity		BANFF_ADEQUACY	20261111	20991231	
 2000000013	ISHLT 2004 acute cellular rejection grade, endomyocardial biopsy (TxLens local)	Measurement	TxLens	Observable Entity		ISHLT_ACR_GRADE	20261111	20991231	
 2000000014	ISHLT 2013 pathologic antibody-mediated rejection grade (TxLens local)	Measurement	TxLens	Observable Entity		ISHLT_PAMR_GRADE	20261111	20991231	
+2000000015	Tenderness of transplanted kidney (TxLens local; curated by AI assistant, pending clinical review)	Condition	TxLens	Clinical Finding		GRAFT_TENDERNESS	20261112	20991231	
