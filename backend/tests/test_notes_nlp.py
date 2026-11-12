@@ -1,5 +1,7 @@
 """Note NLP: vocabulary rules, medspaCy attributes, LLM-fallback triggers and checks (no DB)."""
 
+from dataclasses import replace
+from datetime import date
 from functools import cache
 
 import pytest
@@ -13,7 +15,14 @@ from txlens_backend.notes.fallback import (
     sentences_to_ask,
     to_mentions,
 )
-from txlens_backend.notes.nlp import Mention, NoteNlp
+from txlens_backend.notes.nlp import (
+    REVIEW_PAST_REJECTION,
+    Mention,
+    NoteNlp,
+    past_episode_cue,
+    service_date,
+)
+from txlens_backend.notes.results import needs_review
 from txlens_backend.notes.vocabulary import Term, Vocabulary, build, clean, split_organ
 
 HTN, T2DM, ESRD, EDEMA, CMV, RENAL_TCMR, CARDIAC_ACR = (
@@ -25,6 +34,7 @@ HTN, T2DM, ESRD, EDEMA, CMV, RENAL_TCMR, CARDIAC_ACR = (
     4128371,
     4202285,
 )
+ABMR, BIOPSY = 37472871, 4041358
 CURATED = [
     Term("htn", HTN, "condition", True),
     Term("t2dm", T2DM, "condition", True),
@@ -33,6 +43,8 @@ CURATED = [
     Term("cr", 3016723, "lab", True),
     Term("dd-cfdna", 3966008, "lab", True),
     Term("ktx", 4322471, "procedure", True),
+    Term("abmr", ABMR, "condition", True),
+    Term("biopsy", BIOPSY, "procedure", True),
     Term("tacro", 950637, "medication", True),
 ]
 AUTOMATIC = [
@@ -64,7 +76,14 @@ def vocabulary() -> Vocabulary:
 
 @cache
 def pipeline(context: bool = True) -> NoteNlp:
-    return NoteNlp(vocabulary(), context=context)
+    rejection = frozenset({RENAL_TCMR, CARDIAC_ACR, ABMR})
+    return NoteNlp(replace(vocabulary(), rejection=rejection), context=context)
+
+
+def hpi(sentence: str, service: str = "2025-01-04") -> dict[str, Mention]:
+    """Mentions of one HPI sentence in a kidney note dated `service`."""
+    note = f"CLINIC NOTE\nDate of service: {service}\n\nHPI: {sentence}\n"
+    return {m.text: m for m in pipeline().extract(note, "kidney")}
 
 
 def found(organ: str | None = "kidney", context: bool = True) -> dict[str, Mention]:
@@ -172,3 +191,52 @@ def test_fallback_document_masks_dates_again() -> None:
 @pytest.mark.parametrize("text", ["Stable graft function", "Continue current immunosuppression"])
 def test_sentences_without_a_cue_are_never_sent(text: str) -> None:
     assert sentences_to_ask(f"H\n\n{text}.", []) == []
+
+
+def test_treated_rejection_with_a_past_date_is_historical() -> None:
+    m = hpi("Bx 2024-11-02 showed ABMR, treated.")["ABMR"]
+    assert m.temporality == "historical" and m.review_reason is None
+
+
+def test_rejection_being_treated_stays_current() -> None:
+    assert hpi("ABMR being treated with IVIG.")["ABMR"].temporality == "current"
+
+
+def test_biopsy_result_line_stays_current() -> None:
+    m = hpi("Result: TCMR, Banff grade 1A.")["TCMR"]
+    assert m.temporality == "current" and m.review_reason is None
+
+
+def test_will_arrange_a_biopsy_is_hypothetical() -> None:
+    assert hpi("Will arrange for-cause biopsy.")["biopsy"].temporality == "hypothetical"
+
+
+def test_current_rejection_with_an_earlier_date_goes_to_review() -> None:
+    m = hpi("Bx 2024-12-20 showed TCMR.")["TCMR"]
+    assert m.temporality == "current" and m.review_reason == REVIEW_PAST_REJECTION
+    assert needs_review(m, 0.7)
+
+
+def test_same_day_dated_rejection_is_current_without_review() -> None:
+    m = hpi("Bx 2025-01-04 showed TCMR.")["TCMR"]
+    assert m.temporality == "current" and m.review_reason is None
+
+
+def test_review_rule_only_concerns_rejection() -> None:
+    assert hpi("Bx 2024-12-20 showed edema.")["edema"].review_reason is None
+
+
+def test_dates_and_cues() -> None:
+    assert service_date("X\nDate of service: 3/22/24\n") == date(2024, 3, 22)
+    assert service_date("no header") is None
+    assert past_episode_cue("Bx 11/04/2024 showed ABMR", date(2025, 1, 1))
+    assert not past_episode_cue("Bx 11/04/2024 showed ABMR", None)
+    assert past_episode_cue("s/p ABMR", None)
+    assert not past_episode_cue("Creatinine (02/19) stable", date(2025, 1, 1))
+
+
+def test_hybrid_system_name_changes_with_the_rules_version() -> None:
+    from txlens_backend.notes.service import system_name
+
+    assert system_name(pipeline(), True).startswith("txlens-medspacy-2+llm-")
+    assert system_name(pipeline(), False) == "txlens-medspacy-2"

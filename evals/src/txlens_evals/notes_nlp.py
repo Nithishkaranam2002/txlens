@@ -122,6 +122,10 @@ class Scores:
     matched: int = 0
     errors: Counter[tuple[str, str, str]] = field(default_factory=Counter)
     seconds: float = 0.0
+    # Mentions a rule sent to review, by the ground truth's temporality of the matched fact
+    review_flagged: Counter[str] = field(default_factory=Counter)
+    # (error, concept, de-identified sentence) of attribute errors, kept only for --dump-errors
+    examples: list[tuple[str, str, str]] | None = None
 
 
 def read_facts(path: Path) -> dict[str, list[Fact]]:
@@ -210,9 +214,10 @@ def untracked_spans(original: str) -> list[tuple[int, int]]:
 def score_note(
     scores: Scores, mentions: Sequence[Mention], facts: Sequence[Fact],
     spans: Sequence[Replacement], untracked: Sequence[tuple[int, int]],
-    expected: dict[str, frozenset[int]],
+    expected: dict[str, frozenset[int]], deid_text: str = "",
 ) -> None:  # fmt: skip
-    """Add one note's matches and errors to `scores`."""
+    """Add one note's matches and errors to `scores`. Attribute errors name their direction,
+    e.g. "wrong temporality (historical→current)": expected, then predicted."""
     left = list(facts)
     for m in mentions:
         start, end = original_span(m, spans)
@@ -228,18 +233,26 @@ def score_note(
                 scores.errors[("false positive", m.category, m.text.lower())] += 1
             continue
         left.remove(fact)
+        if m.review_reason is not None:
+            scores.review_flagged[fact.temporality] += 1
         scores.tp[m.category] += 1
         scores.matched += 1
         checks = {
-            "negation": m.negated == fact.negated,
-            "temporality": m.temporality == fact.temporality,
-            "experiencer": m.experiencer == fact.experiencer,
-            "concept": m.concept_id in expected.get(fact.concept, frozenset()),
-        }
-        for name, right in checks.items():
+            "negation": (m.negated == fact.negated, f"{fact.negated}→{m.negated}"),
+            "temporality": (m.temporality == fact.temporality,
+                            f"{fact.temporality}→{m.temporality}"),
+            "experiencer": (m.experiencer == fact.experiencer,
+                            f"{fact.experiencer}→{m.experiencer}"),
+            "concept": (m.concept_id in expected.get(fact.concept, frozenset()), ""),
+        }  # fmt: skip
+        for name, (right, direction) in checks.items():
             scores.attribute_right[name] += right
             if not right:
-                scores.errors[(f"wrong {name}", fact.concept, fact.text.lower())] += 1
+                kind = f"wrong {name} ({direction})" if direction else f"wrong {name}"
+                scores.errors[(kind, fact.concept, fact.text.lower())] += 1
+                if scores.examples is not None:
+                    sentence = deid_text[m.sentence_start : m.sentence_end]
+                    scores.examples.append((kind, fact.concept, " ".join(sentence.split())))
     for fact in left:
         scores.fn[fact.category] += 1
         scores.errors[("missed", fact.category, fact.text.lower())] += 1
@@ -279,10 +292,11 @@ class Split:
 
 def evaluate(
     engine: Engine, chosen: dict[str, list[str]], facts: dict[str, list[Fact]],
-    systems: dict[str, System], name: str,
+    systems: dict[str, System], name: str, keep_examples: bool = False,
 ) -> Split:  # fmt: skip
-    """Run every system on the chosen notes."""
-    split = Split(name, {system: Scores() for system in systems})
+    """Run every system on the chosen notes (keeping error sentences if asked)."""
+    split = Split(name, {system: Scores(examples=[] if keep_examples else None)
+                         for system in systems})  # fmt: skip
     scores = split.scores
     for tenant, ids in sorted(chosen.items()):
         with tenant_transaction(engine, tenant) as conn:
@@ -299,7 +313,7 @@ def evaluate(
                 own = spans.get(note.note_id, [])
                 original = reidentified(note.text, own)
                 score_note(scores[system_name], mentions, facts.get(note.source_value, []), own,
-                           untracked_spans(original), expected)  # fmt: skip
+                           untracked_spans(original), expected, note.text)  # fmt: skip
     return split
 
 
@@ -351,6 +365,16 @@ def attribute_rows(scores: dict[str, Scores]) -> list[str]:
     return lines
 
 
+def review_rows(scores: dict[str, Scores]) -> list[str]:
+    """Rejection mentions the past-rejection rule sent to a person, by the true temporality."""
+    lines = ["| System | Sent to review | Truly historical | Truly current |", "|---|---|---|---|"]
+    for name, s in scores.items():
+        flagged = s.review_flagged
+        lines.append(f"| {name} | {sum(flagged.values()):,} | {flagged['historical']:,} | "
+                     f"{flagged['current']:,} |")  # fmt: skip
+    return lines
+
+
 def error_rows(s: Scores, limit: int = 15) -> list[str]:
     """The most frequent remaining errors of one system."""
     lines = ["| Error | Concept / category | Text | Count |", "|---|---|---|---|"]
@@ -398,6 +422,12 @@ LIMITS = """\
   rules are: PMH lists active conditions; the transplant indication and DGF are historical;
   "post-op course" is historical. They are clinically motivated, but they are tuned to this
   generator. Before them, medspaCy scored 88.0% on temporality and 94.0% on concepts.
+  Step 2.3 added two more after reading the tuning errors: ", treated" closes a past episode,
+  and "will arrange" is a plan (hypothetical). Before them, held-out temporality was 99.8%,
+  with ~285 past rejections read as current.
+- **A safety net, not a guess.** A rejection the rules still call current, in a sentence with
+  a date before the date of service or a treatment cue, goes to the review queue instead of
+  into cohorts. It does not depend on the generator's wording.
 - **Held-out is not the same as unseen text.** The held-out notes were never read while
   writing rules, so they guard against fitting individual notes. They come from the same
   templates, though, so held-out and tuning scores are close; that closeness says nothing
@@ -437,6 +467,10 @@ def split_section(split: Split, title: str) -> list[str]:
         "### Attributes of matched mentions",
         "",
         *attribute_rows(split.scores),
+        "",
+        "### Rejections called current but dated earlier or treated (sent to review)",
+        "",
+        *review_rows(split.scores),
         "",
         f"### Most frequent remaining errors ({best})",
         "",
@@ -494,7 +528,25 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--llm", action="store_true", help="also run the hybrid (paid calls)")
     parser.add_argument("--max-cost", type=float, help="LLM spending cap in dollars (with --llm)")
     parser.add_argument("--out", type=Path, default=REPORT)
+    parser.add_argument(
+        "--dump-errors", type=Path, metavar="FILE",
+        help="write the de-identified sentences of attribute errors on the tuning notes only "
+        "(never held-out) to FILE, as JSON lines",
+    )  # fmt: skip
     return parser.parse_args(argv)
+
+
+def dump_errors(splits: list[Split], path: Path) -> None:
+    """Attribute-error sentences of the tuning notes (held-out notes are never dumped)."""
+    with path.open("w", encoding="utf-8") as handle:
+        for split in splits:
+            if split.name not in (TUNING, "sample"):
+                continue
+            for system, scores in split.scores.items():
+                for kind, concept, sentence in scores.examples or []:
+                    row = {"system": system, "error": kind, "concept": concept,
+                           "sentence": sentence}  # fmt: skip
+                    handle.write(json.dumps(row) + "\n")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -521,7 +573,13 @@ def main(argv: list[str] | None = None) -> int:
         budget.open()
         systems["hybrid (+LLM)"] = hybrid_system(medspacy, engine, settings, budget, fallback)
         run |= {"Model": settings.llm_model, "Prompt": PROMPT.version, "Batch": batch}
-    splits = [evaluate(engine, ids, facts, systems, name) for name, ids in groups.items()]
+    splits = [
+        evaluate(engine, ids, facts, systems, name,
+                 keep_examples=args.dump_errors is not None and name != HELD_OUT)
+        for name, ids in groups.items()
+    ]  # fmt: skip
+    if args.dump_errors is not None:
+        dump_errors(splits, args.dump_errors)
     notes = sum(s.notes for s in splits)
     llm = None
     if budget is not None:

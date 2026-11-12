@@ -1,6 +1,6 @@
 # Clinical-note NLP: evaluation
 
-Generated 2026-11-11 by `make notes-report` (evals/src/txlens_evals/notes_nlp.py). Synthetic data only.
+Generated 2026-11-12 by `make notes-report` (evals/src/txlens_evals/notes_nlp.py). Synthetic data only.
 
 | Run | |
 |---|---|
@@ -40,28 +40,23 @@ Generated 2026-11-11 by `make notes-report` (evals/src/txlens_evals/notes_nlp.py
 | System | Matched facts | Negation | Temporality | Experiencer | Concept |
 |---|---|---|---|---|---|
 | rules-only | 195,083 | 79.1% | 69.3% | 94.3% | 100.0% |
-| medspaCy | 195,083 | 100.0% | 99.8% | 100.0% | 100.0% |
-| hybrid (+LLM) | 198,571 | 100.0% | 99.8% | 100.0% | 100.0% |
+| medspaCy | 195,083 | 100.0% | 100.0% | 100.0% | 100.0% |
+| hybrid (+LLM) | 198,571 | 100.0% | 100.0% | 100.0% | 100.0% |
+
+### Rejections called current but dated earlier or treated (sent to review)
+
+| System | Sent to review | Truly historical | Truly current |
+|---|---|---|---|
+| rules-only | 0 | 0 | 0 |
+| medspaCy | 0 | 0 | 0 |
+| hybrid (+LLM) | 0 | 0 | 0 |
 
 ### Most frequent remaining errors (hybrid (+LLM))
 
 | Error | Concept / category | Text | Count |
 |---|---|---|---|
 | false positive | procedure | `biopsy` | 726 |
-| wrong temporality | graft_biopsy | `biopsy` | 97 |
-| wrong temporality | tcmr | `tcmr` | 51 |
-| wrong temporality | abmr | `abmr` | 35 |
-| wrong temporality | tcmr | `acute t-cell mediated rejection` | 35 |
-| wrong temporality | borderline_rejection | `borderline changes` | 30 |
-| wrong temporality | abmr | `antibody-mediated rejection` | 30 |
 | false positive | lab | `cr` | 28 |
-| wrong temporality | borderline_rejection | `borderline rejection` | 25 |
-| wrong temporality | mixed_rejection | `mixed rejection` | 23 |
-| wrong temporality | mixed_rejection | `mixed tcmr/abmr` | 20 |
-| wrong temporality | tcmr | `acute cellular rejection` | 14 |
-| wrong temporality | tcmr | `acr` | 10 |
-| wrong temporality | borderline_rejection | `mild acr` | 8 |
-| wrong temporality | abmr | `amr` | 4 |
 
 ## Tuning notes (300 notes, seed 7: read while writing the rules)
 
@@ -92,32 +87,31 @@ Generated 2026-11-11 by `make notes-report` (evals/src/txlens_evals/notes_nlp.py
 | System | Matched facts | Negation | Temporality | Experiencer | Concept |
 |---|---|---|---|---|---|
 | rules-only | 4,827 | 78.9% | 69.0% | 94.6% | 100.0% |
-| medspaCy | 4,827 | 100.0% | 99.8% | 100.0% | 100.0% |
-| hybrid (+LLM) | 4,918 | 100.0% | 99.8% | 100.0% | 100.0% |
+| medspaCy | 4,827 | 100.0% | 100.0% | 100.0% | 100.0% |
+| hybrid (+LLM) | 4,918 | 100.0% | 100.0% | 100.0% | 100.0% |
+
+### Rejections called current but dated earlier or treated (sent to review)
+
+| System | Sent to review | Truly historical | Truly current |
+|---|---|---|---|
+| rules-only | 0 | 0 | 0 |
+| medspaCy | 0 | 0 | 0 |
+| hybrid (+LLM) | 0 | 0 | 0 |
 
 ### Most frequent remaining errors (hybrid (+LLM))
 
 | Error | Concept / category | Text | Count |
 |---|---|---|---|
 | false positive | procedure | `biopsy` | 12 |
-| wrong temporality | graft_biopsy | `biopsy` | 2 |
-| wrong temporality | mixed_rejection | `mixed rejection` | 1 |
-| wrong temporality | tcmr | `acute t-cell mediated rejection` | 1 |
-| wrong temporality | borderline_rejection | `mild acute cellular rejection` | 1 |
-| wrong temporality | tcmr | `acr` | 1 |
-| wrong temporality | mixed_rejection | `mixed tcmr/abmr` | 1 |
-| wrong temporality | borderline_rejection | `borderline changes` | 1 |
-| wrong temporality | abmr | `antibody-mediated rejection` | 1 |
-| wrong temporality | abmr | `abmr` | 1 |
 
 ## LLM fallback (hybrid)
 
 | | |
 |---|---|
 | Sentences sent (why) | 3,579 (unmatched_item 3,579) |
-| Model calls | 15 paid, 3,564 answered from the cache, 0 failed |
+| Model calls | 0 paid, 3,579 answered from the cache, 0 failed |
 | Tokens | 1,323,718 in, 364,984 out |
-| Spent by this run | $0.0016 |
+| Spent by this run | $0.0000 |
 | Batch total (every run of this sample) / cap | $0.0016 / $3.00 |
 | Without the cache, these calls cost | $0.3149 ($0.00003 per note) |
 | Projected for all 12,505 notes | $0.31 (an upper bound: repeated sentences are answered from the cache) |
@@ -126,9 +120,9 @@ Generated 2026-11-11 by `make notes-report` (evals/src/txlens_evals/notes_nlp.py
 
 ## Speed
 
-- rules-only: 10.4 ms per note
-- medspaCy: 12.1 ms per note
-- hybrid (+LLM): 15.9 ms per note
+- rules-only: 10.2 ms per note
+- medspaCy: 11.8 ms per note
+- hybrid (+LLM): 12.6 ms per note
 
 ## Honest limits
 
@@ -142,6 +136,12 @@ Generated 2026-11-11 by `make notes-report` (evals/src/txlens_evals/notes_nlp.py
   rules are: PMH lists active conditions; the transplant indication and DGF are historical;
   "post-op course" is historical. They are clinically motivated, but they are tuned to this
   generator. Before them, medspaCy scored 88.0% on temporality and 94.0% on concepts.
+  Step 2.3 added two more after reading the tuning errors: ", treated" closes a past episode,
+  and "will arrange" is a plan (hypothetical). Before them, held-out temporality was 99.8%,
+  with ~285 past rejections read as current.
+- **A safety net, not a guess.** A rejection the rules still call current, in a sentence with
+  a date before the date of service or a treatment cue, goes to the review queue instead of
+  into cohorts. It does not depend on the generator's wording.
 - **Held-out is not the same as unseen text.** The held-out notes were never read while
   writing rules, so they guard against fitting individual notes. They come from the same
   templates, though, so held-out and tuning scores are close; that closeness says nothing

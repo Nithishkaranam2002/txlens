@@ -17,3 +17,6 @@ LABS = {
     "dd_cfdna": ("LOINC", "103142-6"),
 }
 DSA_LOCAL = ("TxLens", "DSA_MAX_MFI")
+# Graft rejection: every transplanted-organ rejection concept descends from the SNOMED one;
+# borderline rejection has no standard concept, only our local one.
+REJECTION = (("SNOMED", "213148006"), ("TxLens", "BORDERLINE_REJECTION"))

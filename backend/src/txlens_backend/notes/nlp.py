@@ -17,6 +17,12 @@ Two transplant rules run after ConText:
 - the transplant indication (end-stage renal disease, end-stage heart failure) and delayed
   graft function (a first-week event) are historical in a post-transplant note.
 
+A rejection read as current when it was in the past puts a patient in "current rejection"
+cohorts, so one more check runs on rejection mentions the rules call current: if the
+sentence also holds a date before the date of service or a treatment cue, the mention gets
+a review reason and a person decides (the rules do not guess between a recent and an old
+episode).
+
 The note header (title, center, patient line, date) is metadata, not clinical text: mentions
 before the first blank line are dropped.
 
@@ -24,7 +30,9 @@ before the first blank line are dropped.
 patient: the "rules-only" baseline of the evaluation.
 """
 
+import re
 from dataclasses import dataclass, replace
+from datetime import date, datetime
 from typing import Literal
 
 import medspacy
@@ -39,7 +47,7 @@ from txlens_backend.notes.vocabulary import Category, Vocabulary
 
 Temporality = Literal["current", "historical", "hypothetical"]
 Experiencer = Literal["patient", "family"]
-SYSTEM_RULES = "txlens-medspacy-1"
+SYSTEM_RULES = "txlens-medspacy-2"  # 2: past-rejection rules (Step 2.3)
 SYSTEM_BASELINE = "txlens-rules-1"
 FAMILY_SECTION = "family_history"
 
@@ -65,15 +73,51 @@ CONTEXT = [
     ConTextRule("h/o", "HISTORICAL", direction="FORWARD"),
     ConTextRule("prior", "HISTORICAL", direction="FORWARD"),
     ConTextRule("resolved", "HISTORICAL", direction="BACKWARD"),
+    # ", treated." closes a finished episode ("Bx 3/22/24 showed ABMR, treated."); an
+    # episode still being treated is current.
+    ConTextRule("treated", "HISTORICAL", direction="BACKWARD"),
+    ConTextRule("being treated", "PSEUDO", direction="PSEUDO"),
+    ConTextRule("to be treated", "PSEUDO", direction="PSEUDO"),
     ConTextRule("signs of", "HYPOTHETICAL", direction="FORWARD"),
     ConTextRule("watch for", "HYPOTHETICAL", direction="BACKWARD"),
     ConTextRule("will plan", "HYPOTHETICAL", direction="FORWARD"),
+    ConTextRule("will arrange", "HYPOTHETICAL", direction="FORWARD"),
+    ConTextRule("will schedule", "HYPOTHETICAL", direction="FORWARD"),
     ConTextRule("post-op course", "HISTORICAL", direction="FORWARD"),
 ]
 HISTORY_CUES = ("prior ", "h/o ", "s/p ")
 # End-stage renal disease, heart failure (transplant indications), delayed renal graft
 # function: in a note written after the transplant these describe the past.
 BEFORE_FOLLOW_UP = frozenset({193782, 316139, 4138908})
+REVIEW_PAST_REJECTION = "rejection called current, but dated earlier or treated"
+SERVICE_DATE = re.compile(r"Date of service:\s*(\S+)")
+DATE = re.compile(r"\b(\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2}(?:\d{2})?)\b")
+DATE_FORMATS = ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y")
+TREATMENT_CUE = re.compile(r"\b(treated|s/p|status post|resolved|h/o|history of)\b", re.I)
+
+
+def parse_date(value: str) -> date | None:
+    """A note date in one of the formats clinicians write; None if it is none of them."""
+    for fmt in DATE_FORMATS:
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def service_date(note_text: str) -> date | None:
+    """The note's date of service from its header, if it has one."""
+    found = SERVICE_DATE.search(note_text)
+    return parse_date(found.group(1)) if found else None
+
+
+def past_episode_cue(sentence: str, service: date | None) -> bool:
+    """True if the sentence names a date before the date of service or a treatment cue."""
+    if TREATMENT_CUE.search(sentence):
+        return True
+    dates = (parse_date(d) for d in DATE.findall(sentence))
+    return service is not None and any(d is not None and d < service for d in dates)
 
 
 @dataclass(frozen=True)
@@ -94,6 +138,7 @@ class Mention:
     method: str  # "curated", "vocabulary", "ambiguous" (and "llm" for the fallback)
     confidence: float
     conflict: bool = False  # ConText says both hypothetical and historical
+    review_reason: str | None = None  # a rule asks for a person to check this mention
 
 
 class NoteNlp:
@@ -143,13 +188,14 @@ class NoteNlp:
     def mentions(self, doc: Doc, organ: str | None) -> list[Mention]:
         """Each entity of a processed doc after the header, as a Mention."""
         body = doc.text.find("\n\n")
+        service = service_date(doc.text[: body if body > 0 else None])
         return [
             m
             for ent in doc.ents
-            if ent.start_char > body and (m := self.mention(ent, organ)) is not None
+            if ent.start_char > body and (m := self.mention(ent, organ, service)) is not None
         ]
 
-    def mention(self, ent: Span, organ: str | None) -> Mention | None:
+    def mention(self, ent: Span, organ: str | None, service: date | None = None) -> Mention | None:
         """One entity; None if its text is not in the vocabulary (cannot happen for rules)."""
         surface = " ".join(ent.text.lower().split())
         term = self.vocabulary.lookup(surface, organ)
@@ -182,11 +228,19 @@ class NoteNlp:
         else:
             temporality = "current"
         family = ent._.is_family or section == FAMILY_SECTION
+        negated = bool(ent._.is_negated)
+        past_rejection = (
+            base.concept_id in self.vocabulary.rejection
+            and temporality == "current"
+            and not negated
+            and past_episode_cue(sentence.text, service)
+        )
         return replace(
             base,
-            negated=bool(ent._.is_negated),
+            negated=negated,
             temporality=temporality,
             experiencer="family" if family else "patient",
             section=section,
             conflict=bool(ent._.is_hypothetical and ent._.is_historical),
+            review_reason=REVIEW_PAST_REJECTION if past_rejection else None,
         )

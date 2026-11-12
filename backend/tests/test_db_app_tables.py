@@ -12,7 +12,8 @@ pytestmark = pytest.mark.db
 AsApp = Callable[[Connection, str | None], None]
 ISOLATED = ("patient_identity", "app_user", "refresh_token", "cohort", "cohort_member",
             "surveillance_run", "surveillance_flag", "document", "extraction", "extracted_field",
-            "document_review", "document_cdm_row", "llm_cache")  # fmt: skip
+            "document_review", "document_cdm_row", "llm_cache", "review_decision",
+            "labelled_example", "mapping_gap")  # fmt: skip
 USERS = {"center_a": "00000000-0000-0000-0000-00000000000a",
          "center_b": "00000000-0000-0000-0000-00000000000b"}  # fmt: skip
 COHORTS = {"center_a": "00000000-0000-0000-0000-0000000000ca",
@@ -21,8 +22,11 @@ RUNS = {"center_a": "00000000-0000-0000-0000-0000000000aa",
         "center_b": "00000000-0000-0000-0000-0000000000bb"}  # fmt: skip
 DOCUMENTS = {"center_a": "00000000-0000-0000-0000-0000000000da",
              "center_b": "00000000-0000-0000-0000-0000000000db"}  # fmt: skip
-# Shared by every tenant on purpose: an operator's LLM spending, no patient data.
-NOT_ISOLATED = {"tenant", "login_attempt", "llm_budget"}
+DECISIONS = {"center_a": "00000000-0000-0000-0000-0000000000ea",
+             "center_b": "00000000-0000-0000-0000-0000000000eb"}  # fmt: skip
+# Shared by every tenant on purpose: an operator's LLM spending, no patient data; and the
+# review history of the AI-curated mapping rows, one vocabulary shared by every center.
+NOT_ISOLATED = {"tenant", "login_attempt", "llm_budget", "curated_mapping_history"}
 
 
 @pytest.fixture
@@ -31,7 +35,7 @@ def app_rows(db: Connection) -> Connection:
     for tenant, person_id in (("center_a", 1), ("center_b", 2)):
         user, cohort = USERS[tenant], COHORTS[tenant]
         params = {"t": tenant, "p": person_id, "u": user, "c": cohort, "d": date(1970, 1, 2),
-                  "r": RUNS[tenant], "doc": DOCUMENTS[tenant],
+                  "r": RUNS[tenant], "doc": DOCUMENTS[tenant], "e": DECISIONS[tenant],
                   "h": f"{person_id:064x}"}  # fmt: skip
         for statement in (
             "INSERT INTO app.patient_identity (tenant_id, person_id, mrn, birth_date) "
@@ -61,6 +65,13 @@ def app_rows(db: Connection) -> Connection:
             "VALUES (:t, :doc, 'diagnosis', 'condition_occurrence', 0, 0, 'TCMR')",
             "INSERT INTO app.llm_cache (tenant_id, cache_key, model, prompt_version, response, "
             "input_tokens, output_tokens, cost_usd) VALUES (:t, 'k', 'm', 'v1', '{}', 1, 1, 0)",
+            "INSERT INTO app.review_decision (decision_id, tenant_id, item_type, item_key, "
+            "action, reviewer_id, queued_at) VALUES (:e, :t, 'biopsy_document', :doc, "
+            "'approve', :u, now())",
+            "INSERT INTO app.labelled_example (tenant_id, decision_id, item_type, field, "
+            "agrees, qc_sample) VALUES (:t, :e, 'biopsy_document', 'diagnosis', true, false)",
+            "INSERT INTO app.mapping_gap (tenant_id, source_value, reason, rows) "
+            "VALUES (:t, 'odd text', 'unmapped', 1)",
         ):
             db.execute(text(statement), params)
     return db

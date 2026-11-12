@@ -17,11 +17,12 @@ mention concept 0 and sends it to review.
 
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from sqlalchemy import Connection, text
 
+from txlens_backend.rejection import rejection_concept_ids
 from txlens_omop.codes import CodeUse, all_codes
 from txlens_pipelines.textmatch.qualifiers import same_qualifiers
 
@@ -56,6 +57,7 @@ class Vocabulary:
 
     terms: dict[tuple[str | None, str], Term]
     ambiguous: frozenset[str]
+    rejection: frozenset[int] = frozenset()  # graft-rejection concepts (see rejection.py)
 
     def lookup(self, surface: str, organ: str | None) -> Term | None:
         """The term for this text in this organ's notes (organ-specific first)."""
@@ -156,4 +158,4 @@ def load_vocabulary(conn: Connection) -> Vocabulary:
         if (domain in CATEGORY_BY_DOMAIN and len(surface.split()) <= MAX_WORDS
                 and same_qualifiers(surface, preferred)):  # fmt: skip
             automatic.append(Term(surface, int(concept_id), CATEGORY_BY_DOMAIN[domain], False))
-    return build(curated, automatic)
+    return replace(build(curated, automatic), rejection=rejection_concept_ids(conn))

@@ -5,6 +5,7 @@ TXLENS_REQUIRE_DB=1 (CI).
 """
 
 import asyncio
+import json
 import os
 import uuid
 from collections.abc import Iterator
@@ -202,3 +203,39 @@ def test_batch_workflow_processes_notes_with_the_fallback_and_skips_them_next_ti
             "SELECT count(*) FROM app.audit_log WHERE action = 'note_nlp_save' "
             "AND object_id = ANY(:s)"), {"s": notes}).scalar_one()  # fmt: skip
     assert audited == 2
+
+
+def decide(owner: Engine, key: str, action: str, final: dict[str, str] | None = None) -> None:
+    """A reviewer decision on one span, as the review API stores it."""
+    with owner.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO app.review_decision (tenant_id, item_type, item_key, action, "
+                "reason_code, changes, reviewer_id, queued_at) VALUES ('center_a', "
+                "'note_mention', :k, :a, :r, CAST(:c AS jsonb), "
+                "'00000000-0000-0000-0000-0000000000a1', now())"
+            ),
+            {"k": key, "a": action, "r": None if action == "approve" else "wrong_concept",
+             "c": json.dumps({"final": final or {}})},
+        )  # fmt: skip
+
+
+def test_reprocessing_a_note_keeps_reviewer_decisions(
+    notes: list[str], reviewer: None, documents_engine: Engine, documents_owner: Engine
+) -> None:
+    tenderness, first = MENTIONS[2], MENTIONS[0]
+    decide(documents_owner, f"{notes[0]}:{tenderness.start}-{tenderness.end}", "edit",
+           {"concept_id": str(ATN), "negated": "false", "temporality": "current",
+            "experiencer": "patient"})  # fmt: skip
+    decide(documents_owner, f"{notes[0]}:{first.start}-{first.end}", "reject")
+    with tenant_transaction(documents_engine, "center_a") as conn:
+        saved = save_note(conn, notes[0], NOTE_TEXT, MENTIONS, "txlens-test", 0.70)
+    assert saved.review == 0  # the LLM finding was reviewed: no longer waiting
+    with documents_owner.connect() as conn:
+        status: dict[str, str] = dict(conn.execute(text(
+            "SELECT lexical_variant || start_offset, status FROM app.note_mention "
+            "WHERE note_source_value = :s"), {"s": notes[0]}).all())  # fmt: skip
+    assert status[f"Rejection{first.start}"] == "rejected"
+    assert status[f"graft tenderness{tenderness.start}"] == "accepted"
+    conditions = {r[0]: r[4] for r in stored(documents_owner, notes[0])["conditions"]}
+    assert conditions == {REJECTION: 1, ATN: 1}  # one rejection left; the edit added ATN

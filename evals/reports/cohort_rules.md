@@ -1,6 +1,6 @@
 # Cohort rules: database vs ground truth
 
-Generated 2026-11-11 by `make cohort-report` (evals/src/txlens_evals/cohort_reconciliation.py). Synthetic data only.
+Generated 2026-11-12 by `make cohort-report` (evals/src/txlens_evals/cohort_reconciliation.py). Synthetic data only.
 
 Each rule runs through the API's cohort service on the pipeline-loaded database (2,000 patients, all centers, Row-Level Security on). Members are matched to the ground truth by (center, MRN).
 

@@ -31,8 +31,9 @@ class ChunkResult:
 
 
 def system_name(nlp: NoteNlp, hybrid: bool) -> str:
-    """The nlp_system written to note_nlp: rules alone, or rules + the prompt version."""
-    return f"txlens-hybrid-{PROMPT_VERSION}" if hybrid else nlp.system
+    """The nlp_system written to note_nlp: rules alone, or rules + the prompt version. Both
+    versions are in the name, so changing either one makes the next batch redo every note."""
+    return f"{nlp.system}+llm-{PROMPT_VERSION}" if hybrid else nlp.system
 
 
 def note_source_values(engine: Engine, tenant_id: str) -> list[str]:

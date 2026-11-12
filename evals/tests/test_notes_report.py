@@ -99,3 +99,23 @@ def test_report_headline_is_the_held_out_split() -> None:
     )
     assert report.index("## Held-out notes") < report.index("## Tuning notes (300 notes, seed 7")
     assert "| Notes | 10 |" in report
+
+
+def test_attribute_errors_name_their_direction_and_keep_examples() -> None:
+    scores = Scores(examples=[])
+    text = "x" * 200
+    truth = [fact("HTN", "hypertension", temporality="historical")]
+    score_note(scores, [deid_mention("HTN")], truth, SPANS, [],
+               {"hypertension": frozenset({1})}, text)  # fmt: skip
+    assert ("wrong temporality (historical→current)", "hypertension", "htn") in scores.errors
+    assert scores.examples and scores.examples[0][0] == "wrong temporality (historical→current)"
+
+
+def test_review_flags_are_counted_by_true_temporality() -> None:
+    from dataclasses import replace
+
+    scores = Scores()
+    flagged = replace(deid_mention("HTN"), review_reason="check")
+    score_note(scores, [flagged], [fact("HTN", "hypertension", temporality="historical")],
+               SPANS, [], {"hypertension": frozenset({1})})  # fmt: skip
+    assert scores.review_flagged == {"historical": 1}
