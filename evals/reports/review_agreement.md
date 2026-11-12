@@ -13,3 +13,11 @@ QC-sample agreement is the honest estimate of the automatic path's accuracy; oth
 ## Today's note rules on reviewed note mentions
 
 0 of 0 reviewed attributes (negation, temporality, experiencer) now match the reviewer.
+
+## Waiting in each center's queue
+
+| Center | biopsy_document | note_mention | condition_mapping | curated_mapping |
+|---|---|---|---|---|
+| center_a | 378 | 1,431 | 0 | 82 |
+| center_b | 309 | 1,248 | 0 | 82 |
+| center_c | 211 | 900 | 0 | 82 |

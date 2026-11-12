@@ -1,5 +1,6 @@
 """Reviewer agreement report and the note-rule regression check (no database)."""
 
+from collections import Counter
 from functools import cache
 
 from txlens_backend.notes.nlp import NoteNlp
@@ -45,5 +46,6 @@ def test_rules_are_rescored_against_reviewer_answers() -> None:
 
 
 def test_report_without_reviews_says_so() -> None:
-    report = render([], (0, 0))
+    report = render([], (0, 0), {"center_a": Counter({"note_mention": 1200})})
     assert "0 reviewed fields" in report and "(no reviews yet)" in report
+    assert "| center_a | 0 | 1,200 | 0 | 0 |" in report

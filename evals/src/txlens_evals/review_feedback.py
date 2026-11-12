@@ -8,14 +8,16 @@ the reviewer's value, de-identified evidence only) as the app login, center by c
   random from what the model would have auto-approved, so their agreement estimates the
   automatic path's accuracy; every other item was sent to review because it looked wrong;
 - re-runs today's note rules on every reviewed note mention and counts how often they now
-  give the reviewer's answer (a fix that breaks an earlier correction shows up here).
+  give the reviewer's answer (a fix that breaks an earlier correction shows up here);
+- counts what waits in each center's queue, by type (AI-curated rows are shared, so every
+  center counts the same ones).
 Biopsy and mapping examples are stored for the next extraction evaluation; re-scoring them
 needs paid model calls, so this script does not.
 """
 
 import argparse
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
@@ -27,6 +29,8 @@ from txlens_backend.db import check_role_is_rls_bound, make_engine, tenant_trans
 from txlens_backend.db_setup import center_tenants
 from txlens_backend.notes.nlp import NoteNlp
 from txlens_backend.notes.vocabulary import load_vocabulary
+from txlens_backend.review.queue import pending
+from txlens_backend.review.reasons import ITEM_TYPES
 
 EXAMPLES_SQL = text(
     """
@@ -66,6 +70,15 @@ def read_examples(engine: Engine, tenants: list[str]) -> list[Example]:
         with tenant_transaction(engine, tenant) as conn:
             examples += [Example(*row) for row in conn.execute(EXAMPLES_SQL)]
     return examples
+
+
+def waiting(engine: Engine, tenants: list[str]) -> dict[str, Counter[str]]:
+    """center -> items waiting per type, read as the app login under RLS."""
+    found: dict[str, Counter[str]] = {}
+    for tenant in tenants:
+        with tenant_transaction(engine, tenant) as conn:
+            found[tenant] = Counter(str(p.item_type) for p in pending(conn, ITEM_TYPES))
+    return found
 
 
 def agreement(
@@ -108,7 +121,9 @@ def pct(value: float | None) -> str:
     return "-" if value is None else f"{value:.1%}"
 
 
-def render(examples: list[Example], rescored: tuple[int, int]) -> str:
+def render(
+    examples: list[Example], rescored: tuple[int, int], queues: dict[str, Counter[str]]
+) -> str:
     corrected = sum(not e.agrees for e in examples)
     lines = [
         "# Review queue: reviewer vs model agreement",
@@ -139,7 +154,14 @@ def render(examples: list[Example], rescored: tuple[int, int]) -> str:
         f"{right:,} of {checked:,} reviewed attributes (negation, temporality, experiencer) "
         "now match the reviewer.",
         "",
-    ]
+        "## Waiting in each center's queue",
+        "",
+        "| Center | " + " | ".join(ITEM_TYPES) + " |",
+        "|---|" + "---|" * len(ITEM_TYPES),
+        *(f"| {center} | " + " | ".join(f"{counts.get(t, 0):,}" for t in ITEM_TYPES) + " |"
+          for center, counts in sorted(queues.items())),
+        "",
+    ]  # fmt: skip
     return "\n".join(lines)
 
 
@@ -157,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
     if any(e.item_type == "note_mention" for e in examples):
         with tenant_transaction(engine, tenants[0]) as conn:
             nlp = NoteNlp(load_vocabulary(conn))
-    report = render(examples, rescore(nlp, examples))
+    report = render(examples, rescore(nlp, examples), waiting(engine, tenants))
     engine.dispose()
     args.examples.parent.mkdir(parents=True, exist_ok=True)
     args.examples.write_text("".join(json.dumps(asdict(e)) + "\n" for e in examples))

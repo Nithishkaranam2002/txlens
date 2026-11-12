@@ -277,7 +277,7 @@ rules are reported separately (F1 94.3%).
 | Precision (strict) | 88.9% | 88.9% | 89.1% |
 | Precision (text the ground truth tracks) | 99.6% | 99.6% | 99.6% |
 | F1 | 93.3% | 93.3% | **94.2%** |
-| Negation / temporality / experiencer | 79.1% / 69.3% / 94.3% | 100% / 99.8% / 100% | 100% / 99.8% / 100% |
+| Negation / temporality / experiencer | 79.1% / 69.3% / 94.3% | 100% / 100% / 100% | 100% / 100% / 100% |
 | Concept | 100% | 100% | 100% |
 
 - Strict precision counts real mentions the generator does not list as facts (the primary
@@ -285,12 +285,51 @@ rules are reported separately (F1 94.3%).
 - **LLM cost:** 3,579 sentences, 15 paid calls (the rest from the cache), $0.0016 for the
   full run; $0.31 without any cache. De-identification leak check: 0 identifiers in all
   12,505 notes.
+- **Temporality fix (Step 2.3):** past rejections in the HPI ("Bx 3/22/24 showed ABMR,
+  treated.") were read as current, and "Will arrange for-cause biopsy" as done. Two rules
+  found on the tuning notes only (", treated" closes a past episode; "will arrange" is a
+  plan) took held-out temporality from 99.8% to 100.0% (382 errors to 0). A rejection still
+  called current next to an earlier date or a treatment word now goes to review.
 - **Loaded:** `txlens-notes process` (Temporal) wrote 228,428 `note_nlp` rows (3,579 to
-  review) and 26,250 NLP conditions for 1,999 patients, with no new LLM spend (cache). All 8
+  review) and 26,022 NLP conditions for 1,999 patients, with no new LLM spend (cache). All 8
   cohort rules still match the ground truth (diabetes 820 of 820): family-history diabetes
-  adds no patients.
+  adds no patients. [evals/reports/rejection_records.md](evals/reports/rejection_records.md)
+  (`make rejection-report`): all 213 rejection conditions read from notes sit just after a
+  true rejection biopsy; the late-rejection cohorts (more than 180 / 365 days after
+  transplant) have 0 extra patients, and their 31 / 6 missing patients all have a
+  borderline-rejection report waiting in the review queue.
 
 Design: [ADR 0014](docs/adr/0014-clinical-note-nlp.md).
+
+## Review queue
+
+One queue for everything a person must check, for clinicians and data stewards of a center:
+biopsy reports in review (including the 10% QC sample), note mentions in review, condition
+texts the pipeline could not map, and the 82 AI-curated mapping rows. Rejection-related and
+high-severity items come first, then the QC sample, then the rest.
+
+| | Queue | Biopsy evidence | Note evidence | Decide | AI-curated rows |
+|---|---|---|---|---|---|
+| clinician | yes | page image, a box per field | sentence as written | yes | approve / correct / revert |
+| data_steward | yes | redacted lines, cropped line images (never the header) | de-identified sentence | yes | read only |
+| researcher | no | no | no | no | no |
+| admin | metrics only | no | no | no | no |
+
+- Edit, reject and revert need a reason code. Biopsy decisions go to the document's Temporal
+  workflow. Every decision, page view and crop view is in `audit_log`.
+- AI-curated rows have one shared history for all centers (who, which center, when, why).
+  `make vocab-export-curation` writes "clinician-reviewed" labels and corrections back to
+  SOURCE_TO_CONCEPT_MAP.csv for the next pipeline run.
+- Feedback loop: every reviewed field is a labelled example (model value vs reviewer value).
+  [evals/reports/review_agreement.md](evals/reports/review_agreement.md)
+  (`make review-report`) reports agreement per field, the QC sample apart, and re-runs the
+  note rules on reviewed mentions. **No one has reviewed items in the dev database yet, so
+  there are no agreement numbers yet.**
+- Waiting now (same report, all centers): 898 biopsy reports and 3,579 note mentions
+  (all "graft tenderness", which has no SNOMED concept), 0 condition texts; the 82
+  AI-curated rows are shared, so every center sees the same 82.
+
+Design: [ADR 0015](docs/adr/0015-unified-review-queue.md).
 
 ## Frontend
 

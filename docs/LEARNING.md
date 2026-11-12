@@ -1065,3 +1065,153 @@ experiencer flags).
    `observation_concept_id` = History of event, `value_as_concept_id` = Transplant of kidney,
    both standard concepts, which is the OMOP convention, instead of pointing at a
    non-standard SNOMED "history of" concept.
+
+## Phase 2, Step 2.3 — The human review queue (and a temporality fix)
+
+### Fix first: past rejections read as current
+- **What was wrong.** The brief said ~400 current rejection mentions were labelled
+  historical. Error analysis showed it was the other way round. HPI sentences like
+  "Bx 3/22/24 showed ABMR, treated." have no history word ("prior", "h/o"), so ConText
+  called the rejection *current*. That added a rejection condition dated at a later clinic
+  visit (285 such errors on held-out notes). The other 97 errors were "Will arrange for-cause
+  biopsy" read as done instead of planned.
+- **How it was fixed, honestly.**
+  1. The error report now shows the direction of each error (`historical→current`).
+  2. `--dump-errors` prints the sentences, for the 300 tuning notes only.
+  3. Two rules with a clinical reason came out of that: ", treated" closes a past episode
+     ("being treated" stays current), and "will arrange" / "will schedule" are plans.
+  4. Held-out notes were then measured once: temporality went from 99.8% to 100.0%, and the
+     382 errors went to 0. The run cost $0, because every LLM answer came from the cache.
+- **A safety net that does not trust the templates.** If the rules still call a rejection
+  current while the sentence has an earlier date or a treatment word, the mention goes to
+  the review queue instead of into cohorts.
+- **Why it matters.** The "any rejection ever" cohort did not change: every patient with a
+  past rejection also has the biopsy-result note. But time windows did. "Rejection more than
+  180 days after transplant" had 59 patients who did not belong (188 → 129), and "more than
+  365 days" had 36 (69 → 33). Both now have 0 extra patients (`make rejection-report`). The
+  patients still missing all have a borderline-rejection report waiting in the review queue.
+- **A bug found on the way.** The batch skips notes whose NLP version is unchanged, but the
+  hybrid version name held only the prompt version. A rules change would never have reached
+  the database. The name now holds both.
+
+### What was built
+- **One review queue** (`backend/.../review/`, `/review` in the app) for clinicians and data
+  stewards. It holds:
+  - biopsy reports in review, including the QC sample;
+  - note mentions in review;
+  - condition texts the pipeline could not map;
+  - the 82 AI-curated mapping rows.
+- **Priority:** rejection-related and high-severity items first, then the QC sample, then the
+  rest, oldest first within each group.
+- **Evidence beside the form:**
+  - clinicians see the page image with a box per field, and the note sentence as written;
+  - data stewards see redacted lines and cropped line images (never a page), and the
+    de-identified sentence.
+- **Decisions:** approve, edit or reject (and revert, for curated rows). Each needs a reason
+  code, except approve. There are keyboard shortcuts (a / e / r / j / k / ?). Biopsy
+  decisions go to the Temporal workflow as a signal. Everything is audited.
+- **AI-curated mappings:** one shared, append-only history for every center (who, which
+  center, when, why), with a revert. `make vocab-export-curation` writes the
+  "clinician-reviewed" label and the corrections back to the mapping CSV.
+- **Feedback loop:** every reviewed field becomes a labelled example (the model's value next
+  to the reviewer's). `make review-report` turns them into an eval set and an agreement
+  report, and checks today's note rules against every reviewed mention.
+- **Metrics page:** waiting per type, reviews per day, median time to review, and agreement.
+- **Tests:**
+  - backend: the role matrix, a de-identification scan of the queue, every item and every
+    crop, tenant isolation, append-only tables, and the crop geometry with real OCR;
+  - frontend: Vitest for the helpers, shortcuts, form and evidence panes, and 5 Playwright
+    scenarios plus axe accessibility checks.
+
+### The ideas in plain English
+- **A human in the loop needs a real loop.** Sending items "to review" means nothing until
+  someone can see the evidence, decide quickly, and have the decision flow back into the data
+  and into the evaluation.
+- **Most urgent first.** A missed current rejection, or a past one counted as current,
+  changes care or research. So rejection items jump the queue. The QC sample comes next,
+  because it is the only honest measure of the automatic path.
+- **Same item, different eyes.** A clinician sees everything. A data steward checks data
+  quality and must not learn who the patient is, so they get crops of single lines, with
+  names, dates and long numbers painted over, and never the report header.
+- **Never lose a decision.** Decisions are append-only rows, and re-running the NLP re-applies
+  them, so a person's work is never silently undone.
+- **Say what is unknown.** No one has reviewed anything in the dev database yet, so the
+  agreement report says "no reviews yet" instead of showing made-up numbers.
+
+### How the tricky parts work
+- **The header refusal is geometric, not textual.** The report layout puts the patient, MRN,
+  accession number and procedure date in the top 2.4 inches of page 1. Any crop overlapping
+  that band is refused, even if OCR garbled "Patient:" into "P@t:" and no text rule would
+  notice. A test runs Tesseract on a report drawn with the generator's layout and checks that
+  every identity line falls inside the band.
+- **Masking inside a crop.** Each OCR word in the crop goes through the same redactor as the
+  text view: dates, numbers of 5 or more digits, and the patient's own name and MRN, fuzzy
+  matched against OCR misspellings. If the redactor would change a word, a black box covers
+  it.
+- **Curated history as a stack.** Approve and correct push a version; revert pops the latest
+  one. The current concept is the top of the stack, or the AI assistant's concept when the
+  stack is empty. A row is "clinician-reviewed" while the stack is not empty.
+- **Global table, local audit.** The curated history has no tenant, because it is shared
+  vocabulary. A CHECK makes the recorded center equal the session's tenant, and the audit row
+  goes to that center's `audit_log`.
+- **Keys that survive re-runs.** A note mention's key is "note:start-end", not its database
+  id. The NLP replaces its rows on every run, but the span stays the same, so the decision
+  can be found and applied again.
+- **No dates in the eval set.** A labelled example stores "[DATE]" for date fields. Agreement
+  is worked out on the real values first.
+
+### Why these tools
+- **Postgres tables and RLS, not a queue product.** The items already live in Postgres under
+  Row-Level Security; reading them where they are keeps one source of truth.
+- **Temporal signals for biopsy decisions.** The document workflow is already waiting for
+  exactly this signal, so the queue only has to deliver it. A durable timer expires
+  forgotten reviews.
+- **pymupdf + Pillow for crops.** The same renderer as the page images, clipped to one line;
+  Pillow paints the masks. No new dependency.
+- **TanStack Query, plain shadcn/ui and native `<select>`.** The queue reuses the worklist
+  patterns. Native selects are accessible and easy to drive from Playwright.
+
+### Trade-offs
+- **The queue is read live from four sources.** That is simple and always consistent, but
+  slower at large scale than a materialized queue table.
+- **Crops for stewards are useful but not risk-free.** An identifier below the header that
+  OCR mangled beyond fuzzy matching could stay visible. A real deployment should add an
+  image-based PHI detector.
+- **One curated review for all centers.** It is simple and matches the shared CSV, but one
+  center's clinician decides for everyone. The history shows who and where, and any
+  clinician can revert.
+- **The two new temporality rules are tuned to the generator.** The safety net is the part
+  that generalizes: it sends doubtful rejections to a person instead of guessing.
+- **Biopsy and mapping corrections are stored, not re-scored automatically.** Re-scoring
+  needs paid model calls, so it belongs to the next extraction evaluation.
+
+### Results (synthetic data)
+- Temporality, held-out notes (`make notes-report ARGS="--full --llm --max-cost 1"`): 99.8%
+  → 100.0%; 382 errors → 0; $0 spent.
+- Rejection records (`make rejection-report`): all 213 rejection conditions from notes sit
+  just after a true rejection biopsy. The late-rejection cohorts have 0 extra patients; 31
+  and 6 patients are missing, and all of them have a report waiting in review.
+- Queue now (`make review-report`): 898 biopsy reports and 3,579 note mentions (all "graft
+  tenderness") across the three centers, 0 condition texts, and 82 shared AI-curated rows.
+  No reviews yet.
+
+### Likely interview questions
+1. **The bug report said current rejections were read as past. What did you do?** I checked
+   before fixing. The error report did not show direction, so I added it, and on the tuning
+   notes every error was the opposite: past rejections read as current. Fixing the stated
+   bug would have made things worse. I fixed the real one and reported the difference.
+2. **Why is QC-sample agreement the honest accuracy number?** Items usually come to review
+   because something looked wrong, so the model disagrees with reviewers more there. The QC
+   sample is drawn at random from what the model would have auto-approved, so its agreement
+   estimates how often auto-approval is right.
+3. **How do you stop PHI leaking through images?** Data stewards never get a page. They get a
+   crop of one line, refused for anything overlapping the identity header by page geometry
+   (not by trusting OCR), with names, dates and IDs painted over. A test feeds a garbled
+   header line that no text rule recognises, and the crop is still refused.
+4. **Why does the LLM never make the decision?** It extracts and suggests. Code applies the
+   thresholds, low confidence goes to a person, and every decision is recorded with who made
+   it and why. The model's answer and the reviewer's answer are both kept, which is what lets
+   us measure the model.
+5. **Why are decisions append-only?** Because an audit trail that can be edited is not an
+   audit trail. A revert is a new entry, not a deletion, so you can always see who changed
+   what, when and why, across every center.

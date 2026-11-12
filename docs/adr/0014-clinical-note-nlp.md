@@ -125,3 +125,17 @@ needed".
 - **Real PHI.** As with biopsies, the de-identified sentence goes to the public OpenAI API
   only because the data is synthetic. Real notes need a provider under a BAA, or a local
   model, which is a LiteLLM configuration change.
+
+## Update (2026-11-12, Step 2.3)
+- **Past rejections were read as current.** HPI sentences like "Bx 3/22/24 showed ABMR,
+  treated." had no history cue, so about 285 held-out rejection mentions became current
+  conditions dated at a later visit. Two ConText rules found on the tuning notes only fixed
+  it: ", treated" closes a past episode ("being treated" stays current), and "will arrange"
+  / "will schedule" are plans. Held-out temporality went from 99.8% to 100.0%.
+- **A safety net that does not trust the templates.** A rejection mention the rules still
+  call current goes to review when its sentence has a date before the date of service or a
+  treatment cue (`review_reason`).
+- **The hybrid nlp_system name now includes the rules version**
+  (`txlens-medspacy-2+llm-<prompt>`), so a rules change makes the batch redo every note.
+  Before, only a prompt change did.
+- Reviewer decisions on mentions are re-applied when a note is processed again (ADR 0015).
