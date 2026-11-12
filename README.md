@@ -13,9 +13,10 @@ TxLens is a multi-tenant clinical data and AI platform for organ transplant prog
 
 > **All data is synthetic**, created by `data_generator/`. No real patient data is used.
 
-**Status:** synthetic data generator, OMOP database, medallion pipeline, backend API and
-the surveillance engine with its clinician worklist (Steps 1.1–1.6). Features arrive step by
-step.
+**Status:** Phases 1 and 2 are done: synthetic data, OMOP database, medallion pipeline, API,
+surveillance worklist, frontend, biopsy-report extraction, clinic-note NLP, the review queue
+and their evaluation. Phase 3 has started with survival analysis and its R parity checks
+(Step 3.1). Features arrive step by step.
 
 ## Tech stack
 
@@ -36,7 +37,7 @@ data_generator/  synthetic patients, notes, labs, PDFs + ground truth
 pipelines/       PySpark medallion jobs + Databricks job configs
 omop/            OMOP DDL, vocabulary subset, mappings
 evals/           evaluation scripts and reports
-r_parity/        R survival script + Python port + parity tests
+r_parity/        R reference script (Docker) + parity tests; the Python port is backend survival/
 frontend/        Next.js app
 infra/           docker-compose, Dockerfiles
 docs/            architecture, ADRs, LEARNING.md
@@ -76,6 +77,9 @@ make databricks-data  # zip for Databricks Free Edition (see docs/DATABRICKS.md)
 make seed-users     # one demo user per role per center, e.g. clinician.center_a
 make api            # API at http://localhost:8000 (interactive docs: /docs)
 make cohort-report  # cohort rules vs ground truth -> evals/reports/cohort_rules.md
+make r-build        # once: R reference image (R 4.4.2 + survival + cmprsk) for r_parity/
+make r-parity       # Python survival port vs R on the same extracts (pytest -m r)
+make survival-report  # parity, immortal time, competing risks -> evals/reports/survival.md
 make worker         # Temporal worker for surveillance runs (keep it running)
 make surveillance-run  # surveillance for every center as of the data cutoff (2026-09-30);
                        # AS_OF=YYYY-MM-DD replays another date
@@ -366,6 +370,43 @@ high-severity items come first, then the QC sample, then the rest.
 
 Design: [ADR 0015](docs/adr/0015-unified-review-queue.md).
 
+## Survival analysis
+
+From [evals/reports/survival.md](evals/reports/survival.md), produced by
+`make survival-report` (synthetic data):
+
+- **What it does:** death-censored Kaplan-Meier graft survival with 95% bands, a risk table
+  and the log-rank test. It also shows the cumulative incidence of graft loss with death as
+  a competing event (Aalen-Johansen) next to 1 − KM, and a Cox model (forest plot,
+  Schoenfeld check). A methods paragraph is written from the analysis. CSV and PDF exports
+  are available. For clinicians and researchers, on any population or saved cohort.
+- **R parity:** an R reference (`r_parity/`: survival 3.7.0 and cmprsk in a pinned Docker
+  image) and the Python port read the same extract.
+  - Kaplan-Meier, log-rank and cumulative incidence agree to about 1e-15.
+  - Cox coefficients agree to 4e-6.
+  - A separate CI job (`r-parity`) fails on any difference beyond tolerance.
+  - Where the libraries differ (ties, CI types, jitter, variance) and how the port matches
+    R is listed in [r_parity/README.md](r_parity/README.md).
+- **Immortal time bias, prevented by the API.** Every grouping knows the day it becomes
+  known, and the analysis starts at that landmark. The API refuses an earlier landmark.
+  - Simulated data where "dd-cfDNA ≥ 1% in year 1" has no effect (50 datasets): the naive
+    comparison gives **HR 0.56** and excludes 1 every time. The landmark design gives 0.99
+    and the time-varying design 1.01.
+- **Real effect in the data:** from a 1-year landmark, ABMR in year 1 vs no rejection gives
+  **HR 17.7 (9.3–33.4)**, and 2-year graft survival is 68% vs 97%.
+- **Competing risks:** 1 − KM overstates 3-year graft loss by 0.10 points here (6.11% vs
+  6.01%). Deaths are few and late; the gap grows with the death rate.
+- **Honest nulls:** the generator gives age, donor type, organ and DGF no effect, and the
+  Cox model finds HRs near 1. Known HRs are recovered on a simulated extract.
+- **DGF from clinic notes** reaches OMOP as a "History of event" observation; 304 of 304
+  are found, with no false positives.
+- **Privacy:** small-cell suppression applies to every role and to exports. Counts of 1–10
+  show as "<11", and curve steps are pooled to at least 11 graft losses.
+
+![Survival page: Kaplan-Meier with bands and risk table, cumulative incidence vs 1 − KM, forest plot, methods](docs/images/app-survival.png)
+
+Design: [ADR 0017](docs/adr/0017-survival-analysis-and-r-parity.md).
+
 ## Frontend
 
 A Next.js app with a calm clinical design (shadcn/ui, Tailwind). A banner on every page says
@@ -374,12 +415,12 @@ the Next.js server: `/api/*` is rewritten to FastAPI, so the httpOnly cookies ar
 first-party and there are no cross-origin requests. A typed client is generated from the
 API's OpenAPI schema. An expired session refreshes itself once, then sends the user to login.
 
-| | Worklist | Patient detail | Cohort builder | Admin |
-|---|---|---|---|---|
-| clinician | names, acknowledge / resolve | identified, flags + history | yes | no |
-| data_steward | pseudonyms, read only | de-identified, flags + history | no | no |
-| researcher | no | de-identified, no flags | yes, counts 1-10 as "<11" | no |
-| admin | no | no | no | own account only |
+| | Worklist | Patient detail | Cohort builder | Survival | Admin |
+|---|---|---|---|---|---|
+| clinician | names, acknowledge / resolve | identified, flags + history | yes | yes, suppressed | no |
+| data_steward | pseudonyms, read only | de-identified, flags + history | no | no | no |
+| researcher | no | de-identified, no flags | yes, counts 1-10 as "<11" | yes, suppressed | no |
+| admin | no | no | no | no | own account only |
 
 | | |
 |---|---|

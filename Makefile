@@ -6,7 +6,7 @@ SEED ?= 42
 VOCAB_SOURCE ?= omop/athena
 N_PATIENTS ?= 2000
 
-.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run prune-login-attempts notes-report evals extraction-systems mapping-report review-report rejection-report cohort-report surveillance-report biopsy-report ocr-report vocab-load vocab-export-curation vocab-load-local vocab-subset vocab-check r-build r-parity generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
+.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run prune-login-attempts notes-report evals extraction-systems mapping-report review-report rejection-report cohort-report survival-report surveillance-report biopsy-report ocr-report vocab-load vocab-export-curation vocab-load-local vocab-subset vocab-check r-build r-parity generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -118,6 +118,7 @@ notes-report: ## Note NLP vs ground truth -> evals/reports/notes_nlp.md (ARGS="-
 
 evals: ## Every evaluation that runs on the loaded database (cached LLM answers) + summary -> evals/reports/summary.md
 	$(MAKE) extraction-systems mapping-report rejection-report review-report cohort-report
+	$(MAKE) survival-report
 	$(MAKE) notes-report ARGS="--full --llm --max-cost 1 --llm-only-sample 300 --llm-only-cost 1"
 	uv run python -m txlens_evals.summary
 
@@ -132,6 +133,9 @@ review-report: ## Reviewer vs model agreement + eval set -> evals/reports/review
 
 rejection-report: ## Rejection records vs ground-truth episodes -> evals/reports/rejection_records.md
 	uv run python -m txlens_evals.rejection_records
+
+survival-report: ## Survival: R parity, immortal time, competing risks, DGF -> evals/reports/survival.md
+	uv run python -m txlens_evals.survival
 
 cohort-report: ## Cohort rules on the loaded database vs ground truth -> evals/reports/cohort_rules.md
 	uv run python -m txlens_evals.cohort_reconciliation

@@ -27,3 +27,10 @@ Details: [extraction_systems.md](extraction_systems.md), [notes_nlp.md](notes_nl
 - The intervals show sampling noise only. They do not cover the gap between these templates and real documents, which is much larger.
 - Biopsy: on one template, rules match the LLM's accuracy. The hybrid's value is that no wrong report reaches OMOP unchecked.
 - Notes: the LLM-only system reads every sentence, so every finding needs review (confidence 0.5) and it costs the most; rules carry the load.
+
+## Survival analysis ([survival.md](survival.md))
+
+- R parity: all quantities within tolerance (largest Cox coefficient difference 4e-06).
+- Immortal time bias, simulated true HR 1: naive 0.56, landmark 0.99.
+- ABMR in year 1 vs no rejection, from a 1-year landmark: HR 17.7 (9.3-33.4).
+- 1 - KM overstates 3-year graft loss by 0.10 percentage points (main data).

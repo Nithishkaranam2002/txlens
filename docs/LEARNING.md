@@ -1332,3 +1332,153 @@ experiencer flags).
 5. **How do you know your mapping accuracy is not circular?** The AI assistant wrote the
    curated map, so it must not also write the answer key. I used the SNOMED codes the
    hospitals sent: hide the code, map the text, compare.
+
+## Phase 3, Step 3.1 — Survival analysis with an R reference
+
+### What was built
+- **Survival API and page** (`/survival`, for clinicians and researchers). You pick a
+  population (everyone, or a saved cohort) and a grouping. You get:
+  - Kaplan-Meier graft survival with 95% bands, a number-at-risk table and the log-rank
+    test;
+  - the cumulative incidence of graft loss with death as a competing event, drawn next to
+    1 − Kaplan-Meier;
+  - a Cox model shown as a forest plot, with a proportional-hazards check;
+  - an auto-written methods paragraph;
+  - CSV and PDF exports.
+- **The landmark guard.** Groups known only during follow-up start at a landmark, and an
+  earlier landmark is refused. This covers DSA at the month-1 test, dd-cfDNA ≥ 1% or
+  rejection in year 1, and cohorts with lab rules.
+- **Small-cell suppression for every role.** Counts of 1–10 show as "<11". Curve steps are
+  pooled to at least 11 graft losses each.
+- **DGF into OMOP.** Delayed graft function, read from clinic notes, becomes a "History of
+  event" observation.
+- **An R reference in Docker** (`r_parity/`), a parity test in its own CI job, and a README
+  listing every place where R and the Python libraries differ.
+- **`make survival-report`** writes `evals/reports/survival.md`. It contains:
+  - the parity table;
+  - known hazard ratios recovered;
+  - the immortal-time-bias demonstration;
+  - rejection in year 1;
+  - cumulative incidence vs 1 − KM;
+  - DGF accuracy and a misclassification sensitivity analysis.
+
+### The ideas in plain English
+- **Survival analysis** asks "how long until something happens?" when not everyone has had
+  the event yet. A patient still doing well at the end of the data is *censored*: we know
+  their graft lasted at least that long. Kaplan-Meier uses those patients properly, where a
+  simple percentage would not.
+- **Death-censored graft survival.** The event is graft loss. A patient who dies with a
+  working graft stops being followed (is censored) at death.
+- **Competing risks.** Once a patient has died, their graft can no longer fail. 1 −
+  Kaplan-Meier pretends they could still lose it later, so it overstates the real chance of
+  graft loss. The Aalen-Johansen estimator counts graft-loss risk only while the patient is
+  alive with a working graft. In our data the gap is small (0.10 points at 3 years) because
+  most deaths come late, but it grows with follow-up and with the death rate.
+- **Immortal time bias.** "Patients with dd-cfDNA ≥ 1% in year 1" must have still been
+  tested, so alive with a working graft, at the time of that result. Compared from the
+  transplant date, that group gets event-free time for free and looks protected. On
+  simulated data where the true effect is zero, the naive comparison gave HR 0.56 on
+  average. The two honest designs gave about 1:
+  - **Landmark**: start the clock at day 365, among patients still at risk then.
+  - **Time-varying covariate**: a patient counts as unexposed until the high result and
+    exposed afterwards.
+- **Proportional hazards.** A Cox model assumes one group's risk is a constant multiple of
+  the other's over all of follow-up. Schoenfeld residuals test that: if the effect changes
+  over time, the residuals trend with time.
+- **Why an R reference?** Transplant researchers trust R's `survival` package. Matching it
+  number for number, and listing where the libraries differ, is what makes the Python
+  results credible.
+
+### How the tricky parts work
+- **Same CSV, two languages.** The parity test writes one extract and runs R in Docker. The
+  Python port reads the same file and every value is compared:
+  - KM, log-rank and cumulative incidence agree to about 1e-15;
+  - Cox to about 1e-6.
+- **Matching R's defaults.**
+  - lifelines draws a "log-log" KM interval while R draws "log", so we compute R's.
+  - lifelines' Aalen-Johansen jitters tied days, so we wrote it in numpy.
+  - Our cumulative-incidence standard error is the infinitesimal jackknife, which is R's
+    method: each patient's influence on the estimate, squared and summed. A test checks it
+    against a brute-force numerical derivative.
+  - lifelines' Cox optimiser stopped too early (coefficients 1.5e-5 off), and its
+    time-varying fit diverged on our data. A smaller first step and a tighter tolerance
+    fixed both.
+- **Pooling curve steps.** If a curve dropped at every single graft loss, each drop would
+  reveal "1 patient lost a graft that day". We show a step only after at least 11 losses
+  have built up, at the true value for that time. We also stop the curve before fewer than
+  11 patients are at risk. "At 1 year" values are read off the last shown step, with its
+  day, so comparing them with the curve reveals nothing new.
+- **The horizon of a grouping.** Each grouping knows the day it becomes known. A cohort
+  defined by "dd-cfDNA ≥ 1% within days 0–365" has horizon 365. A cohort with a condition
+  rule keeps only members whose condition was recorded by the landmark.
+- **DGF from notes.** The note NLP already found "history of DGF" but dropped past mentions.
+  Now an affirmed past mention of a Condition-domain concept becomes an OMOP observation:
+  "History of event" valued with the condition, dated at the note. The note link keeps the
+  sentence.
+
+### Why these tools
+- **lifelines** for Kaplan-Meier, log-rank and Cox. It uses Efron ties (R's default),
+  where statsmodels `PHReg` defaults to Breslow and would not match R.
+- **numpy** for Aalen-Johansen, written ourselves, to avoid lifelines' jittering and to get
+  R's jackknife standard errors.
+- **R in Docker** (rocker image pinned by digest, CRAN snapshot by date). Same versions on
+  every machine and in CI, with no R install on the Mac and no R needed on Databricks.
+- **reportlab + matplotlib** for the PDF. It is built on the server from the suppressed
+  result, so the export cannot contain more than the screen.
+- **Plotly** (already in the app) for step curves (`shape: "hv"`), bands (`fill:
+  "tonexty"`) and the forest plot (`error_x`, log axis).
+
+### Trade-offs
+- **Few events per center** (30–40 graft losses). With suppression, curves have only a few
+  steps and small groups are hidden. Privacy wins over detail.
+- **The generator has no real effects for age, donor type or DGF.** The main data's Cox
+  model finds hazard ratios near 1, which is the right answer. DSA comes out at 3.4 because
+  the generator links DSA to rejection. Known effects are tested on a simulated extract
+  instead of regenerating all data.
+- **Proportional-hazards p-values differ between R and lifelines** (different methods). We
+  report both and assert only the main numbers.
+- **DSA is a month-1 test**, so any model including it starts at day 30 and leaves out
+  earlier graft losses.
+- **The DGF NLP is perfect on template notes** (304 of 304). The sensitivity analysis
+  therefore also shows weaker readers: at 75% sensitivity the DGF hazard ratio would shrink
+  by about 17%.
+
+### Results (synthetic data; `make survival-report`)
+- **Parity:** every asserted quantity is within tolerance on both extracts; the largest Cox
+  coefficient difference is 4e-6.
+- **Known hazard ratios** (simulated, 3,000 patients): all five true HRs inside their 95%
+  CIs.
+- **Immortal time** (50 simulated datasets, true HR 1):
+  - naive 0.56, CI excluding 1 in 100% of datasets;
+  - landmark 0.99 (4%);
+  - time-varying 1.01 (6%).
+- **Rejection in year 1** (landmark at day 365, 1,812 patients): ABMR HR 17.7 (9.3–33.4) and
+  other rejection 7.6 (4.2–13.9) vs no rejection; 2-year graft survival from the landmark is
+  68% vs 97%.
+- **Competing risks:** 1 − KM overstates 3-year graft loss by 0.10 points on the main data
+  (6.01% vs 6.11%) and by 0.33 points on the simulated data.
+- **DGF from notes:** sensitivity and specificity 100% (exact lower bounds 98.8% and
+  99.7%). The NLP-vs-true-DGF Cox model is unchanged.
+
+### Likely interview questions
+1. **What is immortal time bias, and how did you prevent it?** If you define a group by
+   something that happens during follow-up, like a high dd-cfDNA in year 1, its members had
+   to survive until that event. Compared from transplant, they look protected. On simulated
+   data with no true effect, the naive comparison gave HR 0.56. I use a landmark (start the
+   clock when the group is known) or a time-varying covariate, and the API refuses a
+   landmark earlier than the day the grouping is known.
+2. **Why does 1 − Kaplan-Meier overestimate graft loss?** Kaplan-Meier treats a death as
+   censoring, as if the patient could still lose the graft later. They cannot. So 1 − KM
+   estimates graft loss in a world without death. The Aalen-Johansen cumulative incidence
+   only adds risk while the patient is alive with a working graft.
+3. **Efron vs Breslow: does it matter?** Both are ways to handle patients with the event on
+   the same day. With whole-day times there are many ties, and the two give slightly
+   different coefficients. R and lifelines use Efron; statsmodels defaults to Breslow. I
+   matched R and checked it with a parity test.
+4. **What do Schoenfeld residuals test?** Whether a covariate's effect is constant over
+   time (proportional hazards). If the residuals trend with time, the hazard ratio is an
+   average over follow-up and should be read with care. The app flags such covariates.
+5. **Why pool the steps of a survival curve?** A curve that drops at each event reveals
+   single patients ("one graft lost on day 412"). Showing a step only after 11 events have
+   built up, and stopping before fewer than 11 are at risk, keeps every number aggregate,
+   including in exports.

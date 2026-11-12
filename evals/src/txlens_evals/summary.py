@@ -82,10 +82,31 @@ def mapping_rows(data: dict[str, Any]) -> list[str]:
     ]
 
 
+def survival_lines(data: dict[str, Any] | None) -> list[str]:
+    """Survival analysis headline (survival.json), or a note that it has not run."""
+    if data is None:
+        return ["Not run yet (`make survival-report`)."]
+    parity = data["parity"]
+    naive, landmark = (data["immortal_time"]["simulated_mean_hr"][k]
+                       for k in ("naive (from transplant)", "landmark at day 365"))  # fmt: skip
+    abmr = data["rejection_year1"]["abmr_hr"]
+    gap = data["competing_risks"]["gap_3y_main_pts"]
+    return [
+        "- R parity: " + ("all quantities within tolerance (largest Cox coefficient difference "
+                          f"{parity['max_cox_coef_diff']:.0e})" if parity["ran"]
+                          else "not run (R image missing)") + ".",
+        f"- Immortal time bias, simulated true HR 1: naive {naive:.2f}, landmark {landmark:.2f}.",
+        f"- ABMR in year 1 vs no rejection, from a 1-year landmark: HR {abmr[0]:.1f} "
+        f"({abmr[1]:.1f}-{abmr[2]:.1f}).",
+        f"- 1 - KM overstates 3-year graft loss by {gap:.2f} percentage points (main data).",
+    ]  # fmt: skip
+
+
 def render(folder: Path) -> str:
     biopsy = load("extraction_systems.json", folder)
     notes = load("notes_nlp.json", folder)
     mapping = load("mapping_accuracy.json", folder)
+    survival = load("survival.json", folder)
     rows = [
         *(biopsy_rows(biopsy) if biopsy else []),
         *(note_rows(notes, NOTES_SAMPLE, "Notes, held-out sample") if notes else []),
@@ -124,6 +145,10 @@ def render(folder: Path) -> str:
         "no wrong report reaches OMOP unchecked.",
         "- Notes: the LLM-only system reads every sentence, so every finding needs review "
         "(confidence 0.5) and it costs the most; rules carry the load.",
+        "",
+        "## Survival analysis ([survival.md](survival.md))",
+        "",
+        *survival_lines(survival),
         "",
     ])  # fmt: skip
 

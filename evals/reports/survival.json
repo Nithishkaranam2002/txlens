@@ -1,0 +1,38 @@
+{
+  "competing_risks": {
+    "gap_3y_main_pts": 0.1,
+    "gap_3y_sim_pts": 0.33
+  },
+  "dgf_nlp": {
+    "sensitivity": 1.0,
+    "sensitivity_low": 0.9879388539257925,
+    "specificity": 1.0,
+    "specificity_low": 0.997364794821566
+  },
+  "immortal_time": {
+    "main": {
+      "landmark at day 365": 8.566,
+      "naive (from transplant)": 7.632,
+      "time-varying covariate": 9.639
+    },
+    "simulated_mean_hr": {
+      "landmark at day 365": 0.9851,
+      "naive (from transplant)": 0.5606,
+      "time-varying covariate": 1.0125
+    }
+  },
+  "parity": {
+    "all_within_tolerance": true,
+    "max_cox_coef_diff": 4.0197810445008475e-06,
+    "ran": true
+  },
+  "patients": 2000,
+  "rejection_year1": {
+    "abmr_hr": [
+      17.66,
+      9.32,
+      33.44
+    ],
+    "logrank_p": 7.228428575364125e-36
+  }
+}
