@@ -30,13 +30,13 @@ FILTERS = 'AND hasabstract AND "free full text"[sb] AND english[la] AND 2010:202
 TOPICS: dict[str, tuple[str, int]] = {
     "dd_cfdna": ('("donor-derived cell-free DNA" OR dd-cfDNA OR "donor-derived cfDNA" OR '
                  '"donor fraction cell-free DNA") AND transplant*', 450),
-    "kidney_rejection": ('"Kidney Transplantation"[MeSH] AND "Graft Rejection"[MeSH]', 400),
-    "heart_rejection": ('"Heart Transplantation"[MeSH] AND "Graft Rejection"[MeSH]', 300),
+    "kidney_rejection": ('"Kidney Transplantation"[MeSH] AND "Graft Rejection"[MeSH]', 520),
+    "heart_rejection": ('"Heart Transplantation"[MeSH] AND "Graft Rejection"[MeSH]', 360),
     "dsa": ('("donor-specific antibodies" OR "donor-specific antibody" OR "donor specific '
-            'anti-HLA") AND transplant*', 350),
-    "banff": ("Banff AND (rejection OR classification OR lesion*) AND transplant*", 300),
+            'anti-HLA") AND transplant*', 450),
+    "banff": ("Banff AND (rejection OR classification OR lesion*) AND transplant*", 360),
     "bk_virus": ('("BK virus" OR "BK polyomavirus" OR BKPyV OR "polyomavirus nephropathy") '
-                 "AND (kidney OR renal) AND transplant*", 300),
+                 "AND (kidney OR renal) AND transplant*", 360),
 }  # fmt: skip
 BATCH = 200
 

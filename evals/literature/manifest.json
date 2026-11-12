@@ -1,0 +1,39 @@
+{
+  "downloaded_at": "2026-11-12T21:44:43+00:00",
+  "source": "PubMed E-utilities (esearch + efetch)",
+  "filters": "AND hasabstract AND \"free full text\"[sb] AND english[la] AND 2010:2026[dp]",
+  "topics": {
+    "dd_cfdna": {
+      "query": "(\"donor-derived cell-free DNA\" OR dd-cfDNA OR \"donor-derived cfDNA\" OR \"donor fraction cell-free DNA\") AND transplant*",
+      "limit": 450,
+      "found": 395
+    },
+    "kidney_rejection": {
+      "query": "\"Kidney Transplantation\"[MeSH] AND \"Graft Rejection\"[MeSH]",
+      "limit": 520,
+      "found": 520
+    },
+    "heart_rejection": {
+      "query": "\"Heart Transplantation\"[MeSH] AND \"Graft Rejection\"[MeSH]",
+      "limit": 360,
+      "found": 360
+    },
+    "dsa": {
+      "query": "(\"donor-specific antibodies\" OR \"donor-specific antibody\" OR \"donor specific anti-HLA\") AND transplant*",
+      "limit": 450,
+      "found": 450
+    },
+    "banff": {
+      "query": "Banff AND (rejection OR classification OR lesion*) AND transplant*",
+      "limit": 360,
+      "found": 360
+    },
+    "bk_virus": {
+      "query": "(\"BK virus\" OR \"BK polyomavirus\" OR BKPyV OR \"polyomavirus nephropathy\") AND (kidney OR renal) AND transplant*",
+      "limit": 360,
+      "found": 360
+    }
+  },
+  "unique_pmids": 2064,
+  "with_abstract": 2063
+}
