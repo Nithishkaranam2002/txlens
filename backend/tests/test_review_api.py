@@ -256,7 +256,7 @@ def test_editing_a_note_mention_accepts_it_and_rebuilds_its_omop_rows(
         status, temporality = conn.execute(text(
             "SELECT status, temporality FROM app.note_mention WHERE note_source_value = :s"),
             {"s": seeded.note.sources[0]}).one()  # fmt: skip
-        rows = dict(conn.execute(text(
+        rows: dict[str, int] = dict(conn.execute(text(
             "SELECT cdm_table, count(*) FROM app.note_cdm_row WHERE note_source_value = :s "
             "GROUP BY cdm_table"), {"s": seeded.note.sources[0]}).all())  # fmt: skip
     # No longer a current condition: a "History of event" observation instead.

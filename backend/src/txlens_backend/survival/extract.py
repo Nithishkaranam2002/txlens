@@ -106,14 +106,17 @@ def extract_params(conn: Connection) -> Mapping[str, object]:
     """Bind parameters: codes, thresholds and the concept sets they expand to."""
     dgf, abmr = concept_id(conn, *DGF), concept_id(conn, *ABMR)
     return dict(FACTS_PARAMS) | {
-        "dsa_vocab": DSA_LOCAL[0], "dsa_code": DSA_LOCAL[1], "dsa_days": DSA_WINDOW_DAYS,
-        "dd_vocab": LABS["dd_cfdna"][0], "dd_code": LABS["dd_cfdna"][1],
+        "dsa_vocab": DSA_LOCAL[0],
+        "dsa_code": DSA_LOCAL[1],
+        "dsa_days": DSA_WINDOW_DAYS,
+        "dd_vocab": LABS["dd_cfdna"][0],
+        "dd_code": LABS["dd_cfdna"][1],
         "dd_high": DD_CFDNA_HIGH_PCT,
         "history_of_event": concept_id(conn, *HISTORY_OF_EVENT),
         "dgf_ids": sorted(descendant_ids(conn, [dgf])) if dgf else [],
         "abmr_ids": sorted(descendant_ids(conn, [abmr])) if abmr else [],
         "rejection_ids": sorted(rejection_concept_ids(conn)),
-    }  # fmt: skip
+    }
 
 
 def outcome(graft_loss_day: object, death_day: object, end_day: object) -> tuple[int, int]:
@@ -142,8 +145,19 @@ def to_frame(rows: list[Mapping[str, object]]) -> pd.DataFrame:
     )
     # Delayed graft function is a kidney diagnosis: not applicable (NaN) to heart grafts.
     frame["dgf"] = np.where(frame["organ"] == "heart", np.nan, frame["dgf"].astype(float))
-    columns = ["person_id", "time", "status", "age", "organ", "donor_type", "dgf",
-               "dsa_positive", "dd_cfdna_high_day", "rejection_day", "abmr_day"]  # fmt: skip
+    columns = [
+        "person_id",
+        "time",
+        "status",
+        "age",
+        "organ",
+        "donor_type",
+        "dgf",
+        "dsa_positive",
+        "dd_cfdna_high_day",
+        "rejection_day",
+        "abmr_day",
+    ]
     frame = frame[columns]
     return frame[frame["time"] >= 0].reset_index(drop=True)
 
