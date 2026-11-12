@@ -1,0 +1,7 @@
+{
+  "openai/gpt-6-luna|notes-2026-11-11.1": {
+    "calls": 50,
+    "measured": "2026-11-12",
+    "median_ms": 2223.5
+  }
+}

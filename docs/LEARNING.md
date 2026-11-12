@@ -1221,3 +1221,114 @@ experiencer flags).
 5. **Why are decisions append-only?** Because an audit trail that can be edited is not an
    audit trail. A revert is a new entry, not a deletion, so you can always see who changed
    what, when and why, across every center.
+
+## Phase 2, Step 2.4 — Evaluation: rules vs medspaCy vs LLM vs hybrid
+
+### What was built
+- **`make evals`: one command.** It reruns every evaluation that works on the loaded
+  database, with LLM answers taken from the cache, so a rerun costs nothing. It then builds
+  `evals/reports/summary.md` from the JSON file each script writes. The README headline comes
+  only from that summary.
+- **Biopsy reports** (`make extraction-systems`): three systems on the same OCR text of
+  1,508 reports:
+  - rules only, a new regex extractor;
+  - LLM only, the first pass's stored answer;
+  - hybrid, the pipeline.
+
+  It reports precision, recall and F1 per field, reports fully correct, the share sent to
+  review, wrong reports loaded without review, cost and latency.
+- **Clinic notes** (`make notes-report`): a new LLM-only system that asks the model about
+  every sentence. It runs with rules only, medspaCy and hybrid on 300 held-out notes, and
+  adds F1 per concept, % of mentions sent to review, and cost and latency per note.
+- **Condition mapping** (`make mapping-report`): the code a center sent is hidden, the text
+  is mapped, and the result is compared with the code.
+- **95% bootstrap intervals** on every main metric (`stats.py`).
+
+### The ideas in plain English
+- **Compare against something.** "99.9% F1" means little alone. Next to "rules alone also
+  get 99.9%" it says the LLM adds nothing on this template, and the question becomes what
+  the hybrid adds instead.
+- **Score what reaches the database, not only what the model said.** The hybrid is not more
+  accurate here. Its value is that every wrong report went to a person: 0 reached OMOP
+  unchecked, against 12 each for LLM only and rules only.
+- **Intervals show how sure a number is.** 300 notes give F1 84.0% with an interval of
+  83.7–84.2%, so the gap to 94.3% is real. 19 distinct condition texts give an interval of
+  0–98% for the vocabulary-only matcher, so that number cannot be trusted alone.
+- **Use the stored answers.** The LLM-only biopsy system is the first pass the pipeline
+  really made, so it costs $0 and is exactly what happened, not a fresh re-run with
+  different answers.
+- **An independent answer key.** For mapping, the codes the hospitals sent are the truth.
+  An AI-written list of expected concepts would grade the AI-written curated map against
+  itself.
+
+### How the tricky parts work
+- **Slot scoring.** A right value is a true positive. A wrong value is both a false positive
+  (a wrong value was given) and a false negative (the right one was missed). A value given
+  where the report has none is a false positive. Precision and recall then mean what they
+  should for extraction.
+- **The bootstrap.** Each report or note becomes a row of counts (tp, fp, fn, ...). One
+  resample is "draw n rows with replacement". The trick: the counts of how often each row was
+  drawn come from a multinomial, so 1,000 resamples are one matrix product. That is fast even
+  for 12,205 notes. The 2.5th and 97.5th percentiles are the interval.
+- **Resample whole units.** Fields of one report are not independent: a bad scan breaks
+  several at once. Resampling reports, not fields, keeps that, so the interval is not too
+  narrow.
+- **The LLM-only note system is fair.** It gets every sentence, but its answers pass the
+  same checks: quotes must be in the sentence, and the concept comes from our vocabulary. So
+  the gap measures the model, not a looser pipeline. Its sentences run 8 at a time; the
+  budget reservation is one atomic database update, so the $1 cap holds.
+- **Cause codes.** A primary-disease entry is coded as ESRD, but its text says "IgA
+  nephropathy". The mapper is right to pick IgA nephropathy, so for those rows "correct"
+  means inside the kidney (or heart) disease hierarchy.
+
+### Why these tools
+- **numpy for the bootstrap.** It was already installed with spaCy; one matrix product
+  replaces millions of Python additions.
+- **JSON next to each report.** The summary is assembled from data, not by scraping
+  markdown, so a changed table layout cannot silently break a headline number.
+- **The pipeline's own matcher and vocabulary.** The mapping eval rebuilds the same
+  `ConceptMatcher` from Postgres, so it measures exactly what the pipeline does.
+
+### Trade-offs
+- **Synthetic templates.** Every number is an upper bound for template-like text. The
+  intervals do not include the much larger gap to real documents; every report says so.
+- **The rules know the template.** That makes rules look as good as the LLM here. On real,
+  varied reports the regexes would break first.
+- **Latency is not end-to-end.** OCR, the same for every system, is left out of biopsy
+  latency. LLM-only note latency assumes calls one after another.
+- **300 notes for LLM only.** The full set would cost about $20. The interval shows 300 is
+  enough to separate the systems.
+
+### Results (synthetic data; `make evals`)
+- **Biopsy reports (1,508):** field F1 is 99.9% for all three systems. Reports fully correct:
+  rules 99.2%, LLM 99.2%, hybrid 99.3%. Wrong reports loaded without review: 12 / 12 / **0**.
+  LLM cost per report is $0.00048 for one pass and $0.00095 for the hybrid (two passes).
+- **Notes (300 held-out):** F1 94.3% for rules, medspaCy and hybrid, against **84.0%**
+  (83.7–84.2) for LLM only. LLM-only temporality is 85.2%, concept 71.5%, 100% of its
+  mentions go to review, and it costs $0.0016 per note (about $20 for every note). One model
+  call takes 2.2 s (median of 50 timed calls), so about 42 s per note one after another.
+  Step 2.4 spent $0.19 of the $1 cap.
+- **Notes (12,205 held-out):** medspaCy and hybrid F1 94.2%, temporality 100%.
+- **Mapping (2,234 coded rows, 19 texts):** curated + vocabulary maps 100% to the sent code
+  or the organ's disease hierarchy. Vocabulary only leaves 39.8% unmapped (the graft-failure
+  texts) and maps none wrongly.
+
+### Likely interview questions
+1. **Your LLM was not better than regex. Why use it?** On one fixed template, regex is
+   enough, and the evaluation shows that honestly. Real pathology reports vary in layout and
+   wording, and regexes break there first. In the hybrid, the LLM's real job is two
+   independent reads plus checks that send doubtful reports to a person. The result: 0 wrong
+   reports loaded without review, against 12 for each of the others.
+2. **What is a bootstrap confidence interval, and why not just ± a standard error?** You
+   resample your units with replacement many times, recompute the metric, and take the
+   middle 95%. It works for F1 and for correlated fields, where simple formulas do not, and
+   it needs no distribution assumption.
+3. **Why resample documents rather than fields?** Fields from one document fail together: a
+   bad scan breaks several. Treating them as independent would make the interval too narrow.
+4. **How did you keep the LLM comparison fair?** Same notes and the same checks. The model's
+   quotes must appear in the sentence, and our vocabulary picks the concept. So the gap is
+   the model's, not a looser pipeline's. The notes were held-out ones, never the tuning
+   notes.
+5. **How do you know your mapping accuracy is not circular?** The AI assistant wrote the
+   curated map, so it must not also write the answer key. I used the SNOMED codes the
+   hospitals sent: hide the code, map the text, compare.

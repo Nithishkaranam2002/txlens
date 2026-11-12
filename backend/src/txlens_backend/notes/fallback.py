@@ -22,6 +22,7 @@ nothing twice), atomic budget reservation, Langfuse trace with the prompt versio
 import hashlib
 import re
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -97,6 +98,7 @@ class FallbackRun:
     dropped_quotes: int = 0
     reasons: dict[str, int] = field(default_factory=dict)
     budget_exhausted: bool = False  # the cap was reached; later sentences stay rules-only
+    paid_latency_ms: list[int] = field(default_factory=list)  # latency of each paid call
 
     def add(self, outcome: PassOutcome) -> None:
         """Count one pass."""
@@ -106,6 +108,8 @@ class FallbackRun:
         self.input_tokens += outcome.input_tokens
         self.output_tokens += outcome.output_tokens
         self.cost_usd += outcome.cost_usd
+        if not outcome.cached and outcome.error is None:
+            self.paid_latency_ms.append(outcome.latency_ms)
 
 
 def unmatched_items(text: str, start: int, covered: Sequence[tuple[int, int]]) -> bool:
@@ -210,23 +214,28 @@ class Fallback:
     budget: Budget
     vocabulary: Vocabulary
     run: FallbackRun = field(default_factory=FallbackRun)
+    workers: int = 1  # parallel model calls per note
 
     def resolve(self, text: str, organ: str | None, mentions: list[Mention]) -> list[Mention]:
         """`mentions` plus what the LLM finds in this note's unresolved sentences."""
-        added: list[Mention] = []
-        for sentence in sentences_to_ask(text, mentions):
+        return self.ask(text, organ, sentences_to_ask(text, mentions), mentions)
+
+    def ask(
+        self, text: str, organ: str | None, sentences: Sequence[Sentence],
+        mentions: list[Mention],
+    ) -> list[Mention]:  # fmt: skip
+        """`mentions` plus what the LLM finds in these sentences (each checked by code).
+        With `workers` above 1 the calls go out in parallel; the budget reservation is
+        atomic in the database, so the cap holds."""
+        for sentence in sentences:
             self.run.reasons[sentence.reason] = self.run.reasons.get(sentence.reason, 0) + 1
-            if self.run.budget_exhausted:
-                continue
-            block = document(text[sentence.start : sentence.end], sentence.section)
-            digest = hashlib.sha256(block.encode()).hexdigest()
-            try:
-                outcome = guarded_pass(
-                    self.engine, self.tenant_id, self.extractor, self.budget, SentenceFindings,
-                    block, "a", digest,
-                )  # fmt: skip
-            except BudgetExceededError:
-                self.run.budget_exhausted = True
+        if self.run.budget_exhausted:
+            return mentions
+        with ThreadPoolExecutor(max_workers=self.workers) as pool:
+            outcomes = list(pool.map(lambda s: self.call(text, s), sentences))
+        added: list[Mention] = []
+        for sentence, outcome in zip(sentences, outcomes, strict=True):
+            if outcome is None:
                 continue
             self.run.add(outcome)
             if outcome.output is None:
@@ -235,3 +244,18 @@ class Fallback:
             added += to_mentions(answer, text, sentence, [*mentions, *added], self.vocabulary,
                                  organ, self.run)  # fmt: skip
         return sorted([*mentions, *added], key=lambda m: m.start)
+
+    def call(self, text: str, sentence: Sentence) -> PassOutcome | None:
+        """One sentence through the guarded pass; None once the budget is reached."""
+        if self.run.budget_exhausted:
+            return None
+        block = document(text[sentence.start : sentence.end], sentence.section)
+        digest = hashlib.sha256(block.encode()).hexdigest()
+        try:
+            return guarded_pass(
+                self.engine, self.tenant_id, self.extractor, self.budget, SentenceFindings,
+                block, "a", digest,
+            )  # fmt: skip
+        except BudgetExceededError:
+            self.run.budget_exhausted = True
+            return None

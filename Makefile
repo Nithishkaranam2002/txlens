@@ -6,7 +6,7 @@ SEED ?= 42
 VOCAB_SOURCE ?= omop/athena
 N_PATIENTS ?= 2000
 
-.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run prune-login-attempts notes-report review-report rejection-report cohort-report surveillance-report biopsy-report ocr-report vocab-load vocab-export-curation vocab-load-local vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
+.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run prune-login-attempts notes-report evals extraction-systems mapping-report review-report rejection-report cohort-report surveillance-report biopsy-report ocr-report vocab-load vocab-export-curation vocab-load-local vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -107,8 +107,19 @@ spark-build: ## Build the Spark runner image (Python 3.12 + Java 17 + PySpark + 
 pipeline: ## Run bronze -> silver -> gold -> Postgres load in the Spark container (LAYERS=...)
 	$(SPARK_RUN) python -m txlens_pipelines $(if $(LAYERS),--layers $(LAYERS))
 
-notes-report: ## Note NLP vs ground truth -> evals/reports/notes_nlp.md (ARGS="--llm --max-cost 1")
+notes-report: ## Note NLP vs ground truth -> evals/reports/notes_nlp.md (ARGS="--full --llm --max-cost 1 --llm-only-sample 300")
 	uv run python -m txlens_evals.notes_nlp $(ARGS)
+
+evals: ## Every evaluation that runs on the loaded database (cached LLM answers) + summary -> evals/reports/summary.md
+	$(MAKE) extraction-systems mapping-report rejection-report review-report cohort-report
+	$(MAKE) notes-report ARGS="--full --llm --max-cost 1 --llm-only-sample 300 --llm-only-cost 1"
+	uv run python -m txlens_evals.summary
+
+extraction-systems: ## Biopsy extraction: rules vs LLM vs hybrid with 95% CIs -> evals/reports/extraction_systems.md (no LLM calls)
+	uv run python -m txlens_evals.biopsy_systems
+
+mapping-report: ## Free-text condition mapping vs the codes the centers sent -> evals/reports/mapping_accuracy.md
+	uv run python -m txlens_evals.mapping_accuracy
 
 review-report: ## Reviewer vs model agreement + eval set -> evals/reports/review_agreement.md
 	uv run python -m txlens_evals.review_feedback

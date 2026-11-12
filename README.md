@@ -98,6 +98,36 @@ Run `make help` to see every command.
 The OMOP vocabulary is licensed and never committed: download it yourself from Athena as
 described in [omop/README.md](omop/README.md). Tests use a fake TEST ONLY fixture instead.
 
+## Headline results
+
+From [evals/reports/summary.md](evals/reports/summary.md): `make evals` reruns every
+evaluation on the loaded database (LLM answers come from the cache, so a rerun costs nothing)
+and rebuilds the summary. Brackets are 95% bootstrap intervals. **Synthetic,
+template-generated data**: these are upper bounds for template-like text, not estimates for
+real clinical documents.
+
+| Task | Rules only | LLM only | Hybrid (what TxLens runs) |
+|---|---|---|---|
+| Biopsy reports (1,508): field F1 | 99.9% (99.9–100.0) | 99.9% (99.9–100.0) | 99.9% (99.9–100.0) |
+| Biopsy reports: fully correct | 99.2% (98.7–99.6) | 99.2% (98.7–99.6) | 99.3% (98.8–99.7) |
+| Biopsy reports: wrong reports loaded without review | 12 | 12 | **0** (58.3% sent to review) |
+| Biopsy reports: LLM cost / report | $0 | $0.00048 | $0.00095 |
+| Clinic notes, 300 held-out: mention F1 | 94.3% (94.2–94.4)¹ | 84.0% (83.7–84.2) | 94.3% (94.2–94.4) |
+| Clinic notes: temporality / concept accuracy | 69.6% / 100%¹ | 85.2% / 71.5% | 100% / 100% |
+| Clinic notes: mentions sent to review / cost per note | 0% / $0 | 100% / $0.0016 | 0% / $0 |
+| Clinic notes: latency per note | 10 ms | ~42 s (19 calls of 2.2 s, one after another) | 12 ms |
+| Condition texts (2,234 coded rows): mapped to the sent code² | 60.2% (vocabulary only) | – | **100%** (curated + vocabulary) |
+
+¹ Rules only = vocabulary matcher without ConText; medspaCy (rules + ConText) has the same F1
+with 100% temporality. ² Code hidden, text mapped, compared with the code; only 19 distinct
+texts, so the vocabulary-only interval is wide (0–98%); none mapped wrongly, the rest go to
+review. No LLM maps conditions in TxLens.
+
+What this says: on templated text, rules are as accurate as the LLM and far cheaper; the
+hybrid earns its cost by routing doubtful biopsy reports to a person (none wrong reached OMOP
+unchecked). Reading every note sentence with the LLM was worse and would cost about $20 for
+all notes. Method: [ADR 0016](docs/adr/0016-evaluation-method.md).
+
 ## Data pipeline results
 
 From [evals/reports/data_quality.md](evals/reports/data_quality.md), produced by

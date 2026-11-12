@@ -1,0 +1,360 @@
+{
+  "held-out": {
+    "facts": 198571,
+    "notes": 12205,
+    "systems": {
+      "hybrid (+LLM)": {
+        "concept": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "cost_per_note": 0.0,
+        "experiencer": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "f1": {
+          "high": 0.9424,
+          "low": 0.9421,
+          "value": 0.9422
+        },
+        "latency_ms_per_note": 11.942094404670833,
+        "negation": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "review_share": {
+          "high": 0.0,
+          "low": 0.0,
+          "value": 0.0
+        },
+        "temporality": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        }
+      },
+      "medspaCy": {
+        "concept": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "cost_per_note": 0.0,
+        "experiencer": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "f1": {
+          "high": 0.9424,
+          "low": 0.9421,
+          "value": 0.9422
+        },
+        "latency_ms_per_note": 11.734910781074584,
+        "negation": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "review_share": {
+          "high": 0.0,
+          "low": 0.0,
+          "value": 0.0
+        },
+        "temporality": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        }
+      },
+      "rules-only": {
+        "concept": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "cost_per_note": 0.0,
+        "experiencer": {
+          "high": 0.9451,
+          "low": 0.9435,
+          "value": 0.9443
+        },
+        "f1": {
+          "high": 0.9424,
+          "low": 0.9421,
+          "value": 0.9422
+        },
+        "latency_ms_per_note": 10.42956179852507,
+        "negation": {
+          "high": 0.7785,
+          "low": 0.7766,
+          "value": 0.7776
+        },
+        "review_share": {
+          "high": 0.0,
+          "low": 0.0,
+          "value": 0.0
+        },
+        "temporality": {
+          "high": 0.6989,
+          "low": 0.6974,
+          "value": 0.6981
+        }
+      }
+    }
+  },
+  "held-out sample": {
+    "facts": 4912,
+    "notes": 300,
+    "systems": {
+      "LLM only": {
+        "concept": {
+          "high": 0.7305,
+          "low": 0.7013,
+          "value": 0.7155
+        },
+        "cost_per_note": 0.001631692,
+        "experiencer": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "f1": {
+          "high": 0.8424,
+          "low": 0.8371,
+          "value": 0.8399
+        },
+        "latency_ms_per_note": 41766.202422496695,
+        "negation": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "review_share": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "temporality": {
+          "high": 0.8633,
+          "low": 0.8412,
+          "value": 0.8525
+        }
+      },
+      "hybrid (+LLM)": {
+        "concept": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "cost_per_note": 0.0,
+        "experiencer": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "f1": {
+          "high": 0.9436,
+          "low": 0.9416,
+          "value": 0.9427
+        },
+        "latency_ms_per_note": 12.424976806651102,
+        "negation": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "review_share": {
+          "high": 0.0,
+          "low": 0.0,
+          "value": 0.0
+        },
+        "temporality": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        }
+      },
+      "medspaCy": {
+        "concept": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "cost_per_note": 0.0,
+        "experiencer": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "f1": {
+          "high": 0.9436,
+          "low": 0.9416,
+          "value": 0.9427
+        },
+        "latency_ms_per_note": 12.250024026676934,
+        "negation": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "review_share": {
+          "high": 0.0,
+          "low": 0.0,
+          "value": 0.0
+        },
+        "temporality": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        }
+      },
+      "rules-only": {
+        "concept": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "cost_per_note": 0.0,
+        "experiencer": {
+          "high": 0.9478,
+          "low": 0.9368,
+          "value": 0.9422
+        },
+        "f1": {
+          "high": 0.9436,
+          "low": 0.9416,
+          "value": 0.9427
+        },
+        "latency_ms_per_note": 10.363451109975966,
+        "negation": {
+          "high": 0.7839,
+          "low": 0.7715,
+          "value": 0.7777
+        },
+        "review_share": {
+          "high": 0.0,
+          "low": 0.0,
+          "value": 0.0
+        },
+        "temporality": {
+          "high": 0.7004,
+          "low": 0.691,
+          "value": 0.6958
+        }
+      }
+    }
+  },
+  "tuning": {
+    "facts": 4918,
+    "notes": 300,
+    "systems": {
+      "hybrid (+LLM)": {
+        "concept": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "cost_per_note": 0.0,
+        "experiencer": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "f1": {
+          "high": 0.9435,
+          "low": 0.9417,
+          "value": 0.9427
+        },
+        "latency_ms_per_note": 11.981216106651118,
+        "negation": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "review_share": {
+          "high": 0.0,
+          "low": 0.0,
+          "value": 0.0
+        },
+        "temporality": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        }
+      },
+      "medspaCy": {
+        "concept": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "cost_per_note": 0.0,
+        "experiencer": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "f1": {
+          "high": 0.9435,
+          "low": 0.9417,
+          "value": 0.9427
+        },
+        "latency_ms_per_note": 11.665161113342037,
+        "negation": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "review_share": {
+          "high": 0.0,
+          "low": 0.0,
+          "value": 0.0
+        },
+        "temporality": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        }
+      },
+      "rules-only": {
+        "concept": {
+          "high": 1.0,
+          "low": 1.0,
+          "value": 1.0
+        },
+        "cost_per_note": 0.0,
+        "experiencer": {
+          "high": 0.9529,
+          "low": 0.9424,
+          "value": 0.9473
+        },
+        "f1": {
+          "high": 0.9435,
+          "low": 0.9417,
+          "value": 0.9427
+        },
+        "latency_ms_per_note": 10.207619439946333,
+        "negation": {
+          "high": 0.7803,
+          "low": 0.7678,
+          "value": 0.7741
+        },
+        "review_share": {
+          "high": 0.0,
+          "low": 0.0,
+          "value": 0.0
+        },
+        "temporality": {
+          "high": 0.7005,
+          "low": 0.691,
+          "value": 0.6958
+        }
+      }
+    }
+  }
+}

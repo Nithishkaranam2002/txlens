@@ -1,0 +1,68 @@
+{
+  "reports": 1508,
+  "systems": {
+    "LLM only": {
+      "cost_per_report": 0.00047915868700265245,
+      "diagnosis_f1": {
+        "high": 1.0,
+        "low": 1.0,
+        "value": 1.0
+      },
+      "f1": {
+        "high": 0.9997,
+        "low": 0.9989,
+        "value": 0.9993
+      },
+      "fully_correct": {
+        "high": 0.996,
+        "low": 0.9867,
+        "value": 0.992
+      },
+      "latency_p50_ms": 4321.0,
+      "review_share": 0.0,
+      "wrong_loaded": 12
+    },
+    "hybrid": {
+      "cost_per_report": 0.000952283952254642,
+      "diagnosis_f1": {
+        "high": 1.0,
+        "low": 1.0,
+        "value": 1.0
+      },
+      "f1": {
+        "high": 0.9997,
+        "low": 0.999,
+        "value": 0.9994
+      },
+      "fully_correct": {
+        "high": 0.9967,
+        "low": 0.9881,
+        "value": 0.9927
+      },
+      "latency_p50_ms": 4260.5,
+      "review_share": 0.5828912466843501,
+      "wrong_loaded": 0
+    },
+    "rules only": {
+      "cost_per_report": 0.0,
+      "diagnosis_f1": {
+        "high": 1.0,
+        "low": 1.0,
+        "value": 1.0
+      },
+      "f1": {
+        "high": 0.9997,
+        "low": 0.9989,
+        "value": 0.9993
+      },
+      "fully_correct": {
+        "high": 0.996,
+        "low": 0.9874,
+        "value": 0.992
+      },
+      "latency_p50_ms": 0.03954199200961739,
+      "review_share": 0.0,
+      "wrong_loaded": 12
+    }
+  }
+}

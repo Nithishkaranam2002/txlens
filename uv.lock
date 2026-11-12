@@ -3244,11 +3244,15 @@ name = "txlens-evals"
 version = "0.1.0"
 source = { editable = "evals" }
 dependencies = [
+    { name = "numpy" },
     { name = "txlens-backend" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "txlens-backend", editable = "backend" }]
+requires-dist = [
+    { name = "numpy", specifier = ">=2" },
+    { name = "txlens-backend", editable = "backend" },
+]
 
 [[package]]
 name = "txlens-omop"

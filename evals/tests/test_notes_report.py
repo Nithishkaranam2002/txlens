@@ -1,5 +1,7 @@
 """Scoring and rendering of the note-NLP evaluation (no database, no model)."""
 
+from pathlib import Path
+
 from txlens_backend.notes.fallback import FallbackRun
 from txlens_backend.notes.nlp import Mention
 from txlens_evals.notes_nlp import (
@@ -119,3 +121,14 @@ def test_review_flags_are_counted_by_true_temporality() -> None:
     score_note(scores, [flagged], [fact("HTN", "hypertension", temporality="historical")],
                SPANS, [], {"hypertension": frozenset({1})})  # fmt: skip
     assert scores.review_flagged == {"historical": 1}
+
+
+def test_call_latency_is_recorded_when_measured_and_read_back_when_cached(
+    tmp_path: Path,
+) -> None:
+    from txlens_evals.notes_nlp import call_latency
+
+    path = tmp_path / "latency.json"
+    assert call_latency([], "m", path) is None  # nothing measured yet
+    assert call_latency([1000, 3000, 2000], "m", path) == 2000
+    assert call_latency([], "m", path) == 2000  # a cached rerun reuses the measurement

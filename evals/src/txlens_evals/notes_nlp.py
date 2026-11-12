@@ -20,9 +20,11 @@ dd-cfDNA in "If dd-cfDNA rises above 1%"). Both are real mentions.
 
 import argparse
 import csv
+import hashlib
 import json
 import random
 import re
+import statistics
 import time
 from collections import Counter, defaultdict
 from collections.abc import Callable, Sequence
@@ -36,10 +38,20 @@ from txlens_backend.config import Settings
 from txlens_backend.db import make_engine, tenant_transaction
 from txlens_backend.documents.budget import Budget
 from txlens_backend.documents.llm import make_extractor, price_per_token
-from txlens_backend.notes.fallback import PROMPT, Fallback, FallbackRun
+from txlens_backend.documents.passes import guarded_pass
+from txlens_backend.notes.fallback import (
+    PROMPT,
+    Fallback,
+    FallbackRun,
+    Sentence,
+    SentenceFindings,
+    document,
+)
 from txlens_backend.notes.nlp import Mention, NoteNlp
+from txlens_backend.notes.results import needs_review
 from txlens_backend.notes.store import NoteRow, phi_spans, read_notes
 from txlens_backend.notes.vocabulary import load_vocabulary
+from txlens_evals.stats import Estimate, bootstrap, f1, ratio, write_headline
 from txlens_pipelines.deid_notes import Replacement, to_original_offset
 
 CATEGORIES = ("condition", "medication", "lab", "procedure")
@@ -47,6 +59,10 @@ SAMPLE = 300
 SEED = 7  # the 300 notes of seed 7 were read while writing the rules: the tuning notes
 HELD_OUT = "held-out"
 TUNING = "tuning"
+LLM_SAMPLE = "held-out sample"  # where all four systems, LLM only included, are compared
+LLM_ONLY_SEED = 11
+LLM_ONLY = "LLM only"
+LLM_ONLY_WORKERS = 8  # parallel calls per note (every sentence is asked)
 REPORT = Path("evals/reports/notes_nlp.md")
 # Ground-truth concept key -> codes whose concept (or any descendant) is a correct mapping.
 # ("TxLens", code) are local concepts; an empty tuple means no concept exists (expect 0).
@@ -93,6 +109,11 @@ EXPECTED: dict[str, tuple[tuple[str, str], ...]] = {
 # Text the generator writes without listing it as a fact: the primary disease ("ESRD 2/2 IgA
 # nephropathy") and the dd-cfDNA in the plan's threshold sentence ("If dd-cfDNA rises above").
 UNTRACKED = (re.compile(r"2/2 ([^\n]+)"), re.compile(r"If (dd-cfDNA) rises"))
+# Per-note counts kept for the bootstrap: mentions found (tp, fp, fn), attributes right on
+# matched facts, matched facts, and mentions sent to review out of all mentions.
+UNIT_COLUMNS = ("tp", "fp", "fn", "negation", "temporality", "experiencer", "concept",
+                "matched", "review", "mentions")  # fmt: skip
+REVIEW_THRESHOLD = 0.70
 
 
 @dataclass(frozen=True)
@@ -126,6 +147,11 @@ class Scores:
     review_flagged: Counter[str] = field(default_factory=Counter)
     # (error, concept, de-identified sentence) of attribute errors, kept only for --dump-errors
     examples: list[tuple[str, str, str]] | None = None
+    # One row per note for bootstrap intervals: see UNIT_COLUMNS
+    units: list[tuple[int, ...]] = field(default_factory=list)
+    # Ground-truth concept key -> tp / fp / fn (a false positive counts for the concept its
+    # vocabulary concept stands for, else "other")
+    per_concept: dict[str, Counter[str]] = field(default_factory=lambda: defaultdict(Counter))
 
 
 def read_facts(path: Path) -> dict[str, list[Fact]]:
@@ -219,6 +245,8 @@ def score_note(
     """Add one note's matches and errors to `scores`. Attribute errors name their direction,
     e.g. "wrong temporality (historical→current)": expected, then predicted."""
     left = list(facts)
+    review = sum(needs_review(m, REVIEW_THRESHOLD) for m in mentions)
+    unit: Counter[str] = Counter(mentions=len(mentions), review=review)
     for m in mentions:
         start, end = original_span(m, spans)
         fact = next(
@@ -227,6 +255,8 @@ def score_note(
         )
         if fact is None:
             scores.fp[m.category] += 1
+            unit["fp"] += 1
+            scores.per_concept[concept_key(m.concept_id, expected)]["fp"] += 1
             if any(s < end and start < e for s, e in untracked):
                 scores.fp_untracked[m.category] += 1
             else:
@@ -237,6 +267,9 @@ def score_note(
             scores.review_flagged[fact.temporality] += 1
         scores.tp[m.category] += 1
         scores.matched += 1
+        unit["tp"] += 1
+        unit["matched"] += 1
+        scores.per_concept[fact.concept]["tp"] += 1
         checks = {
             "negation": (m.negated == fact.negated, f"{fact.negated}→{m.negated}"),
             "temporality": (m.temporality == fact.temporality,
@@ -247,6 +280,7 @@ def score_note(
         }  # fmt: skip
         for name, (right, direction) in checks.items():
             scores.attribute_right[name] += right
+            unit[name] += right
             if not right:
                 kind = f"wrong {name} ({direction})" if direction else f"wrong {name}"
                 scores.errors[(kind, fact.concept, fact.text.lower())] += 1
@@ -255,7 +289,15 @@ def score_note(
                     scores.examples.append((kind, fact.concept, " ".join(sentence.split())))
     for fact in left:
         scores.fn[fact.category] += 1
+        unit["fn"] += 1
+        scores.per_concept[fact.concept]["fn"] += 1
         scores.errors[("missed", fact.category, fact.text.lower())] += 1
+    scores.units.append(tuple(unit[c] for c in UNIT_COLUMNS))
+
+
+def concept_key(concept_id: int, expected: dict[str, frozenset[int]]) -> str:
+    """The ground-truth concept key a predicted concept stands for, or "other"."""
+    return next((k for k, ids in expected.items() if concept_id and concept_id in ids), "other")
 
 
 # A system: (tenant, notes) -> mentions per note.
@@ -276,6 +318,26 @@ def hybrid_system(nlp: NoteNlp, engine: Engine, settings: Settings, budget: Budg
         fallback = Fallback(engine, tenant, extractor, budget, nlp.vocabulary, run)
         rules = nlp.extract_many([(n.text, n.organ) for n in notes])
         return [fallback.resolve(n.text, n.organ, m) for n, m in zip(notes, rules, strict=True)]
+
+    return extract
+
+
+def llm_only_system(nlp: NoteNlp, engine: Engine, settings: Settings, budget: Budget,
+                    run: FallbackRun) -> System:  # fmt: skip
+    """The LLM reads every body sentence; no rule finds anything. Each answer is still
+    checked (quotes must be in the sentence) and the concept still comes from our
+    vocabulary, so this measures the model, not a looser pipeline."""
+    extractor = make_extractor(settings, "a", PROMPT)
+
+    def extract(tenant: str, notes: list[NoteRow]) -> list[list[Mention]]:
+        fallback = Fallback(engine, tenant, extractor, budget, nlp.vocabulary, run,
+                            workers=LLM_ONLY_WORKERS)  # fmt: skip
+        results = []
+        for note in notes:
+            asked = [Sentence(a, b, section, "every_sentence")
+                     for a, b, section in nlp.sentences(note.text)]  # fmt: skip
+            results.append(fallback.ask(note.text, note.organ, asked, []))
+        return results
 
     return extract
 
@@ -365,6 +427,72 @@ def attribute_rows(scores: dict[str, Scores]) -> list[str]:
     return lines
 
 
+@dataclass(frozen=True)
+class SystemCost:
+    """What a system's LLM calls cost and took on one split (None for rules)."""
+
+    run: FallbackRun | None
+    model: str
+
+
+def cold_cost(run: FallbackRun, model: str) -> float:
+    """What the run's calls cost without the cache."""
+    price_in, price_out = price_per_token(model)
+    return run.input_tokens * price_in + run.output_tokens * price_out
+
+
+def headline(s: Scores, notes: int, cost: SystemCost | None, call_ms: float | None
+             ) -> dict[str, object]:  # fmt: skip
+    """Mentions F1 and attribute accuracy with 95% intervals, review share, cost, latency."""
+    col = {c: i for i, c in enumerate(UNIT_COLUMNS)}
+    out: dict[str, object] = {
+        "f1": bootstrap(s.units, f1),
+        **{name: bootstrap(s.units, ratio(col[name], col["matched"]))
+           for name in ("negation", "temporality", "experiencer", "concept")},
+        "review_share": bootstrap(s.units, ratio(col["review"], col["mentions"])),
+    }  # fmt: skip
+    run = cost.run if cost else None
+    calls = run.calls if run else 0
+    out["cost_per_note"] = cold_cost(run, cost.model) / notes if run and cost and notes else 0.0
+    measured_ms = s.seconds / max(notes, 1) * 1000
+    out["latency_ms_per_note"] = measured_ms + (calls / max(notes, 1)) * (call_ms or 0.0)
+    return out
+
+
+def headline_rows(split: Split, costs: dict[str, SystemCost], call_ms: float | None
+                  ) -> list[str]:  # fmt: skip
+    """One row per system: 95% bootstrap intervals over notes."""
+    lines = ["| System | F1 (mentions) | Negation | Temporality | Concept | Sent to review | "
+             "LLM cost / note | Latency / note |", "|---|---|---|---|---|---|---|---|"]  # fmt: skip
+    for name, scores in split.scores.items():
+        h = headline(scores, split.notes, costs.get(name), call_ms)
+        estimates = [h[k] for k in ("f1", "negation", "temporality", "concept", "review_share")]
+        latency = float(h["latency_ms_per_note"])  # type: ignore[arg-type]
+        lines.append(
+            f"| {name} | "
+            + " | ".join(e.text() for e in estimates)  # type: ignore[attr-defined]
+            + f" | ${float(h['cost_per_note']):.5f} | "  # type: ignore[arg-type]
+            + (f"{latency / 1000:.1f} s" if latency >= 1000 else f"{latency:.0f} ms")
+            + " |"
+        )
+    return lines
+
+
+def concept_rows(split: Split) -> list[str]:
+    """F1 per ground-truth concept, one column per system (point estimates)."""
+    names = list(split.scores)
+    keys = sorted({k for s in split.scores.values() for k in s.per_concept})
+    lines = ["| Concept | " + " | ".join(f"{n} F1" for n in names) + " |",
+             "|---|" + "---|" * len(names)]  # fmt: skip
+    for key in keys:
+        cells = []
+        for n in names:
+            c = split.scores[n].per_concept.get(key, Counter())
+            cells.append(pct(prf(c["tp"], c["fp"], c["fn"])[2]) if sum(c.values()) else "-")
+        lines.append(f"| {key} | " + " | ".join(cells) + " |")
+    return lines
+
+
 def review_rows(scores: dict[str, Scores]) -> list[str]:
     """Rejection mentions the past-rejection rule sent to a person, by the true temporality."""
     lines = ["| System | Sent to review | Truly historical | Truly current |", "|---|---|---|---|"]
@@ -449,19 +577,35 @@ LIMITS = """\
 
 
 SPLIT_TITLES = {
+    LLM_SAMPLE: "Four systems on a held-out sample (300 notes, seed 11)",
     HELD_OUT: "Held-out notes (never read while writing the rules)",
     TUNING: f"Tuning notes ({SAMPLE} notes, seed {SEED}: read while writing the rules)",
 }
 
 
-def split_section(split: Split, title: str) -> list[str]:
-    """Mentions, attributes and remaining errors of every system on one split."""
+def split_section(
+    split: Split, title: str, costs: dict[str, SystemCost] | None = None,
+    call_ms: float | None = None,
+) -> list[str]:  # fmt: skip
+    """Headline with intervals, mentions, attributes and remaining errors on one split."""
     best = list(split.scores)[-1]
+    per_concept = ["### F1 per concept", "", *concept_rows(split), ""] \
+        if split.name == LLM_SAMPLE else []  # fmt: skip
     return [
         f"## {title}",
         "",
         f"{split.notes:,} notes, {split.facts:,} ground-truth facts.",
         "",
+        "### Headline (95% bootstrap intervals, notes resampled 1,000 times)",
+        "",
+        *headline_rows(split, costs or {}, call_ms),
+        "",
+        "Accuracy of negation, temporality and concept is over the matched facts. Sent to "
+        "review: mentions the pipeline would send to a person (no concept, ambiguous, or "
+        "confidence below 0.70: every LLM finding). Cost is without the cache; latency is "
+        "measured, plus the median paid-call time for each call answered from the cache.",
+        "",
+        *per_concept,
         "### Mentions found (precision, recall, F1)",
         "",
         *system_rows(split.scores),
@@ -481,11 +625,16 @@ def split_section(split: Split, title: str) -> list[str]:
     ]
 
 
-def render(splits: list[Split], run: dict[str, str], llm: list[str] | None = None) -> str:
-    """The report: one section per split, the first one is the headline."""
-    notes = sum(s.notes for s in splits)
+def render(
+    splits: list[Split], run: dict[str, str], llm: list[str] | None = None,
+    costs: dict[str, dict[str, SystemCost]] | None = None, call_ms: float | None = None,
+) -> str:  # fmt: skip
+    """The report: one section per split, the first one is the headline. Totals and speed
+    count each note once (the LLM-only sample's notes are also in the held-out split)."""
+    counted = [s for s in splits if s.name != LLM_SAMPLE]
+    notes = sum(s.notes for s in counted)
     seconds: Counter[str] = Counter()
-    for split in splits:
+    for split in counted:
         seconds.update({name: s.seconds for name, s in split.scores.items()})
     out = [
         "# Clinical-note NLP: evaluation",
@@ -496,10 +645,11 @@ def render(splits: list[Split], run: dict[str, str], llm: list[str] | None = Non
         "| Run | |", "|---|---|",
         *(f"| {k} | {v} |" for k, v in run.items()),
         f"| Notes | {notes:,} |",
-        f"| Ground-truth facts | {sum(s.facts for s in splits):,} |",
+        f"| Ground-truth facts | {sum(s.facts for s in counted):,} |",
         "",
         *(line for split in splits
-          for line in split_section(split, SPLIT_TITLES.get(split.name, split.name.capitalize()))),
+          for line in split_section(split, SPLIT_TITLES.get(split.name, split.name.capitalize()),
+                                    (costs or {}).get(split.name), call_ms)),
         *(["## LLM fallback (hybrid)", "", *llm, ""] if llm else []),
         "## Speed",
         "",
@@ -530,6 +680,24 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--llm", action="store_true", help="also run the hybrid (paid calls)")
     parser.add_argument("--max-cost", type=float, help="LLM spending cap in dollars (with --llm)")
     parser.add_argument("--out", type=Path, default=REPORT)
+    parser.add_argument(
+        "--llm-only-sample",
+        type=int,
+        default=0,
+        metavar="N",
+        help="with --full --llm: also run the LLM on every sentence of N "
+        "held-out notes, and compare all four systems there",
+    )
+    parser.add_argument(
+        "--measure-latency",
+        type=int,
+        default=0,
+        metavar="N",
+        help="with --full --llm: time N uncached model calls (about "
+        "N x $0.0001) and record the median",
+    )
+    parser.add_argument("--llm-only-cost", type=float, default=1.0,
+                        help="spending cap in dollars for the LLM-only run")  # fmt: skip
     parser.add_argument(
         "--dump-errors", type=Path, metavar="FILE",
         help="write the de-identified sentences of attribute errors on the tuning notes only "
@@ -575,24 +743,117 @@ def main(argv: list[str] | None = None) -> int:
         budget.open()
         systems["hybrid (+LLM)"] = hybrid_system(medspacy, engine, settings, budget, fallback)
         run |= {"Model": settings.llm_model, "Prompt": PROMPT.version, "Batch": batch}
-    splits = [
+    model = settings.llm_model
+    costs = {name: {"hybrid (+LLM)": SystemCost(fallback, model)} for name in groups}
+    splits: list[Split] = []
+    paid_ms: list[int] = []
+    only_rows: list[str] = []
+    if args.llm_only_sample and budget is not None and HELD_OUT in groups:
+        # First, so a problem in the paid part shows before the long free part runs.
+        sample = held_out_sample(groups[HELD_OUT], args.llm_only_sample)
+        only_run, sample_hybrid = FallbackRun(), FallbackRun()
+        batch_name = f"eval-notes-llm-only-{args.llm_only_sample}-{LLM_ONLY_SEED}"
+        only_budget = Budget(engine, batch_name, min(settings.llm_budget_usd, args.llm_only_cost))
+        only_budget.open()
+        hybrid = hybrid_system(medspacy, engine, settings, budget, sample_hybrid)
+        only = llm_only_system(medspacy, engine, settings, only_budget, only_run)
+        four = {"rules-only": systems["rules-only"], "medspaCy": systems["medspaCy"],
+                "hybrid (+LLM)": hybrid, LLM_ONLY: only}  # fmt: skip
+        splits.append(evaluate(engine, sample, facts, four, LLM_SAMPLE))
+        costs[LLM_SAMPLE] = {"hybrid (+LLM)": SystemCost(sample_hybrid, model),
+                             LLM_ONLY: SystemCost(only_run, model)}  # fmt: skip
+        paid_ms += only_run.paid_latency_ms
+        spent, cap = only_budget.totals()
+        only_rows = ["", f"LLM only, {args.llm_only_sample} held-out notes:", "",
+                     *llm_rows(only_run, (float(spent), float(cap)), args.llm_only_sample,
+                               len(tenants_of), model)]  # fmt: skip
+    splits += [
         evaluate(engine, ids, facts, systems, name,
                  keep_examples=args.dump_errors is not None and name != HELD_OUT)
         for name, ids in groups.items()
     ]  # fmt: skip
     if args.dump_errors is not None:
         dump_errors(splits, args.dump_errors)
-    notes = sum(s.notes for s in splits)
+    notes = sum(s.notes for s in splits if s.name != LLM_SAMPLE)
     llm = None
     if budget is not None:
         spent, cap = budget.totals()
-        llm = llm_rows(
-            fallback, (float(spent), float(cap)), notes, len(tenants_of), settings.llm_model
-        )
-    report = render(splits, run, llm)
+        llm = [*llm_rows(fallback, (float(spent), float(cap)), notes, len(tenants_of), model),
+               *only_rows]  # fmt: skip
+    paid_ms += fallback.paid_latency_ms
+    if args.measure_latency and budget is not None:
+        paid_ms = measure_call_latency(engine, settings, budget, medspacy, groups,
+                                       args.measure_latency)  # fmt: skip
+    call_ms = call_latency(paid_ms, model, args.out.parent / LATENCY_FILE)
+    report = render(splits, run, llm, costs, call_ms)
     args.out.write_text(report, encoding="utf-8")
+    write_headline(args.out.with_suffix(".json"), headline_json(splits, costs, call_ms))
     print(report)
     return 0
+
+
+LATENCY_FILE = "llm_call_latency.json"
+
+
+def call_latency(paid_ms: list[int], model: str, path: Path) -> float | None:
+    """The median time of one model call. A run with paid calls measures it and records it;
+    a fully cached run (no calls to time) reads the recorded measurement instead."""
+    key = f"{model}|{PROMPT.version}"
+    recorded = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    if paid_ms:
+        recorded[key] = {"median_ms": statistics.median(paid_ms), "calls": len(paid_ms),
+                         "measured": date.today().isoformat()}  # fmt: skip
+        path.write_text(json.dumps(recorded, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    entry = recorded.get(key)
+    return float(entry["median_ms"]) if entry else None
+
+
+def measure_call_latency(
+    engine: Engine, settings: Settings, budget: Budget, nlp: NoteNlp,
+    groups: dict[str, dict[str, list[str]]], n: int,
+) -> list[int]:  # fmt: skip
+    """Time n real model calls on held-out sentences, bypassing the cache (a fresh cache key
+    per call), one at a time. Costs about n x $0.0001."""
+    extractor = make_extractor(settings, "a", PROMPT)
+    sample = held_out_sample(groups[HELD_OUT], n)
+    times: list[int] = []
+    for tenant, ids in sorted(sample.items()):
+        with tenant_transaction(engine, tenant) as conn:
+            notes = read_notes(conn, ids)
+        for note in notes:
+            start, end, section = nlp.sentences(note.text)[0]
+            block = document(note.text[start:end], section)
+            salt = hashlib.sha256(f"latency-probe|{date.today()}|{note.source_value}".encode())
+            outcome = guarded_pass(engine, tenant, extractor, budget, SentenceFindings, block,
+                                   "a", salt.hexdigest())  # fmt: skip
+            if not outcome.cached and outcome.error is None:
+                times.append(outcome.latency_ms)
+    return times
+
+
+def held_out_sample(held_out: dict[str, list[str]], n: int) -> dict[str, list[str]]:
+    """n held-out notes (never the tuning notes), the same ones on every run."""
+    pool = sorted(i for ids in held_out.values() for i in ids)
+    tenant = {i: t for t, ids in held_out.items() for i in ids}
+    by_tenant: dict[str, list[str]] = defaultdict(list)
+    for note_id in sorted(random.Random(LLM_ONLY_SEED).sample(pool, min(n, len(pool)))):
+        by_tenant[tenant[note_id]].append(note_id)
+    return dict(by_tenant)
+
+
+def headline_json(
+    splits: list[Split], costs: dict[str, dict[str, SystemCost]], call_ms: float | None
+) -> dict[str, object]:
+    """Every split's headline metrics, for summary.md."""
+    out: dict[str, object] = {}
+    for split in splits:
+        systems = {}
+        for name, scores in split.scores.items():
+            h = headline(scores, split.notes, costs.get(split.name, {}).get(name), call_ms)
+            systems[name] = {k: (v.as_dict() if isinstance(v, Estimate) else v)
+                             for k, v in h.items()}  # fmt: skip
+        out[split.name] = {"notes": split.notes, "facts": split.facts, "systems": systems}
+    return out
 
 
 if __name__ == "__main__":

@@ -187,6 +187,19 @@ class NoteNlp:
         docs = self.nlp.pipe(text for text, _ in notes)
         return [self.mentions(doc, organ) for doc, (_, organ) in zip(docs, notes, strict=True)]
 
+    def sentences(self, text: str) -> list[tuple[int, int, str | None]]:
+        """(start, end, section) of every body sentence with words in it (after the header)."""
+        doc = self.nlp(text)
+        body = text.find("\n\n")
+        found = []
+        for sentence in doc.sents:
+            if sentence.start_char <= body or not sentence.text.strip():
+                continue
+            first = sentence[0]
+            section = first._.section_category if first.has_extension("section_category") else None
+            found.append((sentence.start_char, sentence.end_char, section))
+        return found
+
     def mentions(self, doc: Doc, organ: str | None) -> list[Mention]:
         """Each entity of a processed doc after the header, as a Mention."""
         body = doc.text.find("\n\n")

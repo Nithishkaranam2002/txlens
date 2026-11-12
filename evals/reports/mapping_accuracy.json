@@ -1,0 +1,39 @@
+{
+  "coded_rows": 2234,
+  "systems": {
+    "curated + vocabulary": {
+      "cause_in_hierarchy": {
+        "high": 1.0,
+        "low": 1.0,
+        "value": 1.0
+      },
+      "same_concept_correct": {
+        "high": 1.0,
+        "low": 1.0,
+        "value": 1.0
+      },
+      "unmapped": {
+        "high": 0.0,
+        "low": 0.0,
+        "value": 0.0
+      }
+    },
+    "vocabulary only": {
+      "cause_in_hierarchy": {
+        "high": 1.0,
+        "low": 1.0,
+        "value": 1.0
+      },
+      "same_concept_correct": {
+        "high": 0.9836,
+        "low": 0.0,
+        "value": 0.6023
+      },
+      "unmapped": {
+        "high": 1.0,
+        "low": 0.0164,
+        "value": 0.3977
+      }
+    }
+  }
+}
