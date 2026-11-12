@@ -74,7 +74,8 @@ def test_each_displayed_step_covers_at_least_11_events_while_11_are_at_risk(
         j = int(np.searchsorted(t, after.day))
         assert curve.n_risk[j] >= THRESHOLD
         assert after.estimate == pytest.approx(curve.estimate[j])  # the true value, not rounded
-    assert read_off(points, points[1].day - 1) == 1.0
+    assert read_off(points, points[1].day - 1) is None  # no step shown yet: no value either
+    assert read_off(points, points[2].day - 1) == points[1]  # the last step by then, with its day
     assert read_off(points, points[-1].day + 1) is None  # nothing past the last shown step
 
 
@@ -110,9 +111,12 @@ def test_cox_starts_at_the_month_1_dsa_test(simulated: pd.DataFrame) -> None:
 
 def test_cumulative_incidence_never_exceeds_one_minus_km(simulated: pd.DataFrame) -> None:
     report = run(simulated, "donor_type")
-    for row in report.incidence_at:
-        if row.cumulative_incidence is not None and row.one_minus_km is not None:
-            assert row.cumulative_incidence <= row.one_minus_km + 1e-12
+    shown = [r for r in report.incidence_at if r.cumulative_incidence is not None]
+    assert shown
+    for row in shown:
+        assert row.one_minus_km is not None and row.step_day is not None
+        assert row.cumulative_incidence <= row.one_minus_km + 1e-12  # type: ignore[operator]
+        assert row.step_day <= row.day
 
 
 def test_methods_paragraph_states_the_design(simulated: pd.DataFrame) -> None:

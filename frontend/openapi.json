@@ -54,6 +54,90 @@
         "title": "Agreement",
         "type": "object"
       },
+      "AnalysisRequest": {
+        "additionalProperties": false,
+        "description": "What to analyse. Graft loss (death-censored) is always the outcome.",
+        "properties": {
+          "cohort_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Population: a saved cohort (default: every patient).",
+            "title": "Cohort Id"
+          },
+          "compare_cohort_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "grouping = cohort: members of this cohort vs the rest.",
+            "title": "Compare Cohort Id"
+          },
+          "covariates": {
+            "default": [
+              "age_per_decade",
+              "deceased_donor",
+              "dsa_positive",
+              "dgf",
+              "heart"
+            ],
+            "items": {
+              "enum": [
+                "age_per_decade",
+                "deceased_donor",
+                "dsa_positive",
+                "dgf",
+                "heart"
+              ],
+              "type": "string"
+            },
+            "maxItems": 5,
+            "title": "Covariates",
+            "type": "array"
+          },
+          "grouping": {
+            "default": "none",
+            "enum": [
+              "none",
+              "organ",
+              "donor_type",
+              "age_band",
+              "dgf",
+              "dsa_month1",
+              "dd_cfdna_year1",
+              "rejection_year1",
+              "cohort"
+            ],
+            "title": "Grouping",
+            "type": "string"
+          },
+          "landmark_days": {
+            "anyOf": [
+              {
+                "maximum": 1095.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Start of follow-up, in days after transplant (default: when the groups are known).",
+            "title": "Landmark Days"
+          }
+        },
+        "title": "AnalysisRequest",
+        "type": "object"
+      },
       "BiopsyResult": {
         "description": "What a biopsy's pathology report says, and how far it has been checked.",
         "properties": {
@@ -426,6 +510,51 @@
           "condition"
         ],
         "title": "Condition",
+        "type": "object"
+      },
+      "CoxOut": {
+        "properties": {
+          "events": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Events"
+          },
+          "landmark_days": {
+            "title": "Landmark Days",
+            "type": "integer"
+          },
+          "n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "N"
+          },
+          "terms": {
+            "items": {
+              "$ref": "#/components/schemas/TermOut"
+            },
+            "title": "Terms",
+            "type": "array"
+          }
+        },
+        "required": [
+          "landmark_days",
+          "n",
+          "events",
+          "terms"
+        ],
+        "title": "CoxOut",
         "type": "object"
       },
       "DateRange": {
@@ -1442,6 +1571,61 @@
         "title": "IdentifiedPatient",
         "type": "object"
       },
+      "IncidenceAt": {
+        "description": "Cumulative incidence of graft loss vs 1 - KM at a day, read off the displayed curves:\ntheir last step by then (`step_day`); None while no step is shown yet.",
+        "properties": {
+          "cumulative_incidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Incidence"
+          },
+          "day": {
+            "title": "Day",
+            "type": "integer"
+          },
+          "group": {
+            "title": "Group",
+            "type": "string"
+          },
+          "one_minus_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "One Minus Km"
+          },
+          "step_day": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Day"
+          }
+        },
+        "required": [
+          "group",
+          "day",
+          "step_day",
+          "cumulative_incidence",
+          "one_minus_km"
+        ],
+        "title": "IncidenceAt",
+        "type": "object"
+      },
       "Lab": {
         "description": "One lab result (value in the standard unit).",
         "properties": {
@@ -1578,6 +1762,52 @@
           "meaning"
         ],
         "title": "Level",
+        "type": "object"
+      },
+      "LogRankOut": {
+        "properties": {
+          "chi2": {
+            "title": "Chi2",
+            "type": "number"
+          },
+          "df": {
+            "title": "Df",
+            "type": "integer"
+          },
+          "expected": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Expected",
+            "type": "object"
+          },
+          "observed": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "title": "Observed",
+            "type": "object"
+          },
+          "p_value": {
+            "title": "P Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "chi2",
+          "df",
+          "p_value",
+          "observed",
+          "expected"
+        ],
+        "title": "LogRankOut",
         "type": "object"
       },
       "LoginRequest": {
@@ -1956,6 +2186,54 @@
         "title": "NoteMeta",
         "type": "object"
       },
+      "Option": {
+        "properties": {
+          "horizon_days": {
+            "title": "Horizon Days",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "horizon_days"
+        ],
+        "title": "Option",
+        "type": "object"
+      },
+      "Options": {
+        "description": "Groupings (with the day each is known) and Cox covariates the API accepts.",
+        "properties": {
+          "covariates": {
+            "items": {
+              "$ref": "#/components/schemas/Option"
+            },
+            "title": "Covariates",
+            "type": "array"
+          },
+          "groupings": {
+            "items": {
+              "$ref": "#/components/schemas/Option"
+            },
+            "title": "Groupings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "groupings",
+          "covariates"
+        ],
+        "title": "Options",
+        "type": "object"
+      },
       "PatientFlag": {
         "description": "A flag with its status history, oldest event first.",
         "properties": {
@@ -2175,6 +2453,49 @@
           "high"
         ],
         "title": "Phase",
+        "type": "object"
+      },
+      "Point": {
+        "description": "One displayed step: days since transplant, estimate and 95% CI.",
+        "properties": {
+          "day": {
+            "title": "Day",
+            "type": "number"
+          },
+          "estimate": {
+            "title": "Estimate",
+            "type": "number"
+          },
+          "lower": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lower"
+          },
+          "upper": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upper"
+          }
+        },
+        "required": [
+          "day",
+          "estimate",
+          "lower",
+          "upper"
+        ],
+        "title": "Point",
         "type": "object"
       },
       "Preview": {
@@ -2440,6 +2761,144 @@
           "baseline_days"
         ],
         "title": "RelativeChange",
+        "type": "object"
+      },
+      "Report": {
+        "description": "Everything shown for one analysis. Counts are suppressed; synthetic data only.",
+        "properties": {
+          "cox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CoxOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "events": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Events"
+          },
+          "grouping": {
+            "title": "Grouping",
+            "type": "string"
+          },
+          "grouping_label": {
+            "title": "Grouping Label",
+            "type": "string"
+          },
+          "incidence": {
+            "items": {
+              "$ref": "#/components/schemas/ShownCurve"
+            },
+            "title": "Incidence",
+            "type": "array"
+          },
+          "incidence_at": {
+            "items": {
+              "$ref": "#/components/schemas/IncidenceAt"
+            },
+            "title": "Incidence At",
+            "type": "array"
+          },
+          "km": {
+            "items": {
+              "$ref": "#/components/schemas/ShownCurve"
+            },
+            "title": "Km",
+            "type": "array"
+          },
+          "landmark_days": {
+            "title": "Landmark Days",
+            "type": "integer"
+          },
+          "log_rank": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LogRankOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "methods": {
+            "title": "Methods",
+            "type": "string"
+          },
+          "n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "N"
+          },
+          "one_minus_km": {
+            "items": {
+              "$ref": "#/components/schemas/ShownCurve"
+            },
+            "title": "One Minus Km",
+            "type": "array"
+          },
+          "population": {
+            "title": "Population",
+            "type": "string"
+          },
+          "risk_table": {
+            "items": {
+              "$ref": "#/components/schemas/RiskRow"
+            },
+            "title": "Risk Table",
+            "type": "array"
+          },
+          "software": {
+            "title": "Software",
+            "type": "string"
+          },
+          "synthetic_data": {
+            "default": true,
+            "title": "Synthetic Data",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "population",
+          "grouping",
+          "grouping_label",
+          "landmark_days",
+          "n",
+          "events",
+          "km",
+          "risk_table",
+          "log_rank",
+          "incidence",
+          "one_minus_km",
+          "incidence_at",
+          "cox",
+          "methods",
+          "warnings",
+          "software"
+        ],
+        "title": "Report",
         "type": "object"
       },
       "Review": {
@@ -2864,6 +3323,65 @@
         "title": "RisingTrend",
         "type": "object"
       },
+      "RiskCell": {
+        "description": "At a day since transplant: at risk then, and graft losses since the previous column.",
+        "properties": {
+          "day": {
+            "title": "Day",
+            "type": "integer"
+          },
+          "events": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Events"
+          },
+          "n_risk": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "N Risk"
+          }
+        },
+        "required": [
+          "day",
+          "n_risk",
+          "events"
+        ],
+        "title": "RiskCell",
+        "type": "object"
+      },
+      "RiskRow": {
+        "properties": {
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/RiskCell"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "group": {
+            "title": "Group",
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "cells"
+        ],
+        "title": "RiskRow",
+        "type": "object"
+      },
       "Schedule": {
         "additionalProperties": false,
         "description": "When the marker test is due, in months after the anchor date (e.g. transplant).",
@@ -3048,6 +3566,64 @@
         "title": "Severity",
         "type": "string"
       },
+      "ShownCurve": {
+        "description": "A curve as displayed: pooled steps, or none with the reason.",
+        "properties": {
+          "events": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Events"
+          },
+          "group": {
+            "title": "Group",
+            "type": "string"
+          },
+          "hidden_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden Reason"
+          },
+          "n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "N"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/Point"
+            },
+            "title": "Points",
+            "type": "array"
+          }
+        },
+        "required": [
+          "group",
+          "n",
+          "events",
+          "points",
+          "hidden_reason"
+        ],
+        "title": "ShownCurve",
+        "type": "object"
+      },
       "Status": {
         "description": "Where a flag is in the clinician's review.",
         "enum": [
@@ -3194,6 +3770,84 @@
           "rules"
         ],
         "title": "SurveillanceConfig",
+        "type": "object"
+      },
+      "TermOut": {
+        "properties": {
+          "events_exposed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events Exposed"
+          },
+          "hazard_ratio": {
+            "title": "Hazard Ratio",
+            "type": "number"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "lower": {
+            "title": "Lower",
+            "type": "number"
+          },
+          "n_exposed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Exposed"
+          },
+          "p_value": {
+            "title": "P Value",
+            "type": "number"
+          },
+          "ph_p_value": {
+            "title": "Ph P Value",
+            "type": "number"
+          },
+          "ph_violated": {
+            "title": "Ph Violated",
+            "type": "boolean"
+          },
+          "upper": {
+            "title": "Upper",
+            "type": "number"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "hazard_ratio",
+          "lower",
+          "upper",
+          "p_value",
+          "ph_p_value",
+          "ph_violated",
+          "n_exposed",
+          "events_exposed"
+        ],
+        "title": "TermOut",
         "type": "object"
       },
       "Threshold": {
@@ -4850,6 +5504,194 @@
         "summary": "The surveillance rules of a program (thresholds, target ranges, schedule)",
         "tags": [
           "surveillance"
+        ]
+      }
+    },
+    "/survival/analysis": {
+      "post": {
+        "description": "Kaplan-Meier with risk table and log-rank test, cumulative incidence with death as a\ncompeting event (and 1 - KM), a Cox model, and a methods paragraph.",
+        "operationId": "analysis_survival_analysis_post",
+        "parameters": [
+          {
+            "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+            "in": "header",
+            "name": "X-Requested-With",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Report"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such cohort in your center"
+          },
+          "422": {
+            "description": "Invalid request, or a landmark before the groups are known"
+          }
+        },
+        "summary": "Graft survival analysis",
+        "tags": [
+          "survival"
+        ]
+      }
+    },
+    "/survival/options": {
+      "get": {
+        "description": "Each grouping comes with the day after transplant from which it is known.",
+        "operationId": "options_survival_options_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Options"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Groupings and Cox covariates you can choose",
+        "tags": [
+          "survival"
+        ]
+      }
+    },
+    "/survival/report.csv": {
+      "post": {
+        "description": "Long format: section, group, day, metric, value.",
+        "operationId": "report_csv_survival_report_csv_post",
+        "parameters": [
+          {
+            "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+            "in": "header",
+            "name": "X-Requested-With",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/csv": {}
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such cohort in your center"
+          },
+          "422": {
+            "description": "Invalid request, or a landmark before the groups are known"
+          }
+        },
+        "summary": "The analysis as CSV",
+        "tags": [
+          "survival"
+        ]
+      }
+    },
+    "/survival/report.pdf": {
+      "post": {
+        "description": "Curves, risk table, forest plot, tables and the methods paragraph.",
+        "operationId": "report_pdf_survival_report_pdf_post",
+        "parameters": [
+          {
+            "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+            "in": "header",
+            "name": "X-Requested-With",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {}
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such cohort in your center"
+          },
+          "422": {
+            "description": "Invalid request, or a landmark before the groups are known"
+          }
+        },
+        "summary": "The analysis as a PDF report",
+        "tags": [
+          "survival"
         ]
       }
     },

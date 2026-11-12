@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, LineChart } from "lucide-react";
 import Link from "next/link";
 import { use, useState } from "react";
 
@@ -41,6 +41,11 @@ export function CohortView({ params }: { params: Promise<{ id: string }> }) {
           <ul className="list-disc space-y-0.5 pl-5 text-sm">
             {describeRules(cohort.data.rules).map((line) => <li key={line}>{line}</li>)}
           </ul>
+          <Button asChild variant="outline" size="sm">
+            <Link href={{ pathname: "/survival", query: { cohort: id } }}>
+              <LineChart aria-hidden className="size-4" /> Survival analysis of this cohort
+            </Link>
+          </Button>
         </CardContent>
       </Card>
 

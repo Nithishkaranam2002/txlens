@@ -20,6 +20,7 @@ from txlens_backend.api import (
     patients,
     review,
     surveillance,
+    survival,
     system,
 )
 from txlens_backend.api.deps import CSRF_HEADER, CSRF_HEADER_EXAMPLE, AppContext
@@ -122,6 +123,7 @@ def build_app(
     app.include_router(surveillance.router)
     app.include_router(documents.router)
     app.include_router(review.router)
+    app.include_router(survival.router)
     document_csrf_header(app)
     return app
 

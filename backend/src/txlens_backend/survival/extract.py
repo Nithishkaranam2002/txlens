@@ -28,6 +28,8 @@ DD_CFDNA_HIGH_PCT = 1.0  # "high risk of rejection" threshold (CLAUDE.md domain 
 HISTORY_OF_EVENT = ("OMOP Extension", "OMOP5165859")
 DGF = ("SNOMED", "426136000")  # delayed renal graft function
 ABMR = ("SNOMED", "1381981002")  # antibody-mediated rejection of transplant
+COLUMNS = ["person_id", "time", "status", "age", "organ", "donor_type", "dgf", "dsa_positive",
+           "dd_cfdna_high_day", "rejection_day", "abmr_day"]  # fmt: skip
 
 EXTRACT_SQL = f"""
 WITH {FACTS_CTE},
@@ -136,7 +138,7 @@ def to_frame(rows: list[Mapping[str, object]]) -> pd.DataFrame:
     not applicable)."""
     frame = pd.DataFrame(rows)
     if frame.empty:
-        return frame
+        return pd.DataFrame(columns=COLUMNS)
     times = [outcome(r["graft_loss_day"], r["death_day"], r["end_day"]) for r in rows]
     frame["time"] = [t for t, _ in times]
     frame["status"] = [s for _, s in times]
@@ -145,20 +147,7 @@ def to_frame(rows: list[Mapping[str, object]]) -> pd.DataFrame:
     )
     # Delayed graft function is a kidney diagnosis: not applicable (NaN) to heart grafts.
     frame["dgf"] = np.where(frame["organ"] == "heart", np.nan, frame["dgf"].astype(float))
-    columns = [
-        "person_id",
-        "time",
-        "status",
-        "age",
-        "organ",
-        "donor_type",
-        "dgf",
-        "dsa_positive",
-        "dd_cfdna_high_day",
-        "rejection_day",
-        "abmr_day",
-    ]
-    frame = frame[columns]
+    frame = frame[COLUMNS]
     return frame[frame["time"] >= 0].reset_index(drop=True)
 
 

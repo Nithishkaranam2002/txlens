@@ -19,6 +19,7 @@ const pages: [Role, string, string][] = [
   ["clinician", "/worklist", "Surveillance worklist"],
   ["clinician", `/patients/${seed().singleFlagPatient.id}`, "Results"],
   ["researcher", "/cohorts", "Cohort builder"],
+  ["researcher", "/survival", "Graft survival analysis"],
   ["admin", "/admin", "Admin"],
   ["clinician", "/review", "Review queue"],
   ["clinician", `/review/biopsy_document/${seed().review.documents.steward.id}`, "Kidney biopsy report: TCMR"],
@@ -50,4 +51,14 @@ test("the worklist can be used with the keyboard alone", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(acknowledge).toBeFocused(); // focus returns to the button that opened it
+});
+
+test("survival results (charts, risk table, forest plot, methods)", async ({ page }) => {
+  await login(page, "clinician");
+  await page.goto("/survival");
+  await page.getByRole("button", { name: "Run analysis" }).click();
+  await expect(page.getByRole("heading", { name: "Results · synthetic data" })).toBeVisible();
+  await page.mouse.move(0, 0); // the pointer off the button: axe would rate its hover shade
+  await page.waitForLoadState("networkidle");
+  await expectAccessible(page);
 });

@@ -12,12 +12,17 @@ export function ChartCard({
   columns,
   rows,
   children,
+  xLabel = "Date",
+  formatX = formatDate,
 }: {
   title: string;
   description?: string;
   columns: string[];
   rows: ValueRow[];
   children: ReactNode;
+  /** The first column: dates by default, or e.g. months since transplant. */
+  xLabel?: string;
+  formatX?: (value: string) => string;
 }) {
   return (
     <Card>
@@ -40,7 +45,7 @@ export function ChartCard({
                   <caption className="sr-only">{title} values</caption>
                   <thead>
                     <tr>
-                      <th scope="col" className="py-1 pr-4">Date</th>
+                      <th scope="col" className="py-1 pr-4">{xLabel}</th>
                       {columns.map((column) => (
                         <th key={column} scope="col" className="py-1 pr-4">{column}</th>
                       ))}
@@ -49,7 +54,7 @@ export function ChartCard({
                   <tbody>
                     {rows.map((row, i) => (
                       <tr key={`${row.date}-${i}`} className="border-t">
-                        <td className="py-1 pr-4">{formatDate(row.date)}</td>
+                        <td className="py-1 pr-4">{formatX(row.date)}</td>
                         {row.values.map((value, j) => (
                           <td key={j} className="py-1 pr-4 tabular-nums">{value ?? "—"}</td>
                         ))}

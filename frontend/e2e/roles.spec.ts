@@ -5,7 +5,7 @@ import { expectNoIdentifiers, identifierPattern, login, seed } from "./helpers";
 test("clinician sees patient names and MRNs", async ({ page }) => {
   await login(page, "clinician");
   await expect(page.getByRole("heading", { name: "Surveillance worklist" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(["Worklist", "Review queue", "Cohorts", "Review metrics"]);
+  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(["Worklist", "Review queue", "Cohorts", "Survival", "Review metrics"]);
   await expect(page.getByRole("table")).toBeVisible();
   const text = await page.getByRole("main").innerText();
   expect(text).toMatch(identifierPattern());
@@ -16,7 +16,7 @@ test("researcher sees pseudonyms only, nowhere a name", async ({ page }) => {
   const consoleLines: string[] = [];
   page.on("console", (message) => consoleLines.push(message.text()));
   await login(page, "researcher");
-  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(["Cohorts"]);
+  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(["Cohorts", "Survival"]);
 
   await page.getByLabel("Organ").click();
   await page.getByRole("option", { name: "Kidney" }).click();
@@ -37,14 +37,42 @@ test("researcher sees pseudonyms only, nowhere a name", async ({ page }) => {
   await expectNoIdentifiers(page, consoleLines);
 });
 
+test("researcher runs a survival analysis and exports it, all suppressed and de-identified", async ({ page }) => {
+  const consoleLines: string[] = [];
+  page.on("console", (message) => consoleLines.push(message.text()));
+  await login(page, "researcher");
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Survival" }).click();
+  await expect(page.getByRole("heading", { name: "Graft survival analysis" })).toBeVisible();
+  await page.getByRole("button", { name: "Run analysis" }).click();
+  await expect(page.getByRole("heading", { name: "Results · synthetic data" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Methods" })).toBeVisible();
+  await expect(page.getByText(/Synthetic data, for demonstration only/)).toBeVisible();
+  const main = await page.getByRole("main").innerText();
+  expect(main).not.toMatch(/\(\s*([1-9]|10)\s*\)/); // no interval count of 1-10 in the risk table
+  await expectNoIdentifiers(page, consoleLines);
+
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "CSV" }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toBe("graft-survival-synthetic.csv");
+
+  await page.getByLabel("Landmark (days)").fill("10");
+  await page.getByLabel("Compare by").click();
+  await page.getByRole("option", { name: "dd-cfDNA >= 1% in year 1" }).click();
+  await page.getByRole("button", { name: "Run analysis" }).click();
+  await expect(page.getByText(/immortal time bias/)).toBeVisible();
+});
+
 test("data steward has no cohort menu and a read-only, de-identified worklist", async ({ page }) => {
   await login(page, "data_steward");
   await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(["Worklist", "Review queue", "Review metrics"]);
   await expect(page.getByRole("table")).toBeVisible();
   await expect(page.getByRole("button", { name: /Acknowledge|Resolve/ })).toHaveCount(0);
   await expectNoIdentifiers(page);
-  await page.goto("/cohorts");
-  await expect(page.getByRole("heading", { name: "Not available for your role" })).toBeVisible();
+  for (const path of ["/cohorts", "/survival"]) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { name: "Not available for your role" })).toBeVisible();
+  }
 });
 
 test("admin sees no patient data", async ({ page }) => {
@@ -53,7 +81,7 @@ test("admin sees no patient data", async ({ page }) => {
   await expect(page.getByText("You have no access to patient data")).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(["Admin", "Review metrics"]);
   await expectNoIdentifiers(page);
-  for (const path of ["/worklist", `/patients/${seed().singleFlagPatient.id}`, "/cohorts"]) {
+  for (const path of ["/worklist", `/patients/${seed().singleFlagPatient.id}`, "/cohorts", "/survival"]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { name: "Not available for your role" })).toBeVisible();
     await expectNoIdentifiers(page);

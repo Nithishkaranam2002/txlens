@@ -6,9 +6,9 @@ import { areaOf, asRole, can, homeFor, landingFor, navFor, seesIdentifiers } fro
 
 describe("role navigation", () => {
   it.each([
-    ["clinician", ["Worklist", "Review queue", "Cohorts", "Review metrics"], "/worklist"],
+    ["clinician", ["Worklist", "Review queue", "Cohorts", "Survival", "Review metrics"], "/worklist"],
     ["data_steward", ["Worklist", "Review queue", "Review metrics"], "/worklist"],
-    ["researcher", ["Cohorts"], "/cohorts"],
+    ["researcher", ["Cohorts", "Survival"], "/cohorts"],
     ["admin", ["Admin", "Review metrics"], "/admin"],
   ] as const)("%s sees %j and lands on %s", (role, labels, home) => {
     expect(navFor(role).map((item) => item.label)).toEqual(labels);
@@ -37,6 +37,14 @@ describe("review queue access", () => {
     expect(can("admin", "metrics") && !can("researcher", "metrics")).toBe(true);
     expect(areaOf("/review/biopsy_document/abc")).toBe("queue");
     expect(areaOf("/review/metrics")).toBe("metrics");
+  });
+});
+
+describe("survival analysis access", () => {
+  it("clinicians and researchers analyse; data stewards and admins do not", () => {
+    expect(can("clinician", "survival") && can("researcher", "survival")).toBe(true);
+    expect(can("data_steward", "survival") || can("admin", "survival")).toBe(false);
+    expect(areaOf("/survival?cohort=abc")).toBe("survival");
   });
 });
 

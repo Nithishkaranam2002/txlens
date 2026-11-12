@@ -5,7 +5,8 @@
   so no single drop reveals fewer than 11 patients; the value shown is the true estimate at
   that time. The curve stops before the number at risk falls below 11.
 - A group with fewer than 11 events gets no curve at all.
-- Values read "at 1 year" come off the displayed curve, so they reveal nothing it does not.
+- Values "at 1 year" are the displayed curve's last step by then, with that step's day, so
+  they reveal nothing the curve does not (and never pass off an older value as the 1-year one).
 
 Exports are built from the already-suppressed result, never from raw numbers.
 """
@@ -94,8 +95,10 @@ def shown_curve(
     )
 
 
-def read_off(points: list[Point], day: float) -> float | None:
-    """The displayed curve's value at `day` (None past its last step or before its start)."""
-    if not points or not points[0].day <= day <= points[-1].day:
+def read_off(points: list[Point], day: float) -> Point | None:
+    """The last displayed step on or before `day`: its value is what the curve shows then.
+    None before the first step (only the starting value is shown), or past the curve's end."""
+    shown = [p for p in points[1:] if p.day <= day]
+    if not shown or day > points[-1].day:
         return None
-    return [p for p in points if p.day <= day][-1].estimate
+    return shown[-1]

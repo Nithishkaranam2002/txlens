@@ -104,8 +104,15 @@ class Query:
     params: dict[str, object]
 
 
-def compile_rules(rules: CohortRules) -> Query:
-    """One SQL condition per rule, over the `facts` row `f`."""
+def horizon_days(rules: CohortRules) -> int:
+    """The last day after transplant whose results the rules look at (0 if only baseline facts):
+    a survival analysis comparing this cohort must not start before it."""
+    return max([0, *(lab.days_from_transplant[1] for lab in rules.lab_rules)])
+
+
+def compile_rules(rules: CohortRules, as_of_day: int | None = None) -> Query:
+    """One SQL condition per rule, over the `facts` row `f`. With `as_of_day`, a condition
+    counts only if recorded by that day after transplant (what was known then)."""
     q = Query([], dict(FACTS_PARAMS))
     if rules.organ:
         q.steps.append((f"organ = {rules.organ}", "f.organ = :organ"))
@@ -131,9 +138,13 @@ def compile_rules(rules: CohortRules) -> Query:
             f"condition in {rules.condition_concept_ids} (or descendants)",
             "EXISTS (SELECT 1 FROM cdm.condition_occurrence co "
             "JOIN vocab.concept_ancestor ca ON ca.descendant_concept_id = co.condition_concept_id "
-            "WHERE co.person_id = f.person_id AND ca.ancestor_concept_id = ANY(:conditions))",
+            "WHERE co.person_id = f.person_id AND ca.ancestor_concept_id = ANY(:conditions)"
+            + ("" if as_of_day is None
+               else " AND co.condition_start_date <= f.transplant_date + :as_of_day") + ")",
         ))  # fmt: skip
         q.params["conditions"] = rules.condition_concept_ids
+        if as_of_day is not None:
+            q.params["as_of_day"] = as_of_day
     for n, lab in enumerate(rules.lab_rules):
         q.steps.append((lab_label(lab), lab_condition(n, lab)))
         vocabulary, code = LAB_CODES[lab.lab]
@@ -183,9 +194,9 @@ def preview(conn: Connection, rules: CohortRules) -> tuple[int, list[tuple[str, 
     return steps[-1][1], steps
 
 
-def member_ids(conn: Connection, rules: CohortRules) -> list[int]:
-    """person_id of every patient passing all rules."""
-    q = compile_rules(rules)
+def member_ids(conn: Connection, rules: CohortRules, as_of_day: int | None = None) -> list[int]:
+    """person_id of every patient passing all rules (with what was known by `as_of_day`)."""
+    q = compile_rules(rules, as_of_day)
     sql = (
         f"WITH {FACTS_CTE} SELECT f.person_id FROM facts f WHERE {all_of([c for _, c in q.steps])}"
     )

@@ -66,6 +66,12 @@ async function main() {
   await researcher.getByText(/Cohort size:/).waitFor();
   await shot(researcher, "cohort", 1000);
 
+  await researcher.goto(`${BASE_URL}/survival`);
+  await researcher.getByRole("button", { name: "Run analysis" }).click();
+  await researcher.getByRole("heading", { name: "Methods" }).waitFor();
+  await researcher.mouse.move(0, 0);
+  await shot(researcher, "survival", 2600);
+
   await browser.close();
 }
 

@@ -21,6 +21,12 @@ export type LabRule = Schemas["LabRule"];
 export type Cohort = Schemas["Cohort"];
 export type Preview = Schemas["Preview"];
 export type ConceptHit = Schemas["ConceptHit"];
+export type SurvivalRequest = Schemas["AnalysisRequest"];
+export type SurvivalReport = Schemas["Report"];
+export type SurvivalOptions = Schemas["Options"];
+export type ShownCurve = Schemas["ShownCurve"];
+export type CoxOut = Schemas["CoxOut"];
+export type RiskRow = Schemas["RiskRow"];
 export type Organ = NonNullable<IdentifiedPatient["organ"]>;
 
 export function isIdentified(patient: Patient): patient is IdentifiedPatient {

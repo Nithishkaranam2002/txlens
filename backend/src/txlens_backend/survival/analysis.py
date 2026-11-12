@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from lifelines.exceptions import ConvergenceError
 from pydantic import BaseModel
 
 from txlens_backend.deid import suppress
@@ -53,10 +54,12 @@ class LogRankOut(BaseModel):
 
 
 class IncidenceAt(BaseModel):
-    """Cumulative incidence of graft loss vs 1 - KM, read off the displayed curves."""
+    """Cumulative incidence of graft loss vs 1 - KM at a day, read off the displayed curves:
+    their last step by then (`step_day`); None while no step is shown yet."""
 
     group: str
     day: int
+    step_day: float | None
     cumulative_incidence: float | None
     one_minus_km: float | None
 
@@ -133,6 +136,14 @@ def risk_row(group: str, data: pd.DataFrame, landmark: int, threshold: int) -> R
     return RiskRow(group=group, cells=cells)
 
 
+def incidence_at_day(group: str, day: int, cif: ShownCurve, one_minus: ShownCurve) -> IncidenceAt:
+    """Both curves' displayed values by `day` (they step on the same graft losses)."""
+    a, b = read_off(cif.points, day), read_off(one_minus.points, day)
+    return IncidenceAt(group=group, day=day, step_day=a.day if a else None,
+                       cumulative_incidence=a.estimate if a else None,
+                       one_minus_km=b.estimate if b else None)  # fmt: skip
+
+
 def cox_part(population: pd.DataFrame, spec: Spec, warnings: list[str]) -> CoxOut | None:
     """Cox on the population from the covariates' horizon (or the landmark if later)."""
     if not spec.covariates:
@@ -142,7 +153,11 @@ def cox_part(population: pd.DataFrame, spec: Spec, warnings: list[str]) -> CoxOu
     if int((data["status"] == GRAFT_LOSS).sum()) < spec.threshold:
         warnings.append(f"No Cox model: fewer than {spec.threshold} graft losses.")
         return None
-    result = fit_cox(data, spec.covariates)
+    try:
+        result = fit_cox(data, spec.covariates)
+    except (ConvergenceError, ValueError, np.linalg.LinAlgError):
+        warnings.append("No Cox model: the fit did not converge on these patients.")
+        return None
     if result.missing:
         warnings.append(
             f"Cox model: {suppress(result.excluded, spec.threshold)} patients without a value for "
@@ -198,16 +213,8 @@ def analyse(frame: pd.DataFrame, groups: pd.Series, spec: Spec) -> Report:
             )
         )
         risk.append(risk_row(group, part, spec.landmark_days, spec.threshold))
-        incidence_at += [
-            IncidenceAt(
-                group=group,
-                day=day,
-                cumulative_incidence=read_off(cif[-1].points, day),
-                one_minus_km=read_off(one_minus[-1].points, day),
-            )
-            for day in INCIDENCE_DAYS
-            if day > spec.landmark_days
-        ]
+        incidence_at += [incidence_at_day(group, day, cif[-1], one_minus[-1])
+                         for day in INCIDENCE_DAYS if day > spec.landmark_days]  # fmt: skip
     test = None
     if labels.nunique() > 1:
         lr = log_rank(data["time"], (data["status"] == GRAFT_LOSS).astype(int), labels)

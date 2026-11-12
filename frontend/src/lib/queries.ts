@@ -5,7 +5,8 @@ import { toast } from "sonner";
 
 import { api, unwrap } from "@/lib/api/client";
 import { isApiError } from "@/lib/api/errors";
-import type { CohortRules, Flag, FlagStatus, Organ, Severity, WorklistPage } from "@/lib/types";
+import { cleanRequest } from "@/lib/survival";
+import type { CohortRules, Flag, FlagStatus, Organ, Severity, SurvivalRequest, WorklistPage } from "@/lib/types";
 
 export type WorklistFilters = { organ?: Organ; severity?: Severity; status?: FlagStatus };
 
@@ -20,6 +21,8 @@ export const keys = {
   cohort: (id: string) => ["cohorts", id] as const,
   members: (id: string, offset: number) => ["cohorts", id, "members", offset] as const,
   concepts: (q: string) => ["concepts", q] as const,
+  survivalOptions: ["survival", "options"] as const,
+  survival: (request: SurvivalRequest) => ["survival", request] as const,
 };
 
 export const PAGE_SIZE = 50;
@@ -165,5 +168,24 @@ export function useCohortMembers(id: string, offset: number) {
         params: { path: { cohort_id: id }, query: { limit: PAGE_SIZE, offset } },
       })),
     placeholderData: (previous) => previous,
+  });
+}
+
+export function useSurvivalOptions() {
+  return useQuery({
+    queryKey: keys.survivalOptions,
+    queryFn: async () => unwrap(await api.GET("/survival/options")),
+    staleTime: Infinity,
+  });
+}
+
+/** The analysis for a submitted request (null: nothing submitted yet). */
+export function useSurvivalAnalysis(request: SurvivalRequest | null) {
+  return useQuery({
+    queryKey: keys.survival(request ?? ({} as SurvivalRequest)),
+    queryFn: async () => unwrap(await api.POST("/survival/analysis", { body: cleanRequest(request!) })),
+    enabled: request !== null,
+    staleTime: 5 * 60_000,
+    retry: false,
   });
 }

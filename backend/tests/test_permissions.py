@@ -39,6 +39,10 @@ MATRIX: dict[str, dict[Role | str, int]] = {
     "GET /review/items/biopsy_document/{rid}": {C: 200, R: 403, S: 200, A: 403, ANON: 401},
     "POST /review/items/biopsy_document/{rid}": {C: 200, R: 403, S: 200, A: 403, ANON: 401},
     "GET /review/metrics":         {C: 200, R: 403, S: 200, A: 200, ANON: 401},
+    "GET /survival/options":       {C: 200, R: 200, S: 403, A: 403, ANON: 401},
+    "POST /survival/analysis":     {C: 200, R: 200, S: 403, A: 403, ANON: 401},
+    "POST /survival/report.csv":   {C: 200, R: 200, S: 403, A: 403, ANON: 401},
+    "POST /survival/report.pdf":   {C: 200, R: 200, S: 403, A: 403, ANON: 401},
 }  # fmt: skip
 CALLERS: list[Role | str] = [C, R, S, A, ANON]
 BODY = {"name": "matrix", "rules": {"organ": "kidney"}}
@@ -109,6 +113,8 @@ def test_permission_matrix(
         response = client.post(path, json={"action": "approve"})
     elif path.startswith("/flags/"):
         response = client.post(path, json={"note": "permission matrix"})
+    elif path.startswith("/survival/"):
+        response = client.post(path, json={"grouping": "donor_type"})
     else:
         body = BODY["rules"] if path.endswith("preview") else BODY
         response = client.post(path, json=body)

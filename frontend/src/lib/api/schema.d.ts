@@ -455,6 +455,87 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/survival/analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Graft survival analysis
+         * @description Kaplan-Meier with risk table and log-rank test, cumulative incidence with death as a
+         *     competing event (and 1 - KM), a Cox model, and a methods paragraph.
+         */
+        post: operations["analysis_survival_analysis_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/survival/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Groupings and Cox covariates you can choose
+         * @description Each grouping comes with the day after transplant from which it is known.
+         */
+        get: operations["options_survival_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/survival/report.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The analysis as CSV
+         * @description Long format: section, group, day, metric, value.
+         */
+        post: operations["report_csv_survival_report_csv_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/survival/report.pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The analysis as a PDF report
+         * @description Curves, risk table, forest plot, tables and the methods paragraph.
+         */
+        post: operations["report_pdf_survival_report_pdf_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/worklist": {
         parameters: {
             query?: never;
@@ -496,6 +577,44 @@ export interface components {
             qc_agreement: number | null;
             /** Qc Examples */
             qc_examples: number;
+        };
+        /**
+         * AnalysisRequest
+         * @description What to analyse. Graft loss (death-censored) is always the outcome.
+         */
+        AnalysisRequest: {
+            /**
+             * Cohort Id
+             * @description Population: a saved cohort (default: every patient).
+             */
+            cohort_id?: string | null;
+            /**
+             * Compare Cohort Id
+             * @description grouping = cohort: members of this cohort vs the rest.
+             */
+            compare_cohort_id?: string | null;
+            /**
+             * Covariates
+             * @default [
+             *       "age_per_decade",
+             *       "deceased_donor",
+             *       "dsa_positive",
+             *       "dgf",
+             *       "heart"
+             *     ]
+             */
+            covariates: ("age_per_decade" | "deceased_donor" | "dsa_positive" | "dgf" | "heart")[];
+            /**
+             * Grouping
+             * @default none
+             * @enum {string}
+             */
+            grouping: "none" | "organ" | "donor_type" | "age_band" | "dgf" | "dsa_month1" | "dd_cfdna_year1" | "rejection_year1" | "cohort";
+            /**
+             * Landmark Days
+             * @description Start of follow-up, in days after transplant (default: when the groups are known).
+             */
+            landmark_days?: number | null;
         };
         /**
          * BiopsyResult
@@ -628,6 +747,17 @@ export interface components {
              * @enum {string}
              */
             source: "record" | "note";
+        };
+        /** CoxOut */
+        CoxOut: {
+            /** Events */
+            events: number | string;
+            /** Landmark Days */
+            landmark_days: number;
+            /** N */
+            n: number | string;
+            /** Terms */
+            terms: components["schemas"]["TermOut"][];
         };
         /**
          * DateRange
@@ -962,6 +1092,23 @@ export interface components {
             transplant_date: string | null;
         };
         /**
+         * IncidenceAt
+         * @description Cumulative incidence of graft loss vs 1 - KM at a day, read off the displayed curves:
+         *     their last step by then (`step_day`); None while no step is shown yet.
+         */
+        IncidenceAt: {
+            /** Cumulative Incidence */
+            cumulative_incidence: number | null;
+            /** Day */
+            day: number;
+            /** Group */
+            group: string;
+            /** One Minus Km */
+            one_minus_km: number | null;
+            /** Step Day */
+            step_day: number | null;
+        };
+        /**
          * Lab
          * @description One lab result (value in the standard unit).
          */
@@ -1020,6 +1167,23 @@ export interface components {
             /** Meaning */
             meaning: string;
             severity: components["schemas"]["Severity"];
+        };
+        /** LogRankOut */
+        LogRankOut: {
+            /** Chi2 */
+            chi2: number;
+            /** Df */
+            df: number;
+            /** Expected */
+            expected: {
+                [key: string]: number;
+            };
+            /** Observed */
+            observed: {
+                [key: string]: number | string;
+            };
+            /** P Value */
+            p_value: number;
         };
         /**
          * LoginRequest
@@ -1161,6 +1325,25 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /** Option */
+        Option: {
+            /** Horizon Days */
+            horizon_days: number;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+        };
+        /**
+         * Options
+         * @description Groupings (with the day each is known) and Cox covariates the API accepts.
+         */
+        Options: {
+            /** Covariates */
+            covariates: components["schemas"]["Option"][];
+            /** Groupings */
+            groupings: components["schemas"]["Option"][];
+        };
         /**
          * PatientFlag
          * @description A flag with its status history, oldest event first.
@@ -1235,6 +1418,20 @@ export interface components {
             low: number;
             /** To Month */
             to_month?: number | null;
+        };
+        /**
+         * Point
+         * @description One displayed step: days since transplant, estimate and 95% CI.
+         */
+        Point: {
+            /** Day */
+            day: number;
+            /** Estimate */
+            estimate: number;
+            /** Lower */
+            lower: number | null;
+            /** Upper */
+            upper: number | null;
         };
         /**
          * Preview
@@ -1349,6 +1546,47 @@ export interface components {
              * @default 0
              */
             start_after_days: number;
+        };
+        /**
+         * Report
+         * @description Everything shown for one analysis. Counts are suppressed; synthetic data only.
+         */
+        Report: {
+            cox: components["schemas"]["CoxOut"] | null;
+            /** Events */
+            events: number | string;
+            /** Grouping */
+            grouping: string;
+            /** Grouping Label */
+            grouping_label: string;
+            /** Incidence */
+            incidence: components["schemas"]["ShownCurve"][];
+            /** Incidence At */
+            incidence_at: components["schemas"]["IncidenceAt"][];
+            /** Km */
+            km: components["schemas"]["ShownCurve"][];
+            /** Landmark Days */
+            landmark_days: number;
+            log_rank: components["schemas"]["LogRankOut"] | null;
+            /** Methods */
+            methods: string;
+            /** N */
+            n: number | string;
+            /** One Minus Km */
+            one_minus_km: components["schemas"]["ShownCurve"][];
+            /** Population */
+            population: string;
+            /** Risk Table */
+            risk_table: components["schemas"]["RiskRow"][];
+            /** Software */
+            software: string;
+            /**
+             * Synthetic Data
+             * @default true
+             */
+            synthetic_data: boolean;
+            /** Warnings */
+            warnings: string[];
         };
         /**
          * Review
@@ -1488,6 +1726,25 @@ export interface components {
             severity: components["schemas"]["Severity"];
         };
         /**
+         * RiskCell
+         * @description At a day since transplant: at risk then, and graft losses since the previous column.
+         */
+        RiskCell: {
+            /** Day */
+            day: number;
+            /** Events */
+            events: number | string;
+            /** N Risk */
+            n_risk: number | string;
+        };
+        /** RiskRow */
+        RiskRow: {
+            /** Cells */
+            cells: components["schemas"]["RiskCell"][];
+            /** Group */
+            group: string;
+        };
+        /**
          * Schedule
          * @description When the marker test is due, in months after the anchor date (e.g. transplant).
          */
@@ -1564,6 +1821,22 @@ export interface components {
          */
         Severity: "high" | "medium" | "low";
         /**
+         * ShownCurve
+         * @description A curve as displayed: pooled steps, or none with the reason.
+         */
+        ShownCurve: {
+            /** Events */
+            events: number | string;
+            /** Group */
+            group: string;
+            /** Hidden Reason */
+            hidden_reason: string | null;
+            /** N */
+            n: number | string;
+            /** Points */
+            points: components["schemas"]["Point"][];
+        };
+        /**
          * Status
          * @description Where a flag is in the clinician's review.
          * @enum {string}
@@ -1612,6 +1885,29 @@ export interface components {
             title: string;
             /** Version */
             version: number;
+        };
+        /** TermOut */
+        TermOut: {
+            /** Events Exposed */
+            events_exposed: number | string | null;
+            /** Hazard Ratio */
+            hazard_ratio: number;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Lower */
+            lower: number;
+            /** N Exposed */
+            n_exposed: number | string | null;
+            /** P Value */
+            p_value: number;
+            /** Ph P Value */
+            ph_p_value: number;
+            /** Ph Violated */
+            ph_violated: boolean;
+            /** Upper */
+            upper: number;
         };
         /**
          * Threshold
@@ -2599,6 +2895,149 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    analysis_survival_analysis_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Any non-empty value; requests without it get 403 (CSRF defence). */
+                "X-Requested-With"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalysisRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Report"];
+                };
+            };
+            /** @description No such cohort in your center */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request, or a landmark before the groups are known */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    options_survival_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Options"];
+                };
+            };
+        };
+    };
+    report_csv_survival_report_csv_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Any non-empty value; requests without it get 403 (CSRF defence). */
+                "X-Requested-With"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalysisRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": unknown;
+                };
+            };
+            /** @description No such cohort in your center */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request, or a landmark before the groups are known */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    report_pdf_survival_report_pdf_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Any non-empty value; requests without it get 403 (CSRF defence). */
+                "X-Requested-With"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalysisRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
+                };
+            };
+            /** @description No such cohort in your center */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request, or a landmark before the groups are known */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
