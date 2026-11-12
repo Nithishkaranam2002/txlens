@@ -1,0 +1,67 @@
+{
+  "answer_relevancy": {
+    "high": 0.8056,
+    "low": 0.6852,
+    "value": 0.7463
+  },
+  "citation_supported": {
+    "high": 0.72,
+    "low": 0.32,
+    "value": 0.52
+  },
+  "citation_supported_or_partly": {
+    "high": 1.0,
+    "low": 1.0,
+    "value": 1.0
+  },
+  "citations": 25,
+  "cost_per_question_usd": 0.0012218399999999999,
+  "data_questions": 10,
+  "execution_accuracy": {
+    "high": 1.0,
+    "low": 1.0,
+    "value": 1.0
+  },
+  "faithfulness": {
+    "high": 1.0,
+    "low": 1.0,
+    "value": 1.0
+  },
+  "gaps": 0,
+  "judge_model": "openai/gpt-5.6-luna",
+  "latency_median_ms": 7044,
+  "latency_p90_ms": 12304,
+  "literature_questions": 5,
+  "red_team_passed": [
+    25,
+    25
+  ],
+  "scored": 10,
+  "spend": {
+    "batch": "eval-copilot-sample",
+    "batch_spent_usd": 0.093256,
+    "cap_usd": 1.0,
+    "copilot_usd": 0.0183276,
+    "copilot_without_cache_usd": 0.0183276,
+    "judge_usd": 0.016873600000000002
+  },
+  "sql_used_share": {
+    "high": 0.8,
+    "low": 0.2,
+    "value": 0.5
+  },
+  "structured_not_sql": {
+    "high": 1.0,
+    "low": 0.5,
+    "value": 0.8333
+  },
+  "tool_choice_accuracy": {
+    "high": 1.0,
+    "low": 0.7,
+    "value": 0.9
+  },
+  "unanswerable_declined": [
+    0,
+    0
+  ]
+}

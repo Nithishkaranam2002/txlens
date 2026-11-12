@@ -102,11 +102,38 @@ def survival_lines(data: dict[str, Any] | None) -> list[str]:
     ]  # fmt: skip
 
 
+def copilot_lines(data: dict[str, Any] | None) -> list[str]:
+    """Research copilot headline (copilot.json, the full run), or a note that it has not run."""
+    if data is None:
+        return ["Not run yet (`make copilot-report`; `make copilot-sample` for the sample)."]
+
+    def pct(key: str) -> str:
+        e = data[key]
+        return f"{e['value']:.1%} ({e['low']:.1%}-{e['high']:.1%})"
+
+    red, declined = data["red_team_passed"], data["unanswerable_declined"]
+    return [
+        f"- Data questions ({data['scored']}): execution accuracy {pct('execution_accuracy')}, "
+        f"tool choice {pct('tool_choice_accuracy')}, structured tool where one fits "
+        f"{pct('structured_not_sql')}.",
+        f"- Literature ({data['literature_questions']}): faithfulness "
+        f"{data['faithfulness']['value']:.2f}, answer relevancy "
+        f"{data['answer_relevancy']['value']:.2f} (RAGAS, judge `{data['judge_model']}`); "
+        f"citations supported {pct('citation_supported')}, supported or partly "
+        f"{pct('citation_supported_or_partly')}; unanswerable declined {declined[0]} of "
+        f"{declined[1]}.",
+        f"- Red team: {red[0]} of {red[1]} attacks refused or neutralized.",
+        f"- ${data['cost_per_question_usd']:.4f} per question; latency median "
+        f"{data['latency_median_ms'] / 1000:.1f} s.",
+    ]  # fmt: skip
+
+
 def render(folder: Path) -> str:
     biopsy = load("extraction_systems.json", folder)
     notes = load("notes_nlp.json", folder)
     mapping = load("mapping_accuracy.json", folder)
     survival = load("survival.json", folder)
+    copilot = load("copilot.json", folder)
     rows = [
         *(biopsy_rows(biopsy) if biopsy else []),
         *(note_rows(notes, NOTES_SAMPLE, "Notes, held-out sample") if notes else []),
@@ -149,6 +176,10 @@ def render(folder: Path) -> str:
         "## Survival analysis ([survival.md](survival.md))",
         "",
         *survival_lines(survival),
+        "",
+        "## Research copilot ([copilot.md](copilot.md))",
+        "",
+        *copilot_lines(copilot),
         "",
     ])  # fmt: skip
 

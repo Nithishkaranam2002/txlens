@@ -79,6 +79,8 @@ REJECTED = {
     f"SELECT DISTINCT organ FROM {P}": "neither an aggregate",
     f"SELECT organ, {N} FROM {P}": "neither an aggregate nor a GROUP BY",
     f"SELECT {N} FROM {P} GROUP BY age_at_transplant / 10": "plain columns",
+    "SELECT value_as_number, count(DISTINCT person_id) FROM copilot.measurement "
+    "GROUP BY value_as_number": "individual values",
     f"SELECT age_at_transplant >= 18 AS adult, {N} FROM {P} GROUP BY 1": "plain columns",
     f"SELECT {N} + age_at_transplant FROM {P} GROUP BY age_at_transplant": "neither an aggregate",
     # aggregates that leak individuals or hide counts

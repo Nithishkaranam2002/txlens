@@ -5,8 +5,9 @@ description = "Evaluation scripts for extraction, mapping, RAG and text-to-SQL"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "txlens-backend",
- "numpy>=2",
- "httpx>=0.28.1",
+    "numpy>=2",
+    "httpx>=0.28.1",
+    "ragas==0.4.3",
 ]
 
 [tool.uv.sources]

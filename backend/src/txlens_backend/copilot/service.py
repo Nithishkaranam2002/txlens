@@ -44,6 +44,8 @@ class CopilotDeps:
     engine: Engine
     embedder: Embedder
     completion: Callable[..., Any] | None = None  # None: litellm.completion
+    budget_batch: str | None = None  # None: the center's monthly copilot budget
+    budget_cap_usd: float | None = None  # None: LLM_BUDGET_USD
 
 
 class Message(BaseModel):
@@ -149,9 +151,11 @@ def save_message(conn: Connection, conversation_id: str, role: str, content: str
 
 
 def budget_for(deps: CopilotDeps, tenant_id: str) -> Budget:
-    """This center's copilot budget for the current calendar month."""
+    """This center's copilot budget for the current calendar month (or the deps' own batch,
+    e.g. an evaluation run with its own cap)."""
     month = datetime.now(UTC).strftime("%Y-%m")
-    budget = Budget(deps.engine, f"copilot:{tenant_id}:{month}", deps.settings.llm_budget_usd)
+    batch = deps.budget_batch or f"copilot:{tenant_id}:{month}"
+    budget = Budget(deps.engine, batch, deps.budget_cap_usd or deps.settings.llm_budget_usd)
     budget.open()
     return budget
 

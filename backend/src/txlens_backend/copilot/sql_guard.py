@@ -8,7 +8,8 @@ Generated SQL is parsed with sqlglot (Postgres) and accepted only if:
   column exists there (sqlglot `qualify` against SCHEMA);
 - it returns aggregates only: the outermost SELECT has count(DISTINCT person_id) (the cell
   size, used for suppression), every other output is an aggregate or a GROUP BY column, and
-  GROUP BY keys are bare columns of the views, never person_id or another row id;
+  GROUP BY keys are bare columns of the views, never person_id, another row id or a measured
+  value (each distinct value would be a row);
 - aggregates appear only in that outermost SELECT and take a bare column (count takes * or
   person_id), so no inner query or expression can carry a small count out (e.g.
   `sum(CASE ...)`, or a CTE's count shown as a group key);
@@ -55,6 +56,8 @@ SCHEMA: dict[str, dict[str, dict[str, str]]] = {
                              "max_levels_of_separation": INT},
     },
 }  # fmt: skip
+# Measured values: as GROUP BY keys they would list individual results one per row.
+CONTINUOUS = frozenset({"value_as_number"})
 AGGREGATES: tuple[type[exp.Expression], ...] = (
     exp.Count, exp.Avg, exp.Stddev, exp.StddevSamp, exp.StddevPop, exp.PercentileCont,
 )  # fmt: skip
@@ -212,6 +215,9 @@ def outputs(outer: exp.Select, names: dict[str, str]) -> list[Output]:
             raise SqlRejectedError("GROUP BY only plain columns of the copilot views")
         if key.name == PERSON or (key.name.endswith("_id") and not key.name.endswith("concept_id")):
             raise SqlRejectedError(f"grouping by {key.name} would return one row per record")
+        if key.name in CONTINUOUS:
+            raise SqlRejectedError(f"grouping by {key.name} would list individual values; "
+                                   "use avg, stddev or percentile_cont instead")  # fmt: skip
     found: list[Output] = []
     for projection in outer.expressions:
         value = projection.unalias()

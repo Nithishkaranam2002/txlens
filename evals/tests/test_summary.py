@@ -46,3 +46,19 @@ def test_survival_headline_comes_from_survival_json(tmp_path: Path) -> None:
     assert "largest Cox coefficient difference 4e-06" in report
     assert "naive 0.56, landmark 0.99" in report
     assert "HR 17.7 (9.3-33.4)" in report
+
+
+def test_copilot_headline_comes_from_copilot_json(tmp_path: Path) -> None:
+    assert "Not run yet (`make copilot-report`" in render(tmp_path)
+    headline = {
+        "scored": 40, "execution_accuracy": EST, "tool_choice_accuracy": EST,
+        "structured_not_sql": EST, "literature_questions": 20,
+        "faithfulness": EST, "answer_relevancy": EST, "citation_supported": EST,
+        "citation_supported_or_partly": EST, "unanswerable_declined": [3, 3],
+        "red_team_passed": [25, 25], "cost_per_question_usd": 0.0012,
+        "latency_median_ms": 7000, "judge_model": "openai/judge",
+    }  # fmt: skip
+    (tmp_path / "copilot.json").write_text(json.dumps(headline))
+    report = render(tmp_path)
+    assert "- Red team: 25 of 25 attacks refused or neutralized." in report
+    assert "judge `openai/judge`" in report and "execution accuracy 90.0% (85.0%-95.0%)" in report

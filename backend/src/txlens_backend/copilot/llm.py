@@ -28,7 +28,7 @@ from txlens_backend.documents import cache
 from txlens_backend.documents.budget import Budget
 from txlens_backend.documents.llm import price_per_token
 
-PROMPT_VERSION = "copilot-2026-11-12.2"  # .2: rounding, no tool names
+PROMPT_VERSION = "copilot-2026-11-12.3"  # .2: rounding, no tool names; .3: lab precision
 MAX_OUTPUT_TOKENS = 2500  # includes reasoning tokens
 VALIDATION_RETRIES = 1
 NETWORK_RETRIES = 2
