@@ -71,3 +71,25 @@ test("another center's patient is simply Not found", async ({ page }) => {
   await page.goto(`/patients/${otherCenterPatient.pseudonym}`);
   await expect(page.getByRole("heading", { name: "Not found" })).toBeVisible();
 });
+
+test("a condition read from notes: clinicians see the sentence, researchers only the badge", async ({ page }) => {
+  const { noteConditionPatient: noted } = seed();
+  await login(page, "clinician");
+  await page.goto(`/patients/${noted.id}`);
+  const badge = page.getByRole("button", { name: /From note: show the sentence \(mentioned in 2 notes\)/ });
+  await badge.click();
+  await expect(page.getByText(`HPI: ${noted.givenName} reports graft rejection today.`)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Log out" }).click();
+  await page.waitForURL(/\/login/);
+
+  const consoleLines: string[] = [];
+  page.on("console", (message) => consoleLines.push(message.text()));
+  await login(page, "researcher");
+  await page.goto(`/patients/${noted.pseudonym}`);
+  await expect(page.getByText("from note")).toBeVisible();
+  await expect(page.getByText("mentioned in 2 notes")).toBeVisible();
+  await expect(page.getByRole("button", { name: /From note: show the sentence/ })).toHaveCount(0);
+  await expect(page.getByText(/reports graft rejection/)).toHaveCount(0);
+  await expectNoIdentifiers(page, consoleLines);
+});

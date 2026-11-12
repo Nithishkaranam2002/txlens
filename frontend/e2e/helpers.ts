@@ -8,6 +8,7 @@ export type Seed = {
   passwords: Record<Role, string>;
   singleFlagPatient: { id: number; name: string };
   otherCenterPatient: { id: number; pseudonym: string };
+  noteConditionPatient: { id: number; pseudonym: string; givenName: string; condition: string };
   names: string[];
   mrns: string[];
 };

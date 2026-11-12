@@ -3,6 +3,11 @@
 The identified path is the only code that reads `app.patient_identity`. The de-identified
 path never joins it: ids become keyed pseudonyms, dates move by a per-patient shift, birth
 years become age bands, and notes show only their date.
+
+Conditions read from clinic notes (NLP) are shown once per concept, at the first note that
+mentions it, with the number of notes. Their evidence sentence follows the viewer's role:
+clinicians see it as written (identifiers put back from `app.note_phi_span`), data stewards
+the de-identified sentence, researchers nothing but the "from note" source.
 """
 
 from dataclasses import dataclass
@@ -14,8 +19,10 @@ from sqlalchemy import Connection, Row, text
 
 from txlens_backend import deid
 from txlens_backend.clinical_codes import BIOPSY, DSA_LOCAL, LABS, TRANSPLANT
+from txlens_backend.notes.store import phi_spans
 from txlens_backend.services.biopsies import BiopsyResult, results_by_procedure
 from txlens_backend.services.facts import FACTS_CTE, FACTS_PARAMS, concept_keys, descendant_ids
+from txlens_pipelines.deid_notes import reidentify
 
 Organ = Literal["kidney", "heart"]
 DonorType = Literal["living", "deceased"]
@@ -70,12 +77,24 @@ class Drug(BaseModel):
     drug: str | None
 
 
+class NoteEvidence(BaseModel):
+    """The first note a condition was read from. `note_id`: clinicians only. `sentence`: as
+    written for clinicians, de-identified for data stewards, never for researchers."""
+
+    date: date
+    note_id: int | None = None
+    sentence: str | None = None
+
+
 class Condition(BaseModel):
-    """One condition."""
+    """One condition: from the record, or read from clinic notes ("note")."""
 
     date: date
     concept_id: int
     condition: str | None
+    source: Literal["record", "note"] = "record"
+    note_count: int | None = None  # notes mentioning it (source "note")
+    evidence: NoteEvidence | None = None
 
 
 class Procedure(BaseModel):
@@ -269,16 +288,11 @@ def timeline(conn: Connection, viewer: Viewer, person_id: int) -> Timeline:
             )
             for r in events(conn, "drug_exposure", "drug", "drug_exposure_start_date", person_id)
         ],
-        conditions=[
-            Condition(
-                date=r.condition_start_date + move,
-                concept_id=r.condition_concept_id,
-                condition=r.concept_name or r.condition_source_value,
-            )
-            for r in events(
-                conn, "condition_occurrence", "condition", "condition_start_date", person_id
-            )
-        ],
+        conditions=sorted(
+            record_conditions(conn, person_id, move)
+            + note_conditions(conn, viewer, person_id, move),
+            key=lambda c: c.date,
+        ),
         procedures=procedures(
             conn,
             person_id,
@@ -303,6 +317,73 @@ def events(
             {"p": person_id},
         ).all()
     )
+
+
+def record_conditions(conn: Connection, person_id: int, move: timedelta) -> list[Condition]:
+    """Conditions from the record (and biopsy reports): every row except note NLP rows."""
+    rows = conn.execute(
+        text(
+            "SELECT e.condition_start_date, e.condition_concept_id, e.condition_source_value, "
+            "c.concept_name FROM cdm.condition_occurrence e "
+            "LEFT JOIN vocab.concept c ON c.concept_id = e.condition_concept_id "
+            "WHERE e.person_id = :p AND NOT EXISTS (SELECT 1 FROM app.note_cdm_row r "
+            "WHERE r.cdm_id = e.condition_occurrence_id) "
+            "ORDER BY e.condition_start_date, e.condition_occurrence_id"
+        ),
+        {"p": person_id},
+    ).all()
+    return [
+        Condition(date=r.condition_start_date + move, concept_id=r.condition_concept_id,
+                  condition=r.concept_name or r.condition_source_value)
+        for r in rows
+    ]  # fmt: skip
+
+
+# One row per concept: its first note, the evidence sentence's offsets, and how many notes.
+NOTE_CONDITIONS_SQL = text(
+    """
+    SELECT * FROM (
+        SELECT e.condition_concept_id, c.concept_name, e.condition_source_value,
+               e.condition_start_date, n.note_id, m.sentence_start,
+               CASE WHEN :evidence THEN substr(n.note_text, m.sentence_start + 1,
+                                               m.sentence_end - m.sentence_start) END AS sentence,
+               count(*) OVER (PARTITION BY e.condition_concept_id) AS note_count,
+               row_number() OVER (PARTITION BY e.condition_concept_id
+                                  ORDER BY e.condition_start_date, n.note_id) AS rank
+        FROM cdm.condition_occurrence e
+        JOIN app.note_cdm_row r ON r.cdm_id = e.condition_occurrence_id
+        JOIN app.note_mention m ON m.mention_id = r.mention_id
+        JOIN cdm.note n ON n.note_source_value = r.note_source_value
+        LEFT JOIN vocab.concept c ON c.concept_id = e.condition_concept_id
+        WHERE e.person_id = :p
+    ) first WHERE rank = 1
+    """
+)
+
+
+def note_conditions(
+    conn: Connection, viewer: Viewer, person_id: int, move: timedelta
+) -> list[Condition]:
+    """Conditions read from notes, once per concept, with evidence shaped for the viewer."""
+    rows = conn.execute(NOTE_CONDITIONS_SQL, {"p": person_id, "evidence": viewer.sees_evidence})
+    found = rows.all()
+    spans = phi_spans(conn, [r.note_id for r in found]) if viewer.identified else {}
+    conditions = []
+    for r in found:
+        sentence = r.sentence
+        if sentence is not None and viewer.identified:
+            sentence = reidentify(sentence, spans.get(r.note_id, []), r.sentence_start)
+        evidence = NoteEvidence(
+            date=r.condition_start_date + move,
+            note_id=r.note_id if viewer.identified else None,
+            sentence=sentence.strip() if sentence else None,
+        )
+        conditions.append(
+            Condition(date=r.condition_start_date + move, concept_id=r.condition_concept_id,
+                      condition=r.concept_name or r.condition_source_value, source="note",
+                      note_count=r.note_count, evidence=evidence)
+        )  # fmt: skip
+    return conditions
 
 
 def labs(conn: Connection, person_id: int, move: timedelta) -> list[Lab]:

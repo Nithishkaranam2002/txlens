@@ -289,7 +289,7 @@
         "type": "object"
       },
       "Condition": {
-        "description": "One condition.",
+        "description": "One condition: from the record, or read from clinic notes (\"note\").",
         "properties": {
           "concept_id": {
             "title": "Concept Id",
@@ -309,6 +309,36 @@
           "date": {
             "format": "date",
             "title": "Date",
+            "type": "string"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NoteEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "note_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note Count"
+          },
+          "source": {
+            "default": "record",
+            "enum": [
+              "record",
+              "note"
+            ],
+            "title": "Source",
             "type": "string"
           }
         },
@@ -1437,6 +1467,43 @@
           "active_days"
         ],
         "title": "NewPositive",
+        "type": "object"
+      },
+      "NoteEvidence": {
+        "description": "The first note a condition was read from. `note_id`: clinicians only. `sentence`: as\nwritten for clinicians, de-identified for data stewards, never for researchers.",
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "note_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note Id"
+          },
+          "sentence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentence"
+          }
+        },
+        "required": [
+          "date"
+        ],
+        "title": "NoteEvidence",
         "type": "object"
       },
       "NoteMeta": {

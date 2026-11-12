@@ -1,9 +1,9 @@
 """Seed a throwaway database for the Playwright end-to-end tests and serve the API on it.
 
-Same synthetic data as the API tests (no Spark needed): the generated patients, demo users with
-test-only passwords and a surveillance run as of 2025-06-30. Writes `frontend/e2e/.seed.json`
-with the ids and names the browser tests look for. The database is dropped and rebuilt on every
-run, so tests always start from the same state.
+Same synthetic data as the API tests (no Spark needed): the generated patients, demo users
+with test-only passwords, a surveillance run as of 2025-06-30 and one condition read from
+notes. Writes `frontend/e2e/.seed.json` with the ids and names the browser tests look for.
+The database is dropped and rebuilt on every run, so tests always start from the same state.
 
 `uv run python backend/tests/e2e_seed.py --serve 8001` (the Playwright config does this) then
 serves the API on that database. The owner URL comes from the usual settings (.env or the
@@ -20,6 +20,7 @@ import psycopg
 import uvicorn
 from api_dataset import build, load
 from db_testutils import migrate
+from note_testutils import NoteCondition, seed_note_condition
 from pydantic import SecretStr
 from sqlalchemy import Engine, create_engine, pool, text
 from sqlalchemy.engine import make_url
@@ -58,7 +59,7 @@ def recreate_database(owner_url: str) -> str:
     return url
 
 
-def facts(owner: Engine, deid_key: str) -> dict[str, object]:
+def facts(owner: Engine, deid_key: str, noted: NoteCondition) -> dict[str, object]:
     """Ids and names the browser tests need."""
     with owner.connect() as conn:
         single = conn.execute(text(
@@ -82,6 +83,10 @@ def facts(owner: Engine, deid_key: str) -> dict[str, object]:
         "otherCenterPatient": {
             "id": other, "pseudonym": pseudonym(deid_key, "center_b", other),
         },
+        "noteConditionPatient": {
+            "id": noted.person_id, "pseudonym": pseudonym(deid_key, "center_a", noted.person_id),
+            "givenName": noted.given_name, "condition": noted.concept_name,
+        },
         "names": sorted({n for row in identities for n in (row.given_name, row.family_name) if n}),
         "mrns": sorted(row.mrn for row in identities if row.mrn),
     }  # fmt: skip
@@ -99,8 +104,9 @@ def seed(settings: Settings) -> str:
     seed_users(app, list(center_tenants()), PASSWORDS)
     for tenant in center_tenants():
         run_tenant(app, tenant, AS_OF, transplant_configs())
+    noted = seed_note_condition(owner, app)
     deid_key = require_secret("deid_hmac_key", settings.deid_hmac_key)
-    OUT.write_text(json.dumps(facts(owner, deid_key)))
+    OUT.write_text(json.dumps(facts(owner, deid_key, noted)))
     print(f"E2E database {DATABASE} ready; seed written to {OUT}")
     return url
 

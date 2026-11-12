@@ -13,6 +13,7 @@ export type FlagStatus = Schemas["Status"];
 export type WorklistRow = Schemas["WorklistRow"];
 export type WorklistPage = Schemas["WorklistPage"];
 export type Timeline = Schemas["Timeline"];
+export type NoteEvidence = Schemas["NoteEvidence"];
 export type Lab = Schemas["Lab"];
 export type SurveillanceConfig = Schemas["SurveillanceConfig"];
 export type CohortRules = Schemas["CohortRules"];

@@ -1,9 +1,11 @@
 import { Activity, HeartCrack, Microscope, Pill, Skull, Stethoscope } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatDate } from "@/lib/format";
-import type { BiopsyResult, Timeline } from "@/lib/types";
+import type { BiopsyResult, NoteEvidence, Timeline } from "@/lib/types";
 
 /** Diagnoses that mean the graft failed (named by the vocabulary, e.g. "Failed renal transplant"). */
 const GRAFT_EVENT = /transplant failure|failed .*transplant|graft (failure|loss)|rejection/i;
@@ -26,7 +28,11 @@ export function biopsyResultText(result: BiopsyResult | null | undefined): strin
   return ["Result: " + graded, scores.join(" "), STATUSES[result.status]].filter(Boolean).join(" · ");
 }
 
-export type TimelineEvent = { date: string; kind: string; title: string; detail?: string; icon: ReactNode };
+/** A condition read from clinic notes: how many notes, and the first one's evidence. */
+export type FromNote = { count: number; evidence: NoteEvidence | null };
+export type TimelineEvent = {
+  date: string; kind: string; title: string; detail?: string; icon: ReactNode; fromNote?: FromNote;
+};
 
 /** Procedures, diagnoses, graft events and death as one dated list, newest first. */
 export function timelineEvents(timeline: Timeline): TimelineEvent[] {
@@ -46,12 +52,46 @@ export function timelineEvents(timeline: Timeline): TimelineEvent[] {
     events.push({
       date: c.date, kind: graft ? "Graft event" : "Diagnosis", title: c.condition ?? `Concept ${c.concept_id}`,
       icon: graft ? <HeartCrack className="size-4" /> : <Stethoscope className="size-4" />,
+      fromNote: c.source === "note" ? { count: c.note_count ?? 1, evidence: c.evidence ?? null } : undefined,
     });
   }
   if (timeline.patient.death_date) {
     events.push({ date: timeline.patient.death_date, kind: "Death", title: "Death recorded", icon: <Skull className="size-4" /> });
   }
   return events.sort((a, b) => b.date.localeCompare(a.date));
+}
+
+function notesLabel(count: number): string {
+  return `mentioned in ${count} ${count === 1 ? "note" : "notes"}`;
+}
+
+/** "from note" badge; with the evidence sentence in a popover when the role may see it. */
+export function FromNoteBadge({ fromNote }: { fromNote: FromNote }) {
+  const sentence = fromNote.evidence?.sentence;
+  if (!sentence) {
+    return (
+      <span className="ml-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Badge variant="outline">from note</Badge>
+        {notesLabel(fromNote.count)}
+      </span>
+    );
+  }
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" className="ml-2 align-middle" aria-label={`From note: show the sentence (${notesLabel(fromNote.count)})`}>
+          <Badge variant="outline">from note</Badge>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start">
+        <p className="text-xs text-muted-foreground">
+          First note {formatDate(fromNote.evidence?.date ?? "")} · {notesLabel(fromNote.count)}
+        </p>
+        <blockquote className="border-l-2 pl-2 text-sm">{sentence}</blockquote>
+        <p className="text-xs text-muted-foreground">Read by NLP from the note; check the note before acting on it.</p>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 export function PatientTimeline({ timeline }: { timeline: Timeline }) {
@@ -78,7 +118,10 @@ export function PatientTimeline({ timeline }: { timeline: Timeline }) {
                   <p className="text-xs text-muted-foreground">
                     <time dateTime={event.date}>{formatDate(event.date)}</time> · {event.kind}
                   </p>
-                  <p className="text-sm font-medium">{event.title}</p>
+                  <p className="text-sm font-medium">
+                    {event.title}
+                    {event.fromNote && <FromNoteBadge fromNote={event.fromNote} />}
+                  </p>
                   {event.detail && <p className="text-sm text-muted-foreground">{event.detail}</p>}
                 </li>
               ))}

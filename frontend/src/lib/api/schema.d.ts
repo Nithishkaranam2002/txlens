@@ -518,7 +518,7 @@ export interface components {
         };
         /**
          * Condition
-         * @description One condition.
+         * @description One condition: from the record, or read from clinic notes ("note").
          */
         Condition: {
             /** Concept Id */
@@ -530,6 +530,15 @@ export interface components {
              * Format: date
              */
             date: string;
+            evidence?: components["schemas"]["NoteEvidence"] | null;
+            /** Note Count */
+            note_count?: number | null;
+            /**
+             * Source
+             * @default record
+             * @enum {string}
+             */
+            source: "record" | "note";
         };
         /**
          * DateRange
@@ -919,6 +928,22 @@ export interface components {
             positive_at_or_above: number;
             /** @default medium */
             severity: components["schemas"]["Severity"];
+        };
+        /**
+         * NoteEvidence
+         * @description The first note a condition was read from. `note_id`: clinicians only. `sentence`: as
+         *     written for clinicians, de-identified for data stewards, never for researchers.
+         */
+        NoteEvidence: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Note Id */
+            note_id?: number | null;
+            /** Sentence */
+            sentence?: string | null;
         };
         /**
          * NoteMeta
