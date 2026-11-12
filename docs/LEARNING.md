@@ -929,3 +929,139 @@ experiencer flags).
    its own first. Scan resolution mattered most (65% → 80%). A restricted second reading of
    score tokens took it to 97%. Binarization made things worse, which I only knew because I
    measured it.
+
+## Phase 2, Step 2.2 — Clinical NLP: free-text conditions and clinic notes
+
+### What was built
+- **Free-text FHIR conditions → SNOMED, with no LLM** (`pipelines/.../textmatch/`,
+  `silver/condition_normalize.py`). The first tier that gives exactly one concept wins:
+  1. a curated map;
+  2. exact name or synonym;
+  3. the same words in another order;
+  4. a fuzzy match at 0.90 or above.
+
+  A **qualifier guard** rejects any automatic match whose type, acuity, side, grade, stage
+  or number differs. Each row goes to the OMOP table of its concept's domain ("history of
+  kidney transplant" goes to `observation`).
+- **Note de-identification in the pipeline** (`deid_notes.py`):
+  - names become fake names, MRNs `[MRN]`;
+  - dates move by the patient's secret shift;
+  - the replaced words go to a clinician-only table;
+  - the identified note text never enters Postgres.
+- **medspaCy note NLP** (`backend/.../notes/`): sections, a matcher built from the
+  vocabulary and our abbreviation list, and ConText for negation, history, hypotheticals and
+  family history.
+- **An LLM fallback only for sentences the rules cannot finish**, for example a list item
+  after "Denies" that no rule knows. The model sees one de-identified sentence and must
+  quote it; the concept still comes from our vocabulary.
+- **Storage and OMOP** (migration 0012):
+  - every mention goes to `note_nlp`;
+  - a note adds one `condition_occurrence` per concept, only for affirmed, current,
+    patient-experienced mentions;
+  - app tables are the source of truth and are copied back after every reload.
+- **A Temporal batch** (`txlens-notes process`): chunks of notes under one LLM budget; an
+  unchanged note is skipped.
+- **Timeline**: a "from note" badge. Clinicians see the sentence as written, stewards the
+  de-identified one, researchers only the badge.
+- **Evaluation** (`make notes-report`): rules-only vs medspaCy vs hybrid against the
+  generator's facts. The 300 notes used for tuning are reported apart from the held-out
+  notes.
+
+### The ideas in plain English
+- **Cheap and predictable first**: a dictionary plus rules handles almost every case for
+  free and gives the same answer every time. The LLM is a small, paid helper for leftovers,
+  and its answers are always checked and sent to a person.
+- **Some words must never be "close enough"**: "type 1" vs "type 2" diabetes, "acute" vs
+  "chronic" rejection, CKD "stage 3" vs "stage 4". A fuzzy matcher would happily confuse
+  them, so code compares those words exactly and refuses otherwise.
+- **Context changes meaning**: "denies edema", "history of CMV", "mother with diabetes" and
+  "if dd-cfDNA rises" all name a concept that the patient does not have now. Only affirmed,
+  current, patient conditions become OMOP conditions; everything else is still recorded in
+  `note_nlp` with its modifiers.
+- **Remove identifiers before reading**: the NLP and the LLM only ever see the de-identified
+  copy. A clinician can still read the original sentence, because the replaced words are
+  stored separately and put back only for them.
+- **Measure honestly**: rules tuned on some notes look better on those notes. So the notes I
+  read while writing rules are scored separately, and the held-out notes are the headline.
+- **Label who decided**: the mapping rows I (an AI assistant) wrote are labelled "curated by AI
+  assistant, pending clinical review", not "reviewed", until a clinician checks them.
+
+### How the tricky parts work
+- **Qualifier guard**: `qualifiers()` pulls out type, acuity, side, grade/stage/class (roman
+  numerals become digits) and numbers. "CKD" implies chronic. A match is accepted only if the
+  source text and the concept name give the same set.
+- **The OMOP "history of" pattern**: OMOP has no single standard concept for "history of
+  kidney transplant". The standard way is two fields: `observation_concept_id` = *History of
+  event* (1340204) and `value_as_concept_id` = *Transplant of kidney*. One mapping row can
+  hold one target, so the value is a second row with the same text (`TXLENS_COND_VALUE`).
+  The vocabulary check accepts only standard targets and checks the pairs.
+- **Offsets after de-identification**: replacing "Oakdale" with "Hollis" shifts every later
+  character. The replacement list records both positions, so a mention found in the
+  de-identified text can be mapped back to the original (for evaluation) and a sentence can
+  be rebuilt with the real words (for clinicians).
+- **medspaCy tokenizes by case**: "t2dm" is two tokens and "T2DM" one, so each term gets
+  lower, upper and title-case patterns.
+- **The LLM's answer is checked**: each finding must quote words that are in the sentence,
+  only words no rule covered are kept, and the concept comes from our vocabulary. LLM
+  findings get confidence 0.5, below the 0.70 review threshold, so they never become an OMOP
+  condition on their own.
+- **Re-runs cost nothing**: answers are cached by the exact sentence. Templated notes repeat
+  sentences, so the full run paid for only 15 calls.
+
+### Why these tools
+- **medspaCy**: clinical sentence splitting, sections and ConText (negation, history,
+  family) out of the box, on top of spaCy. It needs no model download (a blank English
+  pipeline), and the rules are readable and testable.
+- **difflib for fuzzy matching**: in the standard library, so the Databricks job needs
+  nothing extra. A few hundred distinct texts make speed a non-issue.
+- **The same LiteLLM / budget / cache / Langfuse stack as biopsies**: one tested path for every
+  paid call, with prompt versions and a hard cap.
+- **Temporal for the batch**: retries, one budget across chunks, and a visible history;
+  already running for surveillance and biopsies.
+
+### Trade-offs
+- **The numbers do not transfer to real notes.** One generator writes every note from a few
+  templates with 38 concepts. Held-out notes protect against fitting individual notes, not
+  the templates. Real notes need clinician-annotated test sets.
+- **Rules tuned on the generator.** The abbreviation list and three ConText rules came from
+  reading errors on the tuning notes.
+- **82 mapping rows are AI-curated and pending clinical review.** They are clearly labelled,
+  and a test fails if a label goes missing.
+- **NLP conditions sit next to coded ones.** A patient can have hypertension from both.
+  Cohorts count patients, so counts are unaffected; row-level analyses should filter on the
+  type concept (32858 = NLP).
+- **Real PHI**: the de-identified sentence goes to a public API only because the data is
+  synthetic. Real notes need a provider under a BAA, or a local model.
+
+### Results (synthetic data)
+- FHIR conditions: 100.0% mapped (4,504 of 4,504), up from 49.6%; 0 by fuzzy match; 175 go
+  to `observation` as "history of" rows. Diabetes cohort: 820 of 820 (was 428).
+- Note de-identification: 0 identifiers left in 12,505 notes.
+- Held-out notes (12,205; `make notes-report ARGS="--full --llm --max-cost 3"`), hybrid:
+  - recall 100.0%, precision 89.1% strict (99.6% on tracked text), F1 94.2%;
+  - negation 100%, temporality 99.8%, experiencer 100%, concept 100%.
+  - Tuning notes (300): F1 94.3%. Rules-only: negation 79.1%, temporality 69.3%.
+- LLM: 3,579 sentences, 15 paid calls, $0.0016 for the full run ($0.31 with no cache).
+- Loaded: 228,428 `note_nlp` rows, 26,250 NLP conditions; all 8 cohort rules still exact.
+
+### Likely interview questions
+1. **Why not just ask an LLM to code every condition?** Cost, reproducibility and safety. A
+   dictionary plus rules mapped everything here for free, gave the same answer every time
+   and never confused type 1 with type 2 diabetes, because code checks those words exactly.
+   The LLM is used only for the few sentences the rules cannot resolve, and even then it
+   quotes text and our vocabulary picks the concept.
+2. **How do you handle negation and family history?** medspaCy's ConText marks a mention as
+   negated ("denies"), historical ("s/p", "h/o"), hypothetical ("if") or about a relative
+   (family history section). Only affirmed, current, patient mentions become OMOP
+   conditions; the rest stay in `note_nlp` with those flags.
+3. **How did you avoid leaking PHI into NLP or the LLM?** Notes are de-identified in the
+   pipeline before anything reads them, with the replaced words kept in a separate
+   clinician-only table. The LLM gets one sentence at a time with dates masked again. A leak
+   check over all 12,505 notes finds 0 identifiers.
+4. **How do you know your accuracy numbers are not overfitted?** The notes I read while
+   writing rules are scored separately from the held-out notes, which are the headline. I
+   also say why held-out is not enough here: all notes come from the same templates.
+5. **How do you store "history of kidney transplant" in OMOP?** As an observation:
+   `observation_concept_id` = History of event, `value_as_concept_id` = Transplant of kidney,
+   both standard concepts, which is the OMOP convention, instead of pointing at a
+   non-standard SNOMED "history of" concept.

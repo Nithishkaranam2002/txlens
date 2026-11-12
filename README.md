@@ -103,7 +103,7 @@ described in [omop/README.md](omop/README.md). Tests use a fake TEST ONLY fixtur
 From [evals/reports/data_quality.md](evals/reports/data_quality.md), produced by
 `make pipeline-report` on the default dataset (2,000 patients, 3 centers):
 
-- **Reconciliation with the ground truth: 13 of 13 checks pass.** These include every one of
+- **Reconciliation with the ground truth: 15 of 15 checks pass.** These include every one of
   240,945 clean lab results matching row by row in standard units, all 65 deaths, and Postgres
   row counts equal to gold for every tenant and table.
 - **Medications normalized to the right RxNorm ingredient: 100.0%** (22,234 orders, including
@@ -112,12 +112,16 @@ From [evals/reports/data_quality.md](evals/reports/data_quality.md), produced by
   **Duplicates removed: 4,886** (all 4,885 injected, plus 1 explained identical pair).
 - **Mapping coverage:** drugs, routes and procedures 100.0%; measurements 96.4% (DSA MFI has no
   standard LOINC).
-- **FHIR conditions mapped: 99.4%** (4,478 of 4,504), up from 49.6% with codes only. Free text
-  such as "IgA nephropathy" goes through a reviewed map, exact name or synonym, normalized and
-  fuzzy matching, with no LLM. A match is never accepted if type, acuity, side, grade, stage or
-  a number differs. 149 "history of prior kidney transplant" rows go to `observation`, as
-  their concept's domain requires. The 26 left ("history of prior heart transplant": SNOMED
-  has no such concept) are on the review list, `evals/reports/condition_mapping_review.csv`.
+- **FHIR conditions mapped: 100.0%** (4,504 of 4,504), up from 49.6% with codes only. Free
+  text such as "IgA nephropathy" goes through a curated map, exact name or synonym,
+  normalized and fuzzy matching, with no LLM. A match is never accepted if type, acuity,
+  side, grade, stage or a number differs. The 175 "history of prior kidney/heart transplant"
+  rows go to `observation` in the standard OMOP form: *History of event* with the transplant
+  procedure as the value. By method: 2,234 by code, 616 curated, 1,654 exact, 0 normalized,
+  0 fuzzy.
+- **The curated rows are AI-written.** The condition-text and clinic-abbreviation rows of
+  `SOURCE_TO_CONCEPT_MAP.csv` were curated by an AI assistant and are **pending clinical
+  review**; each row says so.
 
 How it works: [pipelines/README.md](pipelines/README.md) and
 [ADR 0006](docs/adr/0006-medallion-pipeline.md). Running it on Databricks:
@@ -240,6 +244,53 @@ Results from [evals/reports/biopsy_extraction_full.md](evals/reports/biopsy_extr
   now show a result on the timeline.
 
 Design: [ADR 0013](docs/adr/0013-biopsy-document-extraction.md).
+
+## Clinic notes (NLP)
+
+12,505 clinic notes are de-identified in the pipeline, then read by NLP:
+1. names become surrogates, MRNs `[MRN]`, dates move by the patient's shift; the replaced
+   words go to a clinician-only table, and the identified text never enters Postgres;
+2. medspaCy: sections, a vocabulary matcher (SNOMED, RxNorm, LOINC and clinic
+   abbreviations), ConText for negation, history, hypotheticals and family history;
+3. an LLM only for sentences the rules cannot finish (one de-identified sentence, quotes
+   checked, the concept chosen by our vocabulary, always sent to review);
+4. OMOP: every mention in `note_nlp`; one `condition_occurrence` per note and concept, only
+   for affirmed, current conditions of the patient (type concept 32858, NLP).
+
+| | "from note" conditions on the timeline | Evidence sentence |
+|---|---|---|
+| clinician | yes | as written |
+| data_steward | yes | de-identified |
+| researcher | yes | none |
+
+Results from [evals/reports/notes_nlp.md](evals/reports/notes_nlp.md)
+(`make notes-report ARGS="--full --llm --max-cost 3"`), scored against the generator's
+203,489 facts. **Headline: the 12,205 held-out notes**; the 300 notes read while writing the
+rules are reported separately (F1 94.3%).
+
+> **Synthetic, template-generated notes** with 38 concepts, and rules written knowing the
+> generator. These numbers show the pipeline works; real notes would score much lower.
+
+| Held-out notes | Rules only | medspaCy | Hybrid (+LLM) |
+|---|---|---|---|
+| Recall | 98.2% | 98.2% | **100.0%** |
+| Precision (strict) | 88.9% | 88.9% | 89.1% |
+| Precision (text the ground truth tracks) | 99.6% | 99.6% | 99.6% |
+| F1 | 93.3% | 93.3% | **94.2%** |
+| Negation / temporality / experiencer | 79.1% / 69.3% / 94.3% | 100% / 99.8% / 100% | 100% / 99.8% / 100% |
+| Concept | 100% | 100% | 100% |
+
+- Strict precision counts real mentions the generator does not list as facts (the primary
+  disease, a dd-cfDNA threshold sentence, biopsy indications) as false positives.
+- **LLM cost:** 3,579 sentences, 15 paid calls (the rest from the cache), $0.0016 for the
+  full run; $0.31 without any cache. De-identification leak check: 0 identifiers in all
+  12,505 notes.
+- **Loaded:** `txlens-notes process` (Temporal) wrote 228,428 `note_nlp` rows (3,579 to
+  review) and 26,250 NLP conditions for 1,999 patients, with no new LLM spend (cache). All 8
+  cohort rules still match the ground truth (diabetes 820 of 820): family-history diabetes
+  adds no patients.
+
+Design: [ADR 0014](docs/adr/0014-clinical-note-nlp.md).
 
 ## Frontend
 
