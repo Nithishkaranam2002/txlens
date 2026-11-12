@@ -6,7 +6,9 @@ notes. Writes `frontend/e2e/.seed.json` with the ids and names the browser tests
 The database is dropped and rebuilt on every run, so tests always start from the same state.
 
 It also puts three pathology reports in review (with a scanned report file, so page images
-and crops work) and one AI-curated mapping row in the review queue.
+and crops work) and one AI-curated mapping row in the review queue, and loads the made-up
+literature corpus. The copilot answers with a keyword-scripted model and a fake embedder:
+no real model is ever called in e2e.
 
 `uv run python backend/tests/e2e_seed.py --serve 8001` (the Playwright config does this) then
 serves the API on that database. No Temporal server runs in e2e: reviews are applied by the
@@ -23,8 +25,10 @@ from pathlib import Path
 import psycopg
 import uvicorn
 from api_dataset import build, load
+from copilot_testutils import KeywordModel
 from db_testutils import migrate
 from document_testutils import report_lines_for, seed_document, write_report_pdf
+from literature_testutils import CORPUS, FakeEmbedder
 from note_testutils import NoteCondition, seed_note_condition
 from pydantic import SecretStr
 from sqlalchemy import Engine, create_engine, pool, text
@@ -33,8 +37,10 @@ from sqlalchemy.engine import make_url
 from txlens_backend.api.app import create_app
 from txlens_backend.api.deps import Role
 from txlens_backend.config import Settings, get_settings, require_secret
+from txlens_backend.copilot import literature, service
 from txlens_backend.db_setup import center_tenants, ensure_login_role, ensure_tenants, libpq_url
 from txlens_backend.deid import pseudonym
+from txlens_backend.documents.budget import Budget
 from txlens_backend.seed_users import seed_users
 from txlens_backend.surveillance.run import run_tenant, transplant_configs
 
@@ -155,6 +161,9 @@ def seed(settings: Settings) -> str:
         run_tenant(app, tenant, AS_OF, transplant_configs())
     noted = seed_note_condition(owner, app)
     review = seed_review(owner)
+    corpus_budget = Budget(owner, "e2e-literature", 1.0)
+    corpus_budget.open()
+    literature.index(owner, CORPUS, FakeEmbedder(), corpus_budget)
     deid_key = require_secret("deid_hmac_key", settings.deid_hmac_key)
     OUT.write_text(json.dumps(facts(owner, deid_key, noted, review)))
     print(f"E2E database {DATABASE} ready; seed written to {OUT}")
@@ -177,6 +186,8 @@ def main() -> None:
         })  # fmt: skip
         api = create_app(e2e)
         api.state.review_sender = NoWorkflowSender()
+        api.state.copilot_deps = service.CopilotDeps(e2e, api.state.ctx.engine, FakeEmbedder(),
+                                                     KeywordModel())  # fmt: skip
         uvicorn.run(api, host="127.0.0.1", port=args.serve, proxy_headers=False)
 
 

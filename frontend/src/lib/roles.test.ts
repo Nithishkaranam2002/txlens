@@ -6,9 +6,9 @@ import { areaOf, asRole, can, homeFor, landingFor, navFor, seesIdentifiers } fro
 
 describe("role navigation", () => {
   it.each([
-    ["clinician", ["Worklist", "Review queue", "Cohorts", "Survival", "Review metrics"], "/worklist"],
+    ["clinician", ["Worklist", "Review queue", "Cohorts", "Survival", "Copilot", "Review metrics"], "/worklist"],
     ["data_steward", ["Worklist", "Review queue", "Review metrics"], "/worklist"],
-    ["researcher", ["Cohorts", "Survival"], "/cohorts"],
+    ["researcher", ["Cohorts", "Survival", "Copilot"], "/cohorts"],
     ["admin", ["Admin", "Review metrics"], "/admin"],
   ] as const)("%s sees %j and lands on %s", (role, labels, home) => {
     expect(navFor(role).map((item) => item.label)).toEqual(labels);
@@ -61,5 +61,13 @@ describe("landing page after login", () => {
     ["admin", null, "/admin"],
   ] as const)("%s with next=%s goes to %s", (role, next, expected) => {
     expect(landingFor(role, next as Route | null)).toBe(expected);
+  });
+});
+
+describe("copilot access", () => {
+  it("is for clinicians and researchers only", () => {
+    expect(can("clinician", "copilot") && can("researcher", "copilot")).toBe(true);
+    expect(can("data_steward", "copilot") || can("admin", "copilot")).toBe(false);
+    expect(areaOf("/copilot?c=abc")).toBe("copilot");
   });
 });

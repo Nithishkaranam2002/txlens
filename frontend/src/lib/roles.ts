@@ -10,6 +10,7 @@ export type Area =
   | "worklist"
   | "cohorts"
   | "survival"
+  | "copilot"
   | "patients"
   | "flags"
   | "review"
@@ -19,9 +20,9 @@ export type Area =
 
 /** What each role may use. The API enforces the same rules; this only shapes the UI. */
 const ACCESS: Record<Role, readonly Area[]> = {
-  clinician: ["worklist", "cohorts", "survival", "patients", "flags", "review", "queue", "metrics"],
+  clinician: ["worklist", "cohorts", "survival", "copilot", "patients", "flags", "review", "queue", "metrics"],
   data_steward: ["worklist", "patients", "flags", "queue", "metrics"],
-  researcher: ["cohorts", "survival", "patients"],
+  researcher: ["cohorts", "survival", "copilot", "patients"],
   admin: ["admin", "metrics"],
 };
 
@@ -30,6 +31,7 @@ export const NAV: readonly { href: Route; label: string; area: Area }[] = [
   { href: "/review", label: "Review queue", area: "queue" },
   { href: "/cohorts", label: "Cohorts", area: "cohorts" },
   { href: "/survival", label: "Survival", area: "survival" },
+  { href: "/copilot", label: "Copilot", area: "copilot" },
   { href: "/admin", label: "Admin", area: "admin" },
   { href: "/review/metrics", label: "Review metrics", area: "metrics" },
 ];
@@ -67,7 +69,7 @@ export function homeFor(role: Role | null): Route {
 export function areaOf(path: string): Area | null {
   const [, segment, sub] = path.split(/[/?#]/);
   if (segment === "review") return sub === "metrics" ? "metrics" : "queue";
-  const areas: readonly string[] = ["worklist", "cohorts", "survival", "patients", "admin"];
+  const areas: readonly string[] = ["worklist", "cohorts", "survival", "copilot", "patients", "admin"];
   return areas.includes(segment) ? (segment as Area) : null;
 }
 

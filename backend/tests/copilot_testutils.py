@@ -55,3 +55,45 @@ class ScriptedModel:
             or (not c.get("stream") and c["response_format"]["json_schema"]["name"] == kind)
         ]
         return [m["content"] for c in sent for m in c["messages"]]
+
+
+def question_of(messages: list[dict[str, str]]) -> str:
+    """The question: a "Question: ..." line (planner, answer) or the classifier's data block."""
+    for message in reversed(messages):
+        content = message["content"]
+        if content.startswith("Question: "):
+            return content[len("Question: ") :]
+        if content.startswith('<data source="question">'):
+            return str(json.loads(content.split(">", 1)[1].rsplit("<", 1)[0]))
+    return ""
+
+
+class KeywordModel(ScriptedModel):
+    """A stateless scripted model for the e2e server: the plan follows the question's words.
+    - "literature" -> literature_search, then an answer citing the first abstract;
+    - "by organ" -> sql_query counting patients by organ;
+    - otherwise -> preview_cohort (kidney if the question says so).
+    The step comes from how many tool results the planner has already been shown."""
+
+    def __call__(self, **kwargs: Any) -> Any:
+        messages = kwargs["messages"]
+        question = question_of(messages)
+        literature = "literature" in question.lower()
+        self.kind = "literature" if literature else "data"
+        done = sum(m["role"] == "assistant" and m["content"].startswith("{") for m in messages)
+        plan: list[dict[str, Any]]
+        if literature:
+            plan = [{"tool": "literature_search", "query": question}]
+            self.answer = ("Donor-derived cell-free DNA of 1% or more identified antibody-mediated "
+                           "rejection with 85% sensitivity [PMID:90000001].")  # fmt: skip
+        elif "by organ" in question.lower():
+            plan = [{"tool": "sql_query", "purpose": "patients by organ",
+                     "sql": "SELECT organ, count(DISTINCT person_id) AS patients "
+                            "FROM copilot.patient GROUP BY organ ORDER BY organ"}]  # fmt: skip
+            self.answer = "The table above counts patients by organ."
+        else:
+            organ = "kidney" if "kidney" in question.lower() else "heart"
+            plan = [{"tool": "preview_cohort", "rules": {"organ": organ}}]
+            self.answer = f"The cohort tool counted the {organ} recipients shown above."
+        self.steps = plan[done:]
+        return super().__call__(**kwargs)

@@ -121,6 +121,11 @@ def km_at(curve: ShownCurve, day: int) -> float | None:
     return shown[-1] if shown and curve.points[-1].day >= day else None
 
 
+def percent(value: float | None) -> float | None:
+    """A proportion as a percentage with one decimal."""
+    return None if value is None else round(100 * value, 1)
+
+
 def survival_summary(report: Report) -> dict[str, Any]:
     """What the model needs from a report: counts, survival at 1/3/5 years, tests, HRs."""
     return {
@@ -128,7 +133,8 @@ def survival_summary(report: Report) -> dict[str, Any]:
         "landmark_days": report.landmark_days, "n": report.n, "events": report.events,
         "groups": [{"group": c.group, "n": c.n, "graft_loss_events": c.events,
                     "hidden_reason": c.hidden_reason,
-                    "graft_survival": {f"day_{d}": km_at(c, d) for d in SURVIVAL_DAYS}}
+                    "graft_survival_percent": {f"day_{d}": percent(km_at(c, d))
+                                               for d in SURVIVAL_DAYS}}
                    for c in report.km],
         "log_rank_p": report.log_rank.p_value if report.log_rank else None,
         "cox": [{"term": t.label, "hazard_ratio": t.hazard_ratio, "ci95": [t.lower, t.upper],

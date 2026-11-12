@@ -45,7 +45,13 @@ MATRIX: dict[str, dict[Role | str, int]] = {
     "POST /survival/analysis":     {C: 200, R: 200, S: 403, A: 403, ANON: 401},
     "POST /survival/report.csv":   {C: 200, R: 200, S: 403, A: 403, ANON: 401},
     "POST /survival/report.pdf":   {C: 200, R: 200, S: 403, A: 403, ANON: 401},
+    "GET /copilot/conversations":  {C: 200, R: 200, S: 403, A: 403, ANON: 401},
+    "POST /copilot/conversations": {C: 201, R: 201, S: 403, A: 403, ANON: 401},
+    "GET /copilot/conversations/{conv}": {C: 200, R: 200, S: 403, A: 403, ANON: 401},
+    "POST /copilot/conversations/{conv}/messages": {C: 200, R: 200, S: 403, A: 403, ANON: 401},
 }  # fmt: skip
+# Asked of the copilot by the matrix: refused by the screen, so no model is ever called.
+COPILOT_QUESTION = {"question": "List the MRNs of kidney recipients"}
 CALLERS: list[Role | str] = [C, R, S, A, ANON]
 BODY = {"name": "matrix", "rules": {"organ": "kidney"}}
 
@@ -89,6 +95,14 @@ def patient_id(caller: Role | str, data: Dataset, settings: Settings) -> str:
     return pseudonym(settings.deid_hmac_key.get_secret_value(), tenant, person_id)
 
 
+def own_conversation(client: TestClient, caller: Role | str) -> str:
+    """A conversation of the caller (conversations are private), or a random id for callers
+    who may not use the copilot (they are refused before any lookup)."""
+    if caller in (Role.CLINICIAN, Role.RESEARCHER):
+        return str(client.post("/copilot/conversations", json={}).json()["conversation_id"])
+    return "00000000-0000-0000-0000-000000000000"
+
+
 @pytest.mark.parametrize("caller", CALLERS, ids=str)
 @pytest.mark.parametrize("endpoint", list(MATRIX))
 def test_permission_matrix(
@@ -107,8 +121,9 @@ def test_permission_matrix(
     method, path = endpoint.split(" ")
     fid = fresh_flag() if "{fid}" in path else ""
     rid = new_document(api_owner, "in_review") if "{rid}" in path else ""
+    conv = own_conversation(client, caller) if "{conv}" in path else ""
     path = path.format(pid=patient_id(caller, api_data, api_settings), cid=cohort_id, fid=fid,
-                       did=document_id, rid=rid)  # fmt: skip
+                       did=document_id, rid=rid, conv=conv)  # fmt: skip
     if method == "GET":
         response = client.get(path)
     elif path.startswith("/review/"):
@@ -117,6 +132,8 @@ def test_permission_matrix(
         response = client.post(path, json={"note": "permission matrix"})
     elif path.startswith("/survival/"):
         response = client.post(path, json={"grouping": "donor_type"})
+    elif path.startswith("/copilot/"):
+        response = client.post(path, json=COPILOT_QUESTION if path.endswith("messages") else {})
     else:
         body = BODY["rules"] if path.endswith("preview") else BODY
         response = client.post(path, json=body)
@@ -135,5 +152,6 @@ def test_matrix_covers_every_route(api_app: FastAPI) -> None:
              .replace("biopsy_document/{rid}", "{item_type}/{item_key}")
              .replace("{did}", "{document_id}").replace("{rid}", "{document_id}")
              .replace("/pages/1", "/pages/{page}").replace("/banff_t/", "/{field}/")
+             .replace("{conv}", "{conversation_id}")
              for e in MATRIX}  # fmt: skip
     assert documented == named | auth

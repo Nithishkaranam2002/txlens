@@ -170,6 +170,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/copilot/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Your conversations, newest first
+         * @description Only the caller's own.
+         */
+        get: operations["list_conversations_copilot_conversations_get"];
+        put?: never;
+        /**
+         * Start a conversation
+         * @description An empty conversation of the caller.
+         */
+        post: operations["create_copilot_conversations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/conversations/{conversation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One of your conversations
+         * @description 404 for unknown ids and for other users' conversations alike.
+         */
+        get: operations["get_conversation_copilot_conversations__conversation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/conversations/{conversation_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask a question; the answer streams as server-sent events
+         * @description The conversation is checked first (404); then the answer streams.
+         */
+        post: operations["ask_copilot_conversations__conversation_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/documents/{document_id}/evidence": {
         parameters: {
             query?: never;
@@ -750,6 +814,38 @@ export interface components {
              */
             source: "record" | "note";
         };
+        /**
+         * Conversation
+         * @description A conversation with its messages, oldest first.
+         */
+        Conversation: {
+            /** Conversation Id */
+            conversation_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Messages
+             * @default []
+             */
+            messages: components["schemas"]["Message"][];
+            /** Title */
+            title: string;
+        };
+        /** ConversationSummary */
+        ConversationSummary: {
+            /** Conversation Id */
+            conversation_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Title */
+            title: string;
+        };
         /** CoxOut */
         CoxOut: {
             /** Events */
@@ -1262,6 +1358,37 @@ export interface components {
             username: string;
         };
         /**
+         * Message
+         * @description One question or answer, as stored.
+         */
+        Message: {
+            /** Citations */
+            citations: {
+                [key: string]: unknown;
+            }[];
+            /** Content */
+            content: string;
+            /** Cost Usd */
+            cost_usd: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Latency Ms */
+            latency_ms: number;
+            /** Message Id */
+            message_id: string;
+            /** Outcome */
+            outcome: string | null;
+            /** Role */
+            role: string;
+            /** Trace */
+            trace: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
          * NewCohort
          * @description A cohort to save.
          */
@@ -1269,6 +1396,14 @@ export interface components {
             /** Name */
             name: string;
             rules: components["schemas"]["CohortRules"];
+        };
+        /** NewConversation */
+        NewConversation: {
+            /**
+             * Title
+             * @default New conversation
+             */
+            title: string;
         };
         /**
          * NewPositive
@@ -1467,6 +1602,11 @@ export interface components {
             /** Procedure */
             procedure: string | null;
             result?: components["schemas"]["BiopsyResult"] | null;
+        };
+        /** Question */
+        Question: {
+            /** Question */
+            question: string;
         };
         /**
          * QueuePage
@@ -2325,6 +2465,145 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ConceptHit"][];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_conversations_copilot_conversations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationSummary"][];
+                };
+            };
+        };
+    };
+    create_copilot_conversations_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Any non-empty value; requests without it get 403 (CSRF defence). */
+                "X-Requested-With"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewConversation"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_conversation_copilot_conversations__conversation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Conversation"];
+                };
+            };
+            /** @description No such conversation of yours */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ask_copilot_conversations__conversation_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Any non-empty value; requests without it get 403 (CSRF defence). */
+                "X-Requested-With"?: string | null;
+            };
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Question"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description No such conversation of yours */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

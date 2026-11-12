@@ -20,6 +20,7 @@ const pages: [Role, string, string][] = [
   ["clinician", `/patients/${seed().singleFlagPatient.id}`, "Results"],
   ["researcher", "/cohorts", "Cohort builder"],
   ["researcher", "/survival", "Graft survival analysis"],
+  ["researcher", "/copilot", "Research copilot"],
   ["admin", "/admin", "Admin"],
   ["clinician", "/review", "Review queue"],
   ["clinician", `/review/biopsy_document/${seed().review.documents.steward.id}`, "Kidney biopsy report: TCMR"],

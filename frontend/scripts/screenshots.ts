@@ -72,6 +72,20 @@ async function main() {
   await researcher.mouse.move(0, 0);
   await shot(researcher, "survival", 2600);
 
+  // The copilot calls the configured model (a few tenths of a cent per question).
+  const copilot = await (await context()).newPage();
+  await login(copilot, "researcher");
+  for (const [question, name, height] of [
+    ["What is graft survival by donor type for kidney recipients?", "copilot", 1300],
+    ["What does the literature say about dd-cfDNA thresholds for antibody-mediated rejection?", "copilot-literature", 1300],
+  ] as const) {
+    await copilot.goto(`${BASE_URL}/copilot`); // a new conversation for each screenshot
+    await copilot.getByLabel("Your question").fill(question);
+    await copilot.getByRole("button", { name: "Ask" }).click();
+    await copilot.getByText(/\d+\.\d s · \$/).waitFor({ timeout: 120_000 }); // the answer is done
+    await shot(copilot, name, height);
+  }
+
   await browser.close();
 }
 

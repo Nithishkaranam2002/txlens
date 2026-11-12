@@ -523,6 +523,63 @@
         "title": "Condition",
         "type": "object"
       },
+      "Conversation": {
+        "description": "A conversation with its messages, oldest first.",
+        "properties": {
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "messages": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "title",
+          "created_at"
+        ],
+        "title": "Conversation",
+        "type": "object"
+      },
+      "ConversationSummary": {
+        "properties": {
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "title",
+          "created_at"
+        ],
+        "title": "ConversationSummary",
+        "type": "object"
+      },
       "CoxOut": {
         "properties": {
           "events": {
@@ -2039,6 +2096,76 @@
         "title": "Me",
         "type": "object"
       },
+      "Message": {
+        "description": "One question or answer, as stored.",
+        "properties": {
+          "citations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "cost_usd": {
+            "title": "Cost Usd",
+            "type": "number"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "latency_ms": {
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "message_id": {
+            "title": "Message Id",
+            "type": "string"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "trace": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Trace",
+            "type": "array"
+          }
+        },
+        "required": [
+          "message_id",
+          "role",
+          "content",
+          "trace",
+          "citations",
+          "outcome",
+          "cost_usd",
+          "latency_ms",
+          "created_at"
+        ],
+        "title": "Message",
+        "type": "object"
+      },
       "NewCohort": {
         "description": "A cohort to save.",
         "properties": {
@@ -2057,6 +2184,19 @@
           "rules"
         ],
         "title": "NewCohort",
+        "type": "object"
+      },
+      "NewConversation": {
+        "properties": {
+          "title": {
+            "default": "New conversation",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "title": "NewConversation",
         "type": "object"
       },
       "NewPositive": {
@@ -2595,6 +2735,21 @@
           "procedure"
         ],
         "title": "Procedure",
+        "type": "object"
+      },
+      "Question": {
+        "properties": {
+          "question": {
+            "maxLength": 2000,
+            "minLength": 2,
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "Question",
         "type": "object"
       },
       "QueuePage": {
@@ -4628,6 +4783,208 @@
         "summary": "Search standard SNOMED condition concepts",
         "tags": [
           "cohorts"
+        ]
+      }
+    },
+    "/copilot/conversations": {
+      "get": {
+        "description": "Only the caller's own.",
+        "operationId": "list_conversations_copilot_conversations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConversationSummary"
+                  },
+                  "title": "Response List Conversations Copilot Conversations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Your conversations, newest first",
+        "tags": [
+          "copilot"
+        ]
+      },
+      "post": {
+        "description": "An empty conversation of the caller.",
+        "operationId": "create_copilot_conversations_post",
+        "parameters": [
+          {
+            "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+            "in": "header",
+            "name": "X-Requested-With",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewConversation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start a conversation",
+        "tags": [
+          "copilot"
+        ]
+      }
+    },
+    "/copilot/conversations/{conversation_id}": {
+      "get": {
+        "description": "404 for unknown ids and for other users' conversations alike.",
+        "operationId": "get_conversation_copilot_conversations__conversation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such conversation of yours"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One of your conversations",
+        "tags": [
+          "copilot"
+        ]
+      }
+    },
+    "/copilot/conversations/{conversation_id}/messages": {
+      "post": {
+        "description": "The conversation is checked first (404); then the answer streams.",
+        "operationId": "ask_copilot_conversations__conversation_id__messages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+            "in": "header",
+            "name": "X-Requested-With",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Question"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such conversation of yours"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ask a question; the answer streams as server-sent events",
+        "tags": [
+          "copilot"
         ]
       }
     },

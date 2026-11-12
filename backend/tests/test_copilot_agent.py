@@ -13,7 +13,7 @@ from sqlalchemy import Engine, text
 
 from txlens_backend.audit import RequestInfo
 from txlens_backend.config import Settings
-from txlens_backend.copilot import literature, service, tools
+from txlens_backend.copilot import literature, service
 from txlens_backend.db import tenant_transaction
 from txlens_backend.documents.budget import Budget
 from txlens_backend.services.disclosure import WITHHELD
@@ -40,10 +40,8 @@ def clean(api_owner: Engine, api_app: object) -> Iterator[None]:
 
 
 @pytest.fixture
-def corpus(api_owner: Engine, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+def corpus(api_owner: Engine) -> Iterator[None]:
     """The made-up abstracts (one with a prompt injection) in the API database."""
-    monkeypatch.setattr(literature, "max_cost", lambda model, texts: 0.0)
-    monkeypatch.setattr(tools, "embed_cost", lambda model, texts: 0.0)  # the fake has no price
     budget = Budget(api_owner, "test-copilot-corpus", 1.0)
     budget.open()
     literature.index(api_owner, CORPUS, FakeEmbedder(), budget)

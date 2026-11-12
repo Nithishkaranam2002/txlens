@@ -16,6 +16,7 @@ from txlens_backend.api import (
     auth,
     cohorts,
     concepts,
+    copilot,
     documents,
     patients,
     review,
@@ -124,6 +125,7 @@ def build_app(
     app.include_router(documents.router)
     app.include_router(review.router)
     app.include_router(survival.router)
+    app.include_router(copilot.router)
     document_csrf_header(app)
     return app
 

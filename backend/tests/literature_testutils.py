@@ -55,7 +55,7 @@ WORD = re.compile(r"[a-z0-9]+")
 class FakeEmbedder:
     """Bag of words hashed into DIMENSIONS buckets, normalised: similar words -> similar vectors."""
 
-    model = "fake/bag-of-words"
+    model = "ollama/test-bag-of-words"  # "ollama/": priced at $0, like a local model
 
     def __init__(self) -> None:
         self.calls: list[list[str]] = []

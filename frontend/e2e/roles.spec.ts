@@ -5,7 +5,7 @@ import { expectNoIdentifiers, identifierPattern, login, seed } from "./helpers";
 test("clinician sees patient names and MRNs", async ({ page }) => {
   await login(page, "clinician");
   await expect(page.getByRole("heading", { name: "Surveillance worklist" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(["Worklist", "Review queue", "Cohorts", "Survival", "Review metrics"]);
+  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(["Worklist", "Review queue", "Cohorts", "Survival", "Copilot", "Review metrics"]);
   await expect(page.getByRole("table")).toBeVisible();
   const text = await page.getByRole("main").innerText();
   expect(text).toMatch(identifierPattern());
@@ -16,7 +16,7 @@ test("researcher sees pseudonyms only, nowhere a name", async ({ page }) => {
   const consoleLines: string[] = [];
   page.on("console", (message) => consoleLines.push(message.text()));
   await login(page, "researcher");
-  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(["Cohorts", "Survival"]);
+  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(["Cohorts", "Survival", "Copilot"]);
 
   await page.getByLabel("Organ").click();
   await page.getByRole("option", { name: "Kidney" }).click();

@@ -23,6 +23,8 @@ export const keys = {
   concepts: (q: string) => ["concepts", q] as const,
   survivalOptions: ["survival", "options"] as const,
   survival: (request: SurvivalRequest) => ["survival", request] as const,
+  conversations: ["copilot", "conversations"] as const,
+  conversation: (id: string) => ["copilot", "conversations", id] as const,
 };
 
 export const PAGE_SIZE = 50;
@@ -187,5 +189,31 @@ export function useSurvivalAnalysis(request: SurvivalRequest | null) {
     enabled: request !== null,
     staleTime: 5 * 60_000,
     retry: false,
+  });
+}
+
+export function useConversations() {
+  return useQuery({
+    queryKey: keys.conversations,
+    queryFn: async () => unwrap(await api.GET("/copilot/conversations")),
+  });
+}
+
+/** A stored conversation; not refetched while it is open (the live stream extends it). */
+export function useConversation(id: string | null) {
+  return useQuery({
+    queryKey: keys.conversation(id ?? ""),
+    queryFn: async () =>
+      unwrap(await api.GET("/copilot/conversations/{conversation_id}", { params: { path: { conversation_id: id! } } })),
+    enabled: id !== null,
+    staleTime: Infinity,
+  });
+}
+
+export function useCreateConversation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (title: string) => unwrap(await api.POST("/copilot/conversations", { body: { title } })),
+    onSuccess: () => client.invalidateQueries({ queryKey: keys.conversations }),
   });
 }
