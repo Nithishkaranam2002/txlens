@@ -112,11 +112,13 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers --import-mode=importlib"
-testpaths = ["backend/tests", "data_generator/tests", "evals/tests", "omop/tests", "pipelines/tests"]
+testpaths = ["backend/tests", "data_generator/tests", "evals/tests", "omop/tests", "pipelines/tests",
+             "r_parity/tests"]
 # Shared test helpers (uniquely named so they cannot clash with other packages).
 pythonpath = ["data_generator/tests", "backend/tests", "pipelines/tests"]
 markers = [
     "spark: needs PySpark + Java (runs in the Spark container or CI)",
     "db: needs PostgreSQL (local `make up`, or the CI service)",
     "slow: minutes-long Spark runs; CI runs them in their own job (`pytest -m slow`)",
+    "r: R parity (Docker image txlens-r:local, `make r-build`); CI job r-parity (`pytest -m r`)",
 ]

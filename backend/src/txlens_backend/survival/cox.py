@@ -26,6 +26,11 @@ COVARIATES = {
     "heart": "Heart graft (vs kidney)",
 }
 PH_ALPHA = 0.05
+# Newton-Raphson until steps are this small: R coxph() stops at a 1e-9 relative change in the
+# log-likelihood; lifelines' default (1e-7) leaves coefficients ~1e-5 from R's. A first step of
+# half the Newton step: with lifelines' default (0.95) its time-varying fitter overshoots on
+# our OMOP extract and diverges, where R (step halving) converges.
+FIT_OPTIONS = {"precision": 1e-10, "step_size": 0.5}
 
 
 def covariate_frame(frame: pd.DataFrame) -> pd.DataFrame:
@@ -94,7 +99,7 @@ def fit_cox(frame: pd.DataFrame, covariates: list[str]) -> CoxResult:
     (Schoenfeld residuals against the Kaplan-Meier transform of time, as R cox.zph)."""
     data, missing, warnings = model_data(frame, covariates)
     kept = [c for c in covariates if c in data.columns]
-    fit = CoxPHFitter().fit(data, "time", "event")
+    fit = CoxPHFitter().fit(data, "time", "event", fit_options=FIT_OPTIONS)
     ph = proportional_hazard_test(fit, data, time_transform="km").summary["p"]
     terms = []
     for c in kept:

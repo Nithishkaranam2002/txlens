@@ -83,9 +83,9 @@ class Dataset:
             return list(csv.DictReader(f))
 
 
-def build(out: Path) -> Dataset:
+def build(out: Path, n_patients: int = N_PATIENTS) -> Dataset:
     """Generate the synthetic data (seeded) and assign tenant-ranged person ids."""
-    generate(replace(GeneratorConfig(), seed=SEED, n_patients=N_PATIENTS), out, pdfs=False)
+    generate(replace(GeneratorConfig(), seed=SEED, n_patients=n_patients), out, pdfs=False)
     counters = dict.fromkeys(TENANT_ORDINAL, 0)
     persons = {}
     with (out / "ground_truth" / "patients.csv").open() as f:

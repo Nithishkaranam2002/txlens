@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 from lifelines import CoxPHFitter, CoxTimeVaryingFitter
 
+from txlens_backend.survival.cox import FIT_OPTIONS
 from txlens_backend.survival.extract import GRAFT_LOSS
 from txlens_backend.survival.km import Z95
 
@@ -140,7 +141,9 @@ class HazardRatio:
 
 
 def hazard_ratio(design: str, coef: float, se: float, n: int, events: int) -> HazardRatio:
-    """exp(coef) with a Wald 95% interval."""
+    """exp(coef) with a Wald 95% interval; a fit that did not converge is an error."""
+    if not (np.isfinite(coef) and np.isfinite(se)):
+        raise ValueError(f"{design}: the Cox fit did not converge")
     return HazardRatio(
         design,
         float(np.exp(coef)),
@@ -162,7 +165,7 @@ def naive_from_time_zero(frame: pd.DataFrame, exposure_day: str, by: int) -> Haz
             "exposed": (frame[exposure_day].notna() & (frame[exposure_day] <= by)).astype(int),
         }
     )
-    fit = CoxPHFitter().fit(data, "time", "event")
+    fit = CoxPHFitter().fit(data, "time", "event", fit_options=FIT_OPTIONS)
     return hazard_ratio(
         "naive (from transplant)",
         float(fit.params_["exposed"]),
@@ -182,7 +185,7 @@ def landmark_ratio(frame: pd.DataFrame, exposure_day: str, landmark: int) -> Haz
             "exposed": (kept[exposure_day].notna() & (kept[exposure_day] <= landmark)).astype(int),
         }
     )
-    fit = CoxPHFitter().fit(data, "time", "event")
+    fit = CoxPHFitter().fit(data, "time", "event", fit_options=FIT_OPTIONS)
     return hazard_ratio(
         f"landmark at day {landmark}",
         float(fit.params_["exposed"]),
@@ -196,7 +199,12 @@ def time_varying_ratio(frame: pd.DataFrame, exposure_day: str, by: int) -> Hazar
     """Exposure as a time-varying covariate from its first day (Cox with start/stop rows)."""
     rows = start_stop(frame, exposure_day, by)
     fit = CoxTimeVaryingFitter().fit(
-        rows, id_col="id", event_col="event", start_col="start", stop_col="stop"
+        rows,
+        id_col="id",
+        event_col="event",
+        start_col="start",
+        stop_col="stop",
+        fit_options=FIT_OPTIONS,
     )
     return hazard_ratio(
         "time-varying covariate",

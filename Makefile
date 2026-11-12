@@ -6,7 +6,7 @@ SEED ?= 42
 VOCAB_SOURCE ?= omop/athena
 N_PATIENTS ?= 2000
 
-.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run prune-login-attempts notes-report evals extraction-systems mapping-report review-report rejection-report cohort-report surveillance-report biopsy-report ocr-report vocab-load vocab-export-curation vocab-load-local vocab-subset vocab-check generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
+.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run prune-login-attempts notes-report evals extraction-systems mapping-report review-report rejection-report cohort-report surveillance-report biopsy-report ocr-report vocab-load vocab-export-curation vocab-load-local vocab-subset vocab-check r-build r-parity generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -100,6 +100,12 @@ generate-data: ## Generate synthetic data into data/ (override: SEED=7 N_PATIENT
 
 generate-data-scale: ## 20,000 patients, no PDFs or note text, into data_scale/ (Spark volume tests)
 	uv run txlens-generate --seed $(SEED) --n-patients 20000 --out data_scale --no-pdfs --no-note-text
+
+r-build: ## Build the R reference image (R 4.4.2 + survival + cmprsk) for r_parity/
+	docker build -f infra/r.Dockerfile -t txlens-r:local infra
+
+r-parity: ## Python survival port vs the R reference (needs `make r-build` and Postgres)
+	uv run pytest -m r
 
 spark-build: ## Build the Spark runner image (Python 3.12 + Java 17 + PySpark + Delta)
 	$(COMPOSE) --profile spark build spark

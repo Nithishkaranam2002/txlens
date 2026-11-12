@@ -57,12 +57,48 @@ jobs:
           uv run ruff format --check .
           # One mypy run per package: each tests/ folder has its own conftest.py.
           for pkg in backend data_generator pipelines evals omop; do uv run mypy "$pkg" || exit 1; done
-      - name: Test (without the slow Spark runs)
-        run: uv run pytest -m "not slow"
+      - name: Test (without the slow Spark runs and the R parity job's tests)
+        run: uv run pytest -m "not slow and not r"
       - name: OpenAPI schema is up to date (run `make openapi` after API changes)
         run: |
           uv run txlens-export-openapi > frontend/openapi.json
           git diff --exit-code frontend/openapi.json
+
+  # The Python survival port against the R reference (r_parity/), R run in its Docker image.
+  r-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg16-bookworm
+        env:
+          POSTGRES_USER: txlens
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: txlens
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U txlens -d txlens"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://txlens:ci-only-password@localhost:5432/txlens
+      TXLENS_REQUIRE_DB: "1"
+      # Fail (not skip) if the R image is missing.
+      TXLENS_REQUIRE_R: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version: "0.7.22"
+          enable-cache: true
+      - name: Build the R image (pinned R 4.4.2, dated CRAN snapshot)
+        run: docker build -f infra/r.Dockerfile -t txlens-r:local infra
+      - name: Install dependencies
+        run: uv sync --frozen --all-packages
+      - name: R vs Python parity
+        run: uv run pytest -m r
 
   # End-to-end Spark runs on generated data (about 25 minutes). Only on main and by hand, so
   # pull requests get quick feedback from the job above.
