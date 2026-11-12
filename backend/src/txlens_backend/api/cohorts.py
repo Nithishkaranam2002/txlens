@@ -32,8 +32,6 @@ from txlens_backend.services import disclosure, patients
 router = APIRouter(prefix="/cohorts", tags=["cohorts"])
 Builder = Annotated[Principal, Depends(require_roles(Role.CLINICIAN, Role.RESEARCHER))]
 NOT_FOUND: dict[int | str, dict[str, Any]] = {404: {"description": "No such cohort in your center"}}
-# Every cohort count is "patients passing the rules": one kind of count, compared by its rules.
-FAMILY, BASE, CELL = "cohort", disclosure.base_key(counts="patients"), "patients"
 
 
 class NewCohort(BaseModel):
@@ -64,8 +62,7 @@ def released(
         conn, principal.user_id, source, threshold=ctx.settings.small_cell_threshold,
         window_days=ctx.settings.disclosure_window_days,
     )  # fmt: skip
-    cells = [disclosure.Cell(CELL, constraints, n) for constraints, n in counts]
-    return guard.release(FAMILY, BASE, cells), guard.notice
+    return svc.release_counts(guard, counts), guard.notice
 
 
 def shown(count: int, rules: svc.CohortRules, principal: Principal, conn: TenantDb,
@@ -77,12 +74,7 @@ def shown(count: int, rules: svc.CohortRules, principal: Principal, conn: Tenant
 
 def check_date_granularity(rules: svc.CohortRules, principal: Principal) -> None:
     """De-identified roles: transplant date bounds must be Jan 1 / Dec 31 (422 otherwise)."""
-    bounds = rules.transplant_date
-    if principal.sees_identifiers or bounds is None:
-        return
-    if (bounds.start and (bounds.start.month, bounds.start.day) != (1, 1)) or (
-        bounds.end and (bounds.end.month, bounds.end.day) != (12, 31)
-    ):
+    if not principal.sees_identifiers and not svc.whole_years(rules):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             "Your role can filter transplant dates by whole years only "

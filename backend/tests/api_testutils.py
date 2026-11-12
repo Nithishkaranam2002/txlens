@@ -1,7 +1,7 @@
 """Helpers shared by the API tests (a module, so tests can import it)."""
 
 from fastapi.testclient import TestClient
-from httpx import Response
+from httpx2 import Response  # what TestClient returns (httpx2 is installed)
 from sqlalchemy import Engine, text
 
 from txlens_backend.api.deps import Role

@@ -28,6 +28,17 @@ constraint-dependencies = [
     "smart-open<=9.0.0",
     "srsly<=2.5.5",
     "loguru<0.8",
+    # Step 3.3 copilot (added 2026-11-12): newest releases at least two weeks old
+    "langgraph<=1.2.18",
+    "langchain-core<=1.7.1",
+    "langsmith<=0.14.14",
+    "langgraph-sdk<=0.4.10",
+    "langchain-protocol<=0.0.20",
+    "jsonpatch<=1.38",
+    "jsonpointer<=3.6",
+    "xxhash<=4.0.2",
+    "ormsgpack<=1.13.0",
+    "sqlglot<=30.25.0",
     # docling group
     "torch<=2.14.1",
     "torchvision<=0.29.1",
@@ -59,6 +70,7 @@ dev = [
     "mypy>=1.17",
     "pytest>=8.4",
     "httpx>=0.28",
+    "httpx2>=2.16",  # Starlette's TestClient uses it once installed (langsmith brings it)
     "types-pyyaml>=6.0,<6.0.12.20261001",
     "pandas-stubs>=2.2,<2.4",
 ]

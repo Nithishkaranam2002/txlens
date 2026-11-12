@@ -23,6 +23,10 @@ from txlens_backend.services.patients import DonorType, Organ
 LabKey = Literal["dd_cfdna", "creatinine", "egfr", "tacrolimus_trough", "dsa_mfi"]
 OPERATORS = {">=": ">=", ">": ">", "<=": "<=", "<": "<"}  # validated op -> SQL operator
 LAB_CODES = dict(LABS) | {"dsa_mfi": DSA_LOCAL}
+# For the differencing guard every cohort count is one kind of count, "patients passing the
+# rules", compared by its rules: in the cohort builder and in the copilot alike.
+DISCLOSURE_FAMILY, DISCLOSURE_CELL = "cohort", "patients"
+DISCLOSURE_BASE = disclosure.base_key(counts="patients")
 
 
 class LabRule(BaseModel):
@@ -206,6 +210,25 @@ def step_constraints(rules: CohortRules) -> list[disclosure.Constraints]:
     for dim, constraint in compile_rules(rules).atoms:
         steps.append(disclosure.add(steps[-1], dim, constraint))
     return steps
+
+
+def whole_years(rules: CohortRules) -> bool:
+    """Transplant date bounds (if any) are Jan 1 / Dec 31: day-level bounds would let anyone
+    watching the count change learn true transplant dates, which de-identification hides."""
+    bounds = rules.transplant_date
+    if bounds is None:
+        return True
+    return (not bounds.start or (bounds.start.month, bounds.start.day) == (1, 1)) and (
+        not bounds.end or (bounds.end.month, bounds.end.day) == (12, 31)
+    )
+
+
+def release_counts(
+    guard: disclosure.Disclosure, counts: Sequence[tuple[disclosure.Constraints, int]]
+) -> list[int | str]:
+    """Patient counts (with their filters) as shown, through the differencing guard."""
+    cells = [disclosure.Cell(DISCLOSURE_CELL, c, n) for c, n in counts]
+    return guard.release(DISCLOSURE_FAMILY, DISCLOSURE_BASE, cells)
 
 
 def lab_label(lab: LabRule) -> str:

@@ -7,7 +7,7 @@ import pytest
 from api_testutils import BASE_URL, PASSWORDS, login, set_cookies
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from httpx import Response
+from httpx2 import Response  # what TestClient returns (httpx2 is installed)
 from sqlalchemy import Engine, text
 
 from txlens_backend.api.app import create_app

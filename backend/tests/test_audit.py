@@ -7,7 +7,7 @@ import pytest
 from api_dataset import Dataset
 from api_testutils import login
 from fastapi.testclient import TestClient
-from httpx import Response
+from httpx2 import Response  # what TestClient returns (httpx2 is installed)
 from sqlalchemy import Engine, Row, text
 
 from txlens_backend.api.deps import Role
