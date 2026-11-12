@@ -259,12 +259,10 @@ def test_mapping_check_flags_each_problem(loaded: Conn) -> None:
     assert "TARGET NOT STANDARD" in wrong.problems
 
 
-def test_condition_mapping_may_target_a_concept_that_maps_to_one_standard(loaded: Conn) -> None:
-    def row(vocabulary: str) -> MappingRow:
-        return MappingRow("x", vocabulary, "test", B + 10, "ICD10CM")
-
-    assert check_mapping(loaded, row("TXLENS_CONDITION")).problems == ()
-    assert "TARGET NOT STANDARD" in check_mapping(loaded, row("TXLENS_PROCEDURE")).problems
+def test_condition_mapping_must_target_a_standard_concept(loaded: Conn) -> None:
+    # B + 10 is non-standard and "Maps to" one standard concept: still not accepted.
+    row = MappingRow("x", "TXLENS_CONDITION", "test", B + 10, "ICD10CM")
+    assert "TARGET NOT STANDARD" in check_mapping(loaded, row).problems
 
 
 def test_local_concept_check_flags_each_problem(loaded: Conn) -> None:

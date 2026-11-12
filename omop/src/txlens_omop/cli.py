@@ -20,6 +20,7 @@ from txlens_omop.check import (
     check_drug_names,
     check_local_concept,
     check_mapping,
+    check_value_pairs,
     format_local_report,
     format_mapping_report,
     format_report,
@@ -96,9 +97,12 @@ def run_check(database_url: str) -> int:
     with psycopg.connect(libpq_url(database_url)) as conn:
         results = check_codes(conn, all_codes())
         print(format_report(results))
-        print("\nReviewed source_to_concept_map rows:")
+        print("\nTxLens source_to_concept_map rows:")
         mappings = [check_mapping(conn, row) for row in read_mappings()]
         print(format_mapping_report(mappings))
+        pair_problems = check_value_pairs(mappings)
+        for problem in pair_problems:
+            print(f"  [PROBLEM] {problem}")
         print("\nTxLens local concepts written by document extraction:")
         local = [check_local_concept(conn, c, d) for c, d in EXTRACTION_LOCAL_CODES.items()]
         print(format_local_report(local))
@@ -129,7 +133,7 @@ def run_check(database_url: str) -> int:
             *(c.problems for c in local),
         ]
     )
-    return 1 if failed or drug_problems else 0
+    return 1 if failed or drug_problems or pair_problems else 0
 
 
 def run_subset(source: AthenaSource, out: Path) -> None:

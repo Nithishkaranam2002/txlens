@@ -4,6 +4,7 @@ from txlens_datagen.meds import RXNORM
 from txlens_datagen.notes import DRUG_NAMES
 from txlens_datagen.writers.fhir import SNOMED_CODES
 from txlens_datagen.writers.lab_feeds import DIALECTS, LOINC
+from txlens_omop.check import MappingCheck, check_value_pairs
 from txlens_omop.codes import (
     EXTRACTION_LOCAL_CODES,
     KNOWN_GAPS,
@@ -16,14 +17,18 @@ from txlens_omop.codes import (
     uncoded_drugs,
 )
 from txlens_omop.mappings import (
+    CURATED_PENDING_REVIEW,
     LOCAL_CONCEPT_FILE,
     LOCAL_CONCEPT_MIN,
     LOCAL_VOCABULARY,
+    PENDING_REVIEW_LABEL,
     SOURCE_VOCABULARIES,
+    MappingRow,
     mappings_dir,
     normalize_source_code,
     read_mappings,
 )
+from txlens_omop.vocab import Concept
 
 BRANDS = {"Prograf", "CellCept", "Solu-Medrol", "Thymoglobulin", "Valcyte"}
 
@@ -141,3 +146,38 @@ def test_every_extraction_local_code_is_a_non_standard_local_concept() -> None:
         assert int(row["concept_id"]) >= LOCAL_CONCEPT_MIN
         assert (row["vocabulary_id"], row["domain_id"]) == (LOCAL_VOCABULARY, domain)
         assert row["standard_concept"] == ""
+
+
+def test_curated_rows_are_labelled_pending_clinical_review() -> None:
+    curated = [m for m in read_mappings() if m.source_vocabulary_id in CURATED_PENDING_REVIEW]
+    assert curated and all(PENDING_REVIEW_LABEL in m.source_code_description for m in curated)
+
+
+def test_every_history_value_row_has_its_observation_row() -> None:
+    rows = read_mappings()
+    observations = {m.source_code for m in rows if m.source_vocabulary_id == "TXLENS_CONDITION"}
+    values = {m.source_code for m in rows if m.source_vocabulary_id == "TXLENS_COND_VALUE"}
+    assert values == {"history of prior kidney transplant", "history of prior heart transplant"}
+    assert values <= observations
+
+
+def concept(concept_id: int, domain: str) -> Concept:
+    return Concept(concept_id, "test", domain, "SNOMED", "x", "S", str(concept_id), None)
+
+
+def check(code: str, vocabulary: str, domain: str) -> MappingCheck:
+    return MappingCheck(MappingRow(code, vocabulary, "test", 1, "SNOMED"), concept(1, domain), ())
+
+
+def test_value_pair_check_needs_an_observation_with_the_same_text() -> None:
+    checks = [
+        check("h/o kidney tx", "TXLENS_CONDITION", "Observation"),
+        check("h/o kidney tx", "TXLENS_COND_VALUE", "Procedure"),
+        check("h/o heart tx", "TXLENS_CONDITION", "Condition"),
+        check("h/o heart tx", "TXLENS_COND_VALUE", "Procedure"),
+        check("h/o lung tx", "TXLENS_COND_VALUE", "Procedure"),
+    ]
+    assert check_value_pairs(checks) == [
+        "'h/o heart tx': value without an observation (its TXLENS_CONDITION target is Condition)",
+        "'h/o lung tx': value without an observation (no TXLENS_CONDITION row)",
+    ]

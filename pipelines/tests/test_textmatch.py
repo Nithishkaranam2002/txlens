@@ -25,11 +25,11 @@ SYNONYMS = [
 ]
 
 
-def matcher(only: set[int] | None = None, reviewed: dict[str, int] | None = None) -> ConceptMatcher:
+def matcher(only: set[int] | None = None, curated: dict[str, int] | None = None) -> ConceptMatcher:
     keep = only or set(PREFERRED)
     terms = [Term(c, n) for c, n in PREFERRED.items() if c in keep]
     terms += [t for t in SYNONYMS if t.concept_id in keep]
-    return ConceptMatcher(terms, PREFERRED, reviewed or {})
+    return ConceptMatcher(terms, PREFERRED, curated or {})
 
 
 def test_qualifiers_are_extracted_and_roman_numerals_read() -> None:
@@ -63,9 +63,9 @@ def test_fuzzy_accepts_close_name_with_same_qualifiers() -> None:
     assert result.confidence >= 0.90
 
 
-def test_reviewed_map_wins_over_automatic_tiers() -> None:
-    result = matcher(reviewed={"hypertension": T2DM}).match("Hypertension")
-    assert (result.concept_id, result.method) == (T2DM, "reviewed")
+def test_curated_map_wins_over_automatic_tiers() -> None:
+    result = matcher(curated={"hypertension": T2DM}).match("Hypertension")
+    assert (result.concept_id, result.method) == (T2DM, "curated")
 
 
 def test_low_score_goes_to_review_with_suggestion() -> None:

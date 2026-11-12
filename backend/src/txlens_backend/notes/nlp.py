@@ -91,7 +91,7 @@ class Mention:
     section: str | None
     sentence_start: int
     sentence_end: int
-    method: str  # "reviewed", "vocabulary", "ambiguous" (and "llm" for the fallback)
+    method: str  # "curated", "vocabulary", "ambiguous" (and "llm" for the fallback)
     confidence: float
     conflict: bool = False  # ConText says both hypothetical and historical
 
@@ -168,7 +168,7 @@ class NoteNlp:
             section=None,
             sentence_start=sentence.start_char,
             sentence_end=sentence.end_char,
-            method=("reviewed" if term.reviewed else "vocabulary") if term else "ambiguous",
+            method=("curated" if term.curated else "vocabulary") if term else "ambiguous",
             confidence=1.0 if term else 0.0,
         )
         if not self.context:

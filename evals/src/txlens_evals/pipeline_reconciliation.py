@@ -55,7 +55,7 @@ LAYER_TABLES = {
 }  # fmt: skip
 
 
-CONDITION_METHODS = ("code", "reviewed", "exact", "normalized", "fuzzy", "unmapped")
+CONDITION_METHODS = ("code", "curated", "exact", "normalized", "fuzzy", "unmapped")
 REVIEW_CSV = "evals/reports/condition_mapping_review.csv"
 
 
@@ -518,7 +518,8 @@ def render_conditions(
         "",
         "Every FHIR Condition, whichever OMOP table its concept's domain sends it to. "
         "\"Codes only\" is what the pipeline mapped before Step 2.2; text matching adds the "
-        "reviewed map, exact name or synonym, normalized and fuzzy matches (fuzzy accepted at "
+        "curated map (TXLENS_CONDITION rows: curated by AI assistant, pending clinical "
+        "review), exact name or synonym, normalized and fuzzy matches (fuzzy accepted at "
         ">= 0.90 and only when type, acuity, side, grade, stage and numbers match exactly). "
         f"Unmapped texts and their best suggestion are in `{REVIEW_CSV}`.",
         "",

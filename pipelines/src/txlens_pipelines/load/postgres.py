@@ -43,9 +43,12 @@ LOAD_ORDER = (
 )
 # Tables outside the OMOP schema.
 APP_TABLES = {"patient_identity", "note_phi_span"}
-# Conditions and measurements extracted from biopsy reports live in app tables (the document
-# workflow's source of truth) and are copied back into cdm after every reload.
+# Biopsy extraction and note NLP results live in app tables (their workflows' source of truth)
+# and are copied back into cdm after every reload.
 BIOPSY_RESULTS = "biopsy_results"
+NOTE_NLP_RESULTS = "note_nlp_results"
+# cdm tables holding only rows copied from app tables: emptied first (note_nlp refers to note).
+APP_COPY_TABLES = ("note_nlp",)
 # Ids from here up belong to rows the backend copies back (extraction results), not to the
 # pipeline: tenant id ranges end below it (20 tenants x 100,000,000).
 FIRST_APP_ROW_ID = 2_100_000_000
@@ -142,7 +145,7 @@ def load_tenant(
     with conn.transaction():
         conn.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant_id,))
         deleted = {}
-        for table in reversed(LOAD_ORDER):
+        for table in (*APP_COPY_TABLES, *reversed(LOAD_ORDER)):
             result = conn.execute(sql.SQL("DELETE FROM {}").format(target(table)))
             deleted[table] = result.rowcount
         for table in LOAD_ORDER:
@@ -156,12 +159,15 @@ def load_tenant(
             if stored is None or stored[0] != inserted[table]:
                 raise RuntimeError(f"{table}: {stored} rows stored, {inserted[table]} sent")
             audit(conn, table, batch_id, deleted[table], inserted[table])
-        inserted[BIOPSY_RESULTS] = restore_biopsy_results(conn)
-        audit(conn, BIOPSY_RESULTS, batch_id, 0, inserted[BIOPSY_RESULTS])
+        for name, function in ((BIOPSY_RESULTS, "load_biopsy_results"),
+                               (NOTE_NLP_RESULTS, "load_note_nlp_results")):  # fmt: skip
+            inserted[name] = restore_app_results(conn, function)
+            audit(conn, name, batch_id, 0, inserted[name])
     return inserted
 
 
-def restore_biopsy_results(conn: Connection) -> int:
-    """Copy reviewed biopsy results (app tables) back into cdm after the reload removed them."""
-    row = conn.execute("SELECT app.load_biopsy_results()").fetchone()
+def restore_app_results(conn: Connection, function: str) -> int:
+    """Copy app-table results (biopsies, note NLP) back into cdm after the reload removed them."""
+    query = sql.SQL("SELECT app.{}()").format(sql.Identifier(function))
+    row = conn.execute(query).fetchone()
     return int(str(row[0])) if row else 0

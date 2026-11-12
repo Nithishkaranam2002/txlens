@@ -105,7 +105,7 @@ def test_observation_domain_conditions_go_to_observation(built: LocalRuntime) ->
     (row,) = gold(built, "observation")
     assert row.observation_source_value == "History of prior kidney transplant"
     assert (row.observation_concept_id, row.value_as_concept_id) == (1340204, 4322471)
-    assert row.observation_source_concept_id == 4059356
+    assert row.observation_source_concept_id == 1340204
     assert row.observation_date == date(2023, 8, 28)  # dated at transplant
 
 

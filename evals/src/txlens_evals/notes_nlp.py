@@ -10,6 +10,9 @@ Systems compared:
 - medspaCy: + sections and ConText (negation, history, hypothetical, family);
 - hybrid: + the LLM for sentences the rules cannot resolve (needs an API key and a budget).
 
+With --full, every metric is given twice: for the held-out notes (all notes except the 300
+read while writing the rules; the headline numbers) and for those 300 tuning notes.
+
 Precision is given twice: strict, and without predictions inside text the generator writes
 but does not list as a fact (the primary disease, "ESRD 2/2 IgA nephropathy", and the
 dd-cfDNA in "If dd-cfDNA rises above 1%"). Both are real mentions.
@@ -41,7 +44,9 @@ from txlens_pipelines.deid_notes import Replacement, to_original_offset
 
 CATEGORIES = ("condition", "medication", "lab", "procedure")
 SAMPLE = 300
-SEED = 7
+SEED = 7  # the 300 notes of seed 7 were read while writing the rules: the tuning notes
+HELD_OUT = "held-out"
+TUNING = "tuning"
 REPORT = Path("evals/reports/notes_nlp.md")
 # Ground-truth concept key -> codes whose concept (or any descendant) is a correct mapping.
 # ("TxLens", code) are local concepts; an empty tuple means no concept exists (expect 0).
@@ -159,6 +164,18 @@ def choose(notes: dict[str, str], n: int | None, seed: int) -> dict[str, list[st
     return by_tenant
 
 
+def split_of(chosen: dict[str, list[str]], tuning: set[str]) -> dict[str, dict[str, list[str]]]:
+    """Note ids per split and tenant: held-out first (the headline), then the tuning notes."""
+    splits: dict[str, dict[str, list[str]]] = {
+        HELD_OUT: defaultdict(list),
+        TUNING: defaultdict(list),
+    }
+    for tenant, ids in chosen.items():
+        for note_id in ids:
+            splits[TUNING if note_id in tuning else HELD_OUT][tenant].append(note_id)
+    return {name: dict(by_tenant) for name, by_tenant in splits.items() if by_tenant}
+
+
 def expected_ids(conn: Connection) -> dict[str, frozenset[int]]:
     """Ground-truth key -> concept ids that count as correct (the codes and descendants)."""
     resolved: dict[str, frozenset[int]] = {}
@@ -250,29 +267,40 @@ def hybrid_system(nlp: NoteNlp, engine: Engine, settings: Settings, budget: Budg
     return extract
 
 
+@dataclass
+class Split:
+    """Scores of every system on one set of notes."""
+
+    name: str
+    scores: dict[str, Scores]
+    notes: int = 0
+    facts: int = 0
+
+
 def evaluate(
     engine: Engine, chosen: dict[str, list[str]], facts: dict[str, list[Fact]],
-    systems: dict[str, System],
-) -> tuple[dict[str, Scores], int]:  # fmt: skip
-    """Run every system on the chosen notes; returns scores and the number of notes."""
-    scores = {name: Scores() for name in systems}
-    count = 0
+    systems: dict[str, System], name: str,
+) -> Split:  # fmt: skip
+    """Run every system on the chosen notes."""
+    split = Split(name, {system: Scores() for system in systems})
+    scores = split.scores
     for tenant, ids in sorted(chosen.items()):
         with tenant_transaction(engine, tenant) as conn:
             notes: list[NoteRow] = read_notes(conn, ids)
             spans = phi_spans(conn, [n.note_id for n in notes])
             expected = expected_ids(conn)
-        count += len(notes)
-        for name, system in systems.items():
+        split.notes += len(notes)
+        split.facts += sum(len(facts.get(n.source_value, [])) for n in notes)
+        for system_name, system in systems.items():
             started = time.perf_counter()
             results = system(tenant, notes)
-            scores[name].seconds += time.perf_counter() - started
+            scores[system_name].seconds += time.perf_counter() - started
             for note, mentions in zip(notes, results, strict=True):
                 own = spans.get(note.note_id, [])
                 original = reidentified(note.text, own)
-                score_note(scores[name], mentions, facts.get(note.source_value, []), own,
+                score_note(scores[system_name], mentions, facts.get(note.source_value, []), own,
                            untracked_spans(original), expected)  # fmt: skip
-    return scores, count
+    return split
 
 
 def reidentified(deid: str, spans: Sequence[Replacement]) -> str:
@@ -366,10 +394,17 @@ LIMITS = """\
   abbreviations, long problem lists and phrasing no rule has seen. Expect much lower numbers
   on real text; these numbers show the pipeline works, not how well it generalizes.
 - **The rules were written knowing the generator.** The abbreviation list (TXLENS_NOTE_ABBREV)
-  and three rules were added after reading errors on this sample. The three rules are: PMH
-  lists active conditions; the transplant indication and DGF are historical; "post-op course"
-  is historical. They are clinically motivated, but they are tuned to this generator.
-  Before them, medspaCy scored 88.0% on temporality and 94.0% on concepts.
+  and three rules were added after reading errors on the 300 tuning notes (seed 7). The three
+  rules are: PMH lists active conditions; the transplant indication and DGF are historical;
+  "post-op course" is historical. They are clinically motivated, but they are tuned to this
+  generator. Before them, medspaCy scored 88.0% on temporality and 94.0% on concepts.
+- **Held-out is not the same as unseen text.** The held-out notes were never read while
+  writing rules, so they guard against fitting individual notes. They come from the same
+  templates, though, so held-out and tuning scores are close; that closeness says nothing
+  about real notes.
+- **The abbreviation list and the condition-text map are curated by an AI assistant and are
+  pending clinical review** (TXLENS_NOTE_ABBREV, TXLENS_CONDITION and TXLENS_COND_VALUE
+  rows of SOURCE_TO_CONCEPT_MAP.csv). No clinician has checked them yet.
 - **The ground truth comes from the same generator,** so there is no annotation noise and no
   disagreement between annotators. Real evaluation needs clinician-annotated notes.
 - **"Graft tenderness" has no SNOMED concept** in our vocabulary. The LLM finds it, but it is
@@ -381,10 +416,41 @@ LIMITS = """\
   vocabulary."""
 
 
-def render(scores: dict[str, Scores], notes: int, facts: int, run: dict[str, str],
-           llm: list[str] | None = None) -> str:  # fmt: skip
-    """The report."""
-    best = list(scores)[-1]
+SPLIT_TITLES = {
+    HELD_OUT: "Held-out notes (never read while writing the rules)",
+    TUNING: f"Tuning notes ({SAMPLE} notes, seed {SEED}: read while writing the rules)",
+}
+
+
+def split_section(split: Split, title: str) -> list[str]:
+    """Mentions, attributes and remaining errors of every system on one split."""
+    best = list(split.scores)[-1]
+    return [
+        f"## {title}",
+        "",
+        f"{split.notes:,} notes, {split.facts:,} ground-truth facts.",
+        "",
+        "### Mentions found (precision, recall, F1)",
+        "",
+        *system_rows(split.scores),
+        "",
+        "### Attributes of matched mentions",
+        "",
+        *attribute_rows(split.scores),
+        "",
+        f"### Most frequent remaining errors ({best})",
+        "",
+        *error_rows(split.scores[best]),
+        "",
+    ]
+
+
+def render(splits: list[Split], run: dict[str, str], llm: list[str] | None = None) -> str:
+    """The report: one section per split, the first one is the headline."""
+    notes = sum(s.notes for s in splits)
+    seconds: Counter[str] = Counter()
+    for split in splits:
+        seconds.update({name: s.seconds for name, s in split.scores.items()})
     out = [
         "# Clinical-note NLP: evaluation",
         "",
@@ -394,25 +460,15 @@ def render(scores: dict[str, Scores], notes: int, facts: int, run: dict[str, str
         "| Run | |", "|---|---|",
         *(f"| {k} | {v} |" for k, v in run.items()),
         f"| Notes | {notes:,} |",
-        f"| Ground-truth facts | {facts:,} |",
+        f"| Ground-truth facts | {sum(s.facts for s in splits):,} |",
         "",
-        "## Mentions found (precision, recall, F1)",
-        "",
-        *system_rows(scores),
-        "",
-        "## Attributes of matched mentions",
-        "",
-        *attribute_rows(scores),
-        "",
-        f"## Most frequent remaining errors ({best})",
-        "",
-        *error_rows(scores[best]),
-        "",
+        *(line for split in splits
+          for line in split_section(split, SPLIT_TITLES.get(split.name, split.name.capitalize()))),
         *(["## LLM fallback (hybrid)", "", *llm, ""] if llm else []),
         "## Speed",
         "",
-        *(f"- {name}: {s.seconds / max(notes, 1) * 1000:.1f} ms per note" for name, s in
-          scores.items()),
+        *(f"- {name}: {total / max(notes, 1) * 1000:.1f} ms per note"
+          for name, total in seconds.items()),
         "",
         "## Honest limits",
         "",
@@ -449,6 +505,8 @@ def main(argv: list[str] | None = None) -> int:
     facts = read_facts(args.data / "ground_truth" / "note_facts.jsonl")
     tenants_of = note_tenants(args.data)
     chosen = choose(tenants_of, None if args.full else args.sample, args.seed)
+    tuning = {i for ids in choose(tenants_of, SAMPLE, SEED).values() for i in ids}
+    groups = split_of(chosen, tuning) if args.full else {"sample": chosen}
     rules, medspacy = build_systems(engine, sorted(chosen)[0])
     systems: dict[str, System] = {"rules-only": rules_system(rules),
                                   "medspaCy": rules_system(medspacy)}  # fmt: skip
@@ -463,15 +521,15 @@ def main(argv: list[str] | None = None) -> int:
         budget.open()
         systems["hybrid (+LLM)"] = hybrid_system(medspacy, engine, settings, budget, fallback)
         run |= {"Model": settings.llm_model, "Prompt": PROMPT.version, "Batch": batch}
-    scores, notes = evaluate(engine, chosen, facts, systems)
-    n_facts = sum(len(facts.get(i, [])) for ids in chosen.values() for i in ids)
+    splits = [evaluate(engine, ids, facts, systems, name) for name, ids in groups.items()]
+    notes = sum(s.notes for s in splits)
     llm = None
     if budget is not None:
         spent, cap = budget.totals()
         llm = llm_rows(
             fallback, (float(spent), float(cap)), notes, len(tenants_of), settings.llm_model
         )
-    report = render(scores, notes, n_facts, run, llm)
+    report = render(splits, run, llm)
     args.out.write_text(report, encoding="utf-8")
     print(report)
     return 0

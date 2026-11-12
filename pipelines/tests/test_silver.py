@@ -172,11 +172,11 @@ def test_conditions_mapped_by_code_text_or_sent_to_review(built: LocalRuntime) -
         "pa-c1": (193782, "Condition", "code"),
         "pa-graft-loss": (4127554, "Condition", "code"),
         "pb-c1": (316866, "Condition", "exact"),  # synonym
-        "pb-c2": (1340204, "Observation", "reviewed"),  # via Maps to + Maps to value
+        "pb-c2": (1340204, "Observation", "curated"),  # History of event + value
         "pb-c3": (0, "Condition", "unmapped"),
     }
     assert found["pb-c2"].value_concept_id == 4322471
-    assert found["pb-c2"].source_concept_id == 4059356
+    assert found["pb-c2"].source_concept_id == 1340204
     assert found["pb-c3"].review_reason == "low_score"
     assert found["pb-c3"].suggested_concept_id == 316866  # "Hypertension" is closest
 

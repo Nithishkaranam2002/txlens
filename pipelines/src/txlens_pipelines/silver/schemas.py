@@ -59,7 +59,7 @@ class Conditions(Lineage):
     domain_id: StringType = pa.Field(nullable=False, isin=["Condition", "Observation"])
     source_concept_id: IntegerType = pa.Field(nullable=False)
     mapping_method: StringType = pa.Field(
-        nullable=False, isin=["code", "reviewed", "exact", "normalized", "fuzzy", "unmapped"]
+        nullable=False, isin=["code", "curated", "exact", "normalized", "fuzzy", "unmapped"]
     )
     mapping_confidence: DoubleType = pa.Field(nullable=True)
     suggested_concept_id: IntegerType = pa.Field(nullable=True)

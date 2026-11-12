@@ -25,7 +25,7 @@ HTN, T2DM, ESRD, EDEMA, CMV, RENAL_TCMR, CARDIAC_ACR = (
     4128371,
     4202285,
 )
-REVIEWED = [
+CURATED = [
     Term("htn", HTN, "condition", True),
     Term("t2dm", T2DM, "condition", True),
     Term("tcmr", RENAL_TCMR, "condition", True, "kidney"),
@@ -59,7 +59,7 @@ A/P: TCMR on biopsy. If dd-cfDNA rises above 1%, repeat. Continue tacro.
 
 @cache
 def vocabulary() -> Vocabulary:
-    return build(REVIEWED, AUTOMATIC)
+    return build(CURATED, AUTOMATIC)
 
 
 @cache
@@ -77,7 +77,7 @@ def test_clean_and_organ_prefix() -> None:
     assert split_organ("mixed tcmr/abmr") == (None, "mixed tcmr/abmr")
 
 
-def test_reviewed_term_wins_and_two_automatic_concepts_are_ambiguous() -> None:
+def test_curated_term_wins_and_two_automatic_concepts_are_ambiguous() -> None:
     v = build(
         [Term("pkd", 1, "condition", True)],
         [Term("pkd", 2, "condition", False), Term("cad", 3, "condition", False),

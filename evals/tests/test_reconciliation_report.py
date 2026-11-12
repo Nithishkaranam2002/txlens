@@ -60,7 +60,7 @@ def test_condition_section_compares_codes_only_with_text_matching() -> None:
                 ("center_a", {"code": 9, "unmapped": 1}, {"Condition": 9}),
                 (
                     "center_b",
-                    {"exact": 6, "reviewed": 3, "unmapped": 1},
+                    {"exact": 6, "curated": 3, "unmapped": 1},
                     {"Condition": 8, "Observation": 1},
                 ),
             ]

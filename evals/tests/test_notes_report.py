@@ -5,10 +5,12 @@ from txlens_backend.notes.nlp import Mention
 from txlens_evals.notes_nlp import (
     Fact,
     Scores,
+    Split,
     llm_rows,
     prf,
     render,
     score_note,
+    split_of,
     untracked_spans,
 )
 from txlens_pipelines.deid_notes import Replacement
@@ -24,7 +26,7 @@ def deid_mention(text: str, **kw: object) -> Mention:
                                  "experiencer": "patient"} | kw  # fmt: skip
     return Mention(start, start + len(text), text, "condition", 1, bool(values["negated"]),
                    values["temporality"], values["experiencer"], None, 0, 0,  # type: ignore[arg-type]
-                   "reviewed", 1.0)  # fmt: skip
+                   "curated", 1.0)  # fmt: skip
 
 
 def fact(text: str, concept: str, **kw: object) -> Fact:
@@ -71,7 +73,29 @@ def test_report_shows_systems_and_llm_cost() -> None:
     scores["medspaCy"].fn["condition"] = 1
     run = FallbackRun(calls=3, cached=1, input_tokens=1000, output_tokens=100, cost_usd=0.002)
     llm = llm_rows(run, (0.002, 1.0), 10, 100, "ollama/llama3.1:8b")
-    report = render(scores, 10, 10, {"Sample": "10 notes"}, llm)
+    report = render([Split("sample", scores, 10, 10)], {"Sample": "10 notes"}, llm)
     assert "| medspaCy | condition | 100.0% | 100.0% | 90.0% | 94.7% |" in report
     assert "2 paid, 1 answered from the cache" in report
     assert "## Honest limits" in report
+
+
+def test_held_out_split_comes_first_and_keeps_tuning_notes_apart() -> None:
+    chosen = {"center_a": ["N1", "N2", "N3"], "center_b": ["N4"]}
+    splits = split_of(chosen, tuning={"N2", "N4"})
+    assert list(splits) == ["held-out", "tuning"]
+    assert splits == {"held-out": {"center_a": ["N1", "N3"]},
+                      "tuning": {"center_a": ["N2"], "center_b": ["N4"]}}  # fmt: skip
+
+
+def test_report_headline_is_the_held_out_split() -> None:
+    held_out, tuning = Scores(), Scores()
+    held_out.tp["lab"], tuning.tp["lab"] = 8, 2
+    report = render(
+        [
+            Split("held-out", {"medspaCy": held_out}, 8, 8),
+            Split("tuning", {"medspaCy": tuning}, 2, 2),
+        ],
+        {"Sample": "all notes"},
+    )
+    assert report.index("## Held-out notes") < report.index("## Tuning notes (300 notes, seed 7")
+    assert "| Notes | 10 |" in report

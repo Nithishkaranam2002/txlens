@@ -1,7 +1,7 @@
 """Short clinical text -> one concept, with the method and a confidence, or a review item.
 
 Tiers (the first that gives exactly one concept wins):
-1. reviewed source_to_concept_map row: a person checked it (confidence 1.0)
+1. curated source_to_concept_map row (TxLens's own map; confidence 1.0)
 2. exact concept name or synonym, case and spacing ignored (1.0)
 3. normalized: same words in any order, punctuation, SNOMED tags and filler words ignored (0.95)
 4. fuzzy: closest name by token-sorted similarity, accepted at >= the threshold (the score)
@@ -24,7 +24,7 @@ FUZZY_THRESHOLD = 0.90
 NORMALIZED_CONFIDENCE = 0.95
 STOPWORDS = frozenset({"a", "an", "and", "by", "due", "in", "of", "the", "to", "with"})
 SEMANTIC_TAG = re.compile(r"\s*\((disorder|finding|situation|procedure|morphologic abnormality)\)$")
-METHODS = ("reviewed", "exact", "normalized", "fuzzy")
+METHODS = ("curated", "exact", "normalized", "fuzzy")
 
 
 @dataclass(frozen=True)
@@ -60,17 +60,17 @@ def token_key(text: str) -> str:
 
 
 class ConceptMatcher:
-    """Matches texts against a fixed set of concept names and reviewed mappings."""
+    """Matches texts against a fixed set of concept names and curated mappings."""
 
     def __init__(
         self,
         terms: Iterable[Term],
         preferred: Mapping[int, str],
-        reviewed: Mapping[str, int],
+        curated: Mapping[str, int],
         fuzzy_threshold: float = FUZZY_THRESHOLD,
     ) -> None:
         self.preferred = dict(preferred)
-        self.reviewed = {exact_key(k): v for k, v in reviewed.items()}
+        self.curated = {exact_key(k): v for k, v in curated.items()}
         self.threshold = fuzzy_threshold
         self.exact: dict[str, set[int]] = defaultdict(set)
         self.tokens: dict[str, set[int]] = defaultdict(set)
@@ -84,8 +84,8 @@ class ConceptMatcher:
     def match(self, text: str) -> Match:
         """The concept `text` names, or a review item."""
         key = exact_key(text)
-        if key in self.reviewed:
-            return Match(self.reviewed[key], "reviewed", 1.0)
+        if key in self.curated:
+            return Match(self.curated[key], "curated", 1.0)
         if key in self.exact:
             return self.accept(text, self.exact[key], "exact", 1.0, text)
         tokens = token_key(text)

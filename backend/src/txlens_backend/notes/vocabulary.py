@@ -1,9 +1,10 @@
 """The terms the note NLP looks for, each tied to one concept, read from the OMOP vocabulary.
 
 Sources:
-- reviewed: `TXLENS_NOTE_ABBREV` (clinic shorthand such as Cr, tacro, DGF, KTx; a code may be
-  organ-specific, "kidney:tcmr") and `TXLENS_DRUG` rows of source_to_concept_map. A person
-  checked these, so they are used as they are;
+- curated: `TXLENS_NOTE_ABBREV` (clinic shorthand such as Cr, tacro, DGF, KTx; a code may be
+  organ-specific, "kidney:tcmr") and `TXLENS_DRUG` rows of source_to_concept_map. They are
+  used as they are and win over automatic names. The TXLENS_NOTE_ABBREV rows were curated by
+  an AI assistant and are pending clinical review;
 - vocabulary: preferred names and English synonyms of the SNOMED conditions and procedures
   and the RxNorm ingredients TxLens uses (txlens_omop.codes), plus RxNorm brand names. These
   are automatic, so a name is kept only when it carries the same clinical qualifiers as the
@@ -32,7 +33,7 @@ CATEGORY_BY_DOMAIN: dict[str, Category] = {
     "Procedure": "procedure",
 }
 ORGANS = ("kidney", "heart")
-REVIEWED = ("TXLENS_NOTE_ABBREV", "TXLENS_DRUG")
+CURATED = ("TXLENS_NOTE_ABBREV", "TXLENS_DRUG")
 ENGLISH = 4180186
 MAX_WORDS = 6
 SEMANTIC_TAG = re.compile(r"\s*\([a-z ]+\)$")
@@ -45,7 +46,7 @@ class Term:
     text: str
     concept_id: int
     category: Category
-    reviewed: bool
+    curated: bool
     organ: str | None = None
 
 
@@ -77,7 +78,7 @@ def seed_codes(uses: Iterable[CodeUse]) -> tuple[list[str], list[str]]:
     return snomed, rxnorm
 
 
-REVIEWED_SQL = text(
+CURATED_SQL = text(
     "SELECT m.source_code, c.concept_id, c.domain_id FROM vocab.source_to_concept_map m "
     "JOIN vocab.concept c ON c.concept_id = m.target_concept_id "
     "WHERE m.source_vocabulary_id = ANY(:vocabularies) AND m.invalid_reason IS NULL"
@@ -120,14 +121,14 @@ def split_organ(code: str) -> tuple[str | None, str]:
     return (head, rest) if sep and head in ORGANS else (None, code)
 
 
-def build(reviewed: Iterable[Term], automatic: Iterable[Term]) -> Vocabulary:
-    """Reviewed terms win; automatic terms naming two concepts become ambiguous."""
-    terms: dict[tuple[str | None, str], Term] = {(t.organ, t.text): t for t in reviewed}
+def build(curated: Iterable[Term], automatic: Iterable[Term]) -> Vocabulary:
+    """Curated terms win; automatic terms naming two concepts become ambiguous."""
+    terms: dict[tuple[str | None, str], Term] = {(t.organ, t.text): t for t in curated}
     seen: dict[str, int] = {}
     ambiguous: set[str] = set()
     for term in automatic:
         key = (None, term.text)
-        if key in terms and terms[key].reviewed:
+        if key in terms and terms[key].curated:
             continue
         if seen.get(term.text, term.concept_id) != term.concept_id:
             ambiguous.add(term.text)
@@ -139,12 +140,12 @@ def build(reviewed: Iterable[Term], automatic: Iterable[Term]) -> Vocabulary:
 
 
 def load_vocabulary(conn: Connection) -> Vocabulary:
-    """Every note term from the loaded vocabulary (reviewed and guarded automatic ones)."""
-    reviewed = []
-    for code, concept_id, domain in conn.execute(REVIEWED_SQL, {"vocabularies": list(REVIEWED)}):
+    """Every note term from the loaded vocabulary (curated and guarded automatic ones)."""
+    curated = []
+    for code, concept_id, domain in conn.execute(CURATED_SQL, {"vocabularies": list(CURATED)}):
         organ, surface = split_organ(code)
         if domain in CATEGORY_BY_DOMAIN:
-            reviewed.append(
+            curated.append(
                 Term(clean(surface), int(concept_id), CATEGORY_BY_DOMAIN[domain], True, organ)
             )
     snomed, rxnorm = seed_codes(all_codes())
@@ -155,4 +156,4 @@ def load_vocabulary(conn: Connection) -> Vocabulary:
         if (domain in CATEGORY_BY_DOMAIN and len(surface.split()) <= MAX_WORDS
                 and same_qualifiers(surface, preferred)):  # fmt: skip
             automatic.append(Term(surface, int(concept_id), CATEGORY_BY_DOMAIN[domain], False))
-    return build(reviewed, automatic)
+    return build(curated, automatic)

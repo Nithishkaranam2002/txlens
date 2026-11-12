@@ -76,11 +76,12 @@ def test_reload_replaces_rows_and_tenants_stay_isolated(urls: tuple[str, str]) -
             "death": 1,
             "patient_identity": 2,
             "biopsy_results": 0,
+            "note_nlp_results": 0,
         }
         load_tenant(conn, "center_a", people("center_a", [1, 2, 3]), "b2")  # re-run
         load_tenant(conn, "center_b", people("center_b", [9]), "b2")
-        assert counts(conn, "center_a") == (3, 3, 8)  # no duplicates; 4 audit rows per load
-        assert counts(conn, "center_b") == (1, 1, 4)
+        assert counts(conn, "center_a") == (3, 3, 10)  # no duplicates; 5 audit rows per load
+        assert counts(conn, "center_b") == (1, 1, 5)
         assert counts(conn, None) == (0, 0, 0)  # no tenant set: nothing visible
 
 

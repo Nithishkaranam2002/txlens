@@ -1,11 +1,13 @@
 """FHIR conditions -> standard concept, OMOP domain and how it was mapped (no LLM).
 
 A SNOMED code the center sent wins ("Maps to" when it is not standard). Without a code, the
-text goes through the shared matcher (textmatch/matcher.py: reviewed map, exact name or
+text goes through the shared matcher (textmatch/matcher.py: curated map, exact name or
 synonym, normalized, fuzzy, with the clinical-qualifier guard). The matched concept is then
-taken to its standard form: itself, or its "Maps to" target plus "Maps to value" (e.g.
-"History of renal transplant" -> History of event, value Transplant of kidney). The standard
-concept's domain decides the OMOP table in gold. Anything unresolved keeps concept 0, its text,
+taken to its standard form: itself, or its "Maps to" target plus "Maps to value" (e.g. a
+center's code for "History of renal transplant" -> History of event, value Transplant of
+kidney). A curated "history of" text names its standard pair directly: History of event in
+TXLENS_CONDITION and the procedure in TXLENS_COND_VALUE. The standard concept's domain
+decides the OMOP table in gold. Anything unresolved keeps concept 0, its text,
 and the best suggestion for the review list.
 
 The distinct texts are few (dozens), so matching runs on the driver in plain Python.
@@ -14,15 +16,16 @@ The distinct texts are few (dozens), so matching runs on the driver in plain Pyt
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 
-from txlens_pipelines.textmatch.matcher import ConceptMatcher, Match, Term
+from txlens_pipelines.textmatch.matcher import ConceptMatcher, Match, Term, exact_key
 from txlens_pipelines.vocab import Vocabulary
 
 TARGET_DOMAINS = ("Condition", "Observation")
-REVIEWED_VOCABULARY = "TXLENS_CONDITION"
+CURATED_VOCABULARY = "TXLENS_CONDITION"
+CURATED_VALUE_VOCABULARY = "TXLENS_COND_VALUE"
 ENGLISH = 4180186
 MAPPED = (  # one row per distinct uncoded (tenant, text)
     "tenant_id string, source_text string, matched_concept_id int, method string, "
-    "confidence double, suggested_concept_id int, review_reason string"
+    "confidence double, suggested_concept_id int, review_reason string, curated_value_id int"
 )
 
 
@@ -74,7 +77,7 @@ def standard_forms(vocab: Vocabulary) -> DataFrame:
 
 
 def build_matcher(vocab: Vocabulary) -> ConceptMatcher:
-    """A matcher over candidate names, English synonyms and reviewed TXLENS_CONDITION rows."""
+    """A matcher over candidate names, English synonyms and curated TXLENS_CONDITION rows."""
     candidates = candidate_concepts(vocab)
     preferred = {int(r.concept_id): r.concept_name for r in candidates.collect()}
     synonyms = (
@@ -84,13 +87,15 @@ def build_matcher(vocab: Vocabulary) -> ConceptMatcher:
     )
     terms = [Term(cid, name) for cid, name in preferred.items()]
     terms += [Term(int(r.concept_id), r.concept_synonym_name) for r in synonyms]
-    reviewed = {
-        r.source_code: int(r.target_concept_id)
-        for r in vocab.source_to_concept_map.where(
-            F.col("source_vocabulary_id") == REVIEWED_VOCABULARY
-        ).collect()
-    }
-    return ConceptMatcher(terms, preferred, reviewed)
+    return ConceptMatcher(terms, preferred, curated_map(vocab, CURATED_VOCABULARY))
+
+
+def curated_map(vocab: Vocabulary, source_vocabulary_id: str) -> dict[str, int]:
+    """Source text -> target concept for one of our source_to_concept_map vocabularies."""
+    rows = vocab.source_to_concept_map.where(
+        F.col("source_vocabulary_id") == source_vocabulary_id
+    ).collect()
+    return {r.source_code: int(r.target_concept_id) for r in rows}
 
 
 def match_texts(conditions: DataFrame, vocab: Vocabulary) -> DataFrame:
@@ -102,6 +107,7 @@ def match_texts(conditions: DataFrame, vocab: Vocabulary) -> DataFrame:
         .collect()
     )
     matcher = build_matcher(vocab) if texts else None
+    values = {exact_key(k): v for k, v in curated_map(vocab, CURATED_VALUE_VOCABULARY).items()}
     rows = []
     for row in texts:
         result: Match = matcher.match(row.source_text) if matcher else Match(None, "review", 0.0)
@@ -114,6 +120,7 @@ def match_texts(conditions: DataFrame, vocab: Vocabulary) -> DataFrame:
                 float(result.confidence),
                 result.suggestion,
                 result.reason,
+                values.get(exact_key(row.source_text)) if result.method == "curated" else None,
             )
         )
     return conditions.sparkSession.createDataFrame(rows, MAPPED)
@@ -161,7 +168,7 @@ def normalize_conditions(conditions: DataFrame, vocab: Vocabulary) -> DataFrame:
     return joined.select(
         *conditions.columns,
         F.when(ok, F.col("standard_concept_id")).otherwise(F.lit(0)).alias("condition_concept_id"),
-        F.when(ok, F.col("value_concept_id")).alias("value_concept_id"),
+        F.when(ok, F.coalesce("curated_value_id", "value_concept_id")).alias("value_concept_id"),
         F.when(ok, F.col("domain")).otherwise(F.lit("Condition")).alias("domain_id"),
         F.coalesce("source_concept_id", F.lit(0)).alias("source_concept_id"),
         method.alias("mapping_method"),

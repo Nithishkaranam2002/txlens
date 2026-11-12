@@ -1,6 +1,6 @@
 """Command-line entry points for the surveillance workflow (and the worker for all workflows).
 
-- `txlens-worker`: the Temporal worker for surveillance and biopsy document workflows.
+- `txlens-worker`: the Temporal worker for surveillance, biopsy document and note NLP workflows.
 - `txlens-surveillance schedule`: create or update the nightly schedule (02:00 UTC).
 - `txlens-surveillance run [--as-of YYYY-MM-DD]`: run now and print what each center did.
 """
@@ -31,6 +31,7 @@ from txlens_backend.workflows.biopsy import (
     BiopsyDocumentWorkflow,
     DocumentActivities,
 )
+from txlens_backend.workflows.notes import NoteActivities, NoteNlpBatchWorkflow
 from txlens_backend.workflows.surveillance import (
     NIGHTLY_SCHEDULE_ID,
     TASK_QUEUE,
@@ -54,6 +55,7 @@ async def serve() -> None:
     check_role_is_rls_bound(engine)
     activities = SurveillanceActivities(engine)
     documents = DocumentActivities(engine, settings)
+    notes = NoteActivities(engine, settings)
     # Two LLM passes per document: room for `llm_concurrency` documents at once.
     llm_slots = 2 * settings.llm_concurrency
     client = await connect()
@@ -64,8 +66,8 @@ async def serve() -> None:
         )  # fmt: skip
         biopsies = Worker(
             client, task_queue=DOCUMENTS_QUEUE,
-            workflows=[BiopsyDocumentWorkflow, BiopsyBatchWorkflow],
-            activities=documents.all(), activity_executor=doc_pool,
+            workflows=[BiopsyDocumentWorkflow, BiopsyBatchWorkflow, NoteNlpBatchWorkflow],
+            activities=[*documents.all(), *notes.all()], activity_executor=doc_pool,
             max_concurrent_activities=llm_slots,
         )  # fmt: skip
         await asyncio.gather(surveillance.run(), biopsies.run())

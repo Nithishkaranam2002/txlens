@@ -1,14 +1,19 @@
-"""Reviewed local mappings that no standard vocabulary provides.
+"""Local mappings that no standard vocabulary provides.
 
 Two files, in Athena's tab-separated format, ship with this package (they are our own content,
 not licensed vocabulary):
 
 - `SOURCE_TO_CONCEPT_MAP.csv`: lab local codes and test-name variants -> LOINC, clinical
-  drug abbreviations -> RxNorm ingredient, uncoded transplant procedure texts -> SNOMED, and
-  free-text condition names -> SNOMED (Condition, or Observation for "history of" texts), and
-  clinic-note terms and abbreviations for the note NLP.
-  Each row was checked by a person; `make vocab-check` re-checks every target against the
-  loaded vocabulary.
+  drug abbreviations -> RxNorm ingredient, uncoded transplant procedure texts -> SNOMED,
+  free-text condition names -> SNOMED, and clinic-note terms and abbreviations for the note
+  NLP. Every target is a standard concept (or one of our local concepts); `make vocab-check`
+  re-checks each one against the loaded vocabulary.
+  A "history of" text follows the OMOP pattern: its TXLENS_CONDITION row names the standard
+  "History of event" (Observation) and its TXLENS_COND_VALUE row the procedure that goes
+  into observation.value_as_concept_id.
+  The TXLENS_CONDITION, TXLENS_COND_VALUE and TXLENS_NOTE_ABBREV rows were curated by an
+  AI assistant and are pending clinical review (CURATED_PENDING_REVIEW); no clinician has
+  checked them yet.
 - `LOCAL_CONCEPT.csv`: TxLens local concepts (id >= 2,000,000,000, non-standard) for things no
   standard vocabulary has, such as a numeric donor-specific antibody MFI.
 
@@ -32,14 +37,14 @@ SOURCE_VOCABULARIES = {
     "TXLENS_DRUG": ("Drug",),
     "TXLENS_PROCEDURE": ("Procedure",),
     "TXLENS_CONDITION": ("Condition", "Observation"),
+    # The value of a "history of" observation: same source code as its TXLENS_CONDITION row.
+    "TXLENS_COND_VALUE": ("Procedure", "Condition"),
     # Clinic-note terms and abbreviations (Cr, tacro, DGF, KTx). A source code may start with
     # "kidney:" or "heart:" when the term means different concepts per transplanted organ.
     "TXLENS_NOTE_ABBREV": ("Condition", "Drug", "Measurement", "Procedure"),
 }
-# Source vocabularies whose target may be a non-standard concept that "Maps to" exactly one
-# standard concept (plus "Maps to value"): a "history of" text needs the pair History of event
-# + Transplant of kidney, which one target_concept_id cannot hold.
-VIA_MAPS_TO = frozenset({"TXLENS_CONDITION"})
+CURATED_PENDING_REVIEW = frozenset({"TXLENS_CONDITION", "TXLENS_COND_VALUE", "TXLENS_NOTE_ABBREV"})
+PENDING_REVIEW_LABEL = "curated by AI assistant, pending clinical review"
 
 
 @dataclass(frozen=True)
