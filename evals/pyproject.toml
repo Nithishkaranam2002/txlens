@@ -3,7 +3,11 @@ name = "txlens-evals"
 version = "0.1.0"
 description = "Evaluation scripts for extraction, mapping, RAG and text-to-SQL"
 requires-python = ">=3.12,<3.13"
-dependencies = ["txlens-backend", "numpy>=2"]
+dependencies = [
+    "txlens-backend",
+ "numpy>=2",
+ "httpx>=0.28.1",
+]
 
 [tool.uv.sources]
 txlens-backend = { workspace = true }

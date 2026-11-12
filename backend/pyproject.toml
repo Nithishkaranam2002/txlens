@@ -40,6 +40,7 @@ txlens-surveillance = "txlens_backend.workflows.cli:main"
 txlens-biopsies = "txlens_backend.workflows.biopsy_cli:main"
 txlens-notes = "txlens_backend.workflows.notes_cli:main"
 txlens-export-openapi = "txlens_backend.api.app:export_openapi"
+txlens-literature = "txlens_backend.copilot.literature:main"
 
 [build-system]
 requires = ["hatchling"]

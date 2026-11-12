@@ -3477,12 +3477,14 @@ name = "txlens-evals"
 version = "0.1.0"
 source = { editable = "evals" }
 dependencies = [
+    { name = "httpx" },
     { name = "numpy" },
     { name = "txlens-backend" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "numpy", specifier = ">=2" },
     { name = "txlens-backend", editable = "backend" },
 ]

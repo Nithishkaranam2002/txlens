@@ -6,7 +6,7 @@ SEED ?= 42
 VOCAB_SOURCE ?= omop/athena
 N_PATIENTS ?= 2000
 
-.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run prune-login-attempts notes-report evals extraction-systems mapping-report review-report rejection-report cohort-report survival-report surveillance-report biopsy-report ocr-report vocab-load vocab-export-curation vocab-load-local vocab-subset vocab-check r-build r-parity generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
+.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run prune-login-attempts notes-report evals extraction-systems mapping-report review-report rejection-report cohort-report survival-report surveillance-report biopsy-report ocr-report vocab-load vocab-export-curation vocab-load-local vocab-subset vocab-check literature-download literature-index r-build r-parity generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -94,6 +94,12 @@ vocab-subset: ## Extract a small local vocabulary subset into omop/vocab_subset/
 
 vocab-check: ## Check every code we use against the loaded vocabulary
 	uv run txlens-vocab check
+
+literature-download: ## Download open-access transplant abstracts from PubMed (needs NCBI_EMAIL in .env)
+	uv run python -m txlens_evals.literature_download
+
+literature-index: ## Embed the downloaded abstracts into lit.abstract (cached; MAX_COST=0.10 dollars)
+	uv run txlens-literature index --max-cost $(or $(MAX_COST),0.10)
 
 generate-data: ## Generate synthetic data into data/ (override: SEED=7 N_PATIENTS=500)
 	uv run txlens-generate --seed $(SEED) --n-patients $(N_PATIENTS) --out data

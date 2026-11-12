@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     llm_concurrency: int = 4  # LLM calls in flight at once (per worker)
     llm_timeout_seconds: int = 60
     ollama_base_url: str = "http://localhost:11434"
+    # Copilot literature retrieval: "openai/text-embedding-3-small" (paid, asked for 768
+    # dimensions) or "ollama/nomic-embed-text" (local, free, 768 dimensions).
+    embedding_model: str = "openai/text-embedding-3-small"
     langfuse_public_key: SecretStr = SecretStr("")
     langfuse_secret_key: SecretStr = SecretStr("")
     # Document confidence below this goes to human review. 0.70: no auto-approved report was
