@@ -5,20 +5,23 @@ import type { components } from "@/lib/api/schema";
 export type Role = "clinician" | "researcher" | "data_steward" | "admin";
 export type Me = components["schemas"]["Me"];
 
-export type Area = "worklist" | "cohorts" | "patients" | "flags" | "review" | "admin";
+/** "review": act on surveillance flags; "queue": the human review queue; "metrics": its numbers. */
+export type Area = "worklist" | "cohorts" | "patients" | "flags" | "review" | "queue" | "metrics" | "admin";
 
 /** What each role may use. The API enforces the same rules; this only shapes the UI. */
 const ACCESS: Record<Role, readonly Area[]> = {
-  clinician: ["worklist", "cohorts", "patients", "flags", "review"],
-  data_steward: ["worklist", "patients", "flags"],
+  clinician: ["worklist", "cohorts", "patients", "flags", "review", "queue", "metrics"],
+  data_steward: ["worklist", "patients", "flags", "queue", "metrics"],
   researcher: ["cohorts", "patients"],
-  admin: ["admin"],
+  admin: ["admin", "metrics"],
 };
 
 export const NAV: readonly { href: Route; label: string; area: Area }[] = [
   { href: "/worklist", label: "Worklist", area: "worklist" },
+  { href: "/review", label: "Review queue", area: "queue" },
   { href: "/cohorts", label: "Cohorts", area: "cohorts" },
   { href: "/admin", label: "Admin", area: "admin" },
+  { href: "/review/metrics", label: "Review metrics", area: "metrics" },
 ];
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -52,7 +55,8 @@ export function homeFor(role: Role | null): Route {
 
 /** The area a signed-in page belongs to, or null for a path outside every area. */
 export function areaOf(path: string): Area | null {
-  const segment = path.split(/[/?#]/)[1];
+  const [, segment, sub] = path.split(/[/?#]/);
+  if (segment === "review") return sub === "metrics" ? "metrics" : "queue";
   return segment === "worklist" || segment === "cohorts" || segment === "patients" || segment === "admin"
     ? segment
     : null;

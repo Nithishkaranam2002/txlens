@@ -9,6 +9,10 @@ export type Seed = {
   singleFlagPatient: { id: number; name: string };
   otherCenterPatient: { id: number; pseudonym: string };
   noteConditionPatient: { id: number; pseudonym: string; givenName: string; condition: string };
+  review: {
+    documents: Record<"approve" | "edit" | "steward", { id: string; givenName: string }>;
+    curatedKey: string;
+  };
   names: string[];
   mrns: string[];
 };

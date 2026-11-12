@@ -70,8 +70,13 @@ function CurrentNavLinks({ role }: { role: Role | null }) {
 }
 
 function NavLinks({ role, pathname }: { role: Role | null; pathname: string }) {
-  return navFor(role).map((item) => {
-    const current = pathname.startsWith(item.href);
+  const items = navFor(role);
+  // The most specific match is current ("/review/metrics", not also "/review").
+  const active = items
+    .filter((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
+  return items.map((item) => {
+    const current = item.href === active;
     return (
       <Link
         key={item.href}

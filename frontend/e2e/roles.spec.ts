@@ -5,7 +5,7 @@ import { expectNoIdentifiers, identifierPattern, login, seed } from "./helpers";
 test("clinician sees patient names and MRNs", async ({ page }) => {
   await login(page, "clinician");
   await expect(page.getByRole("heading", { name: "Surveillance worklist" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(["Worklist", "Cohorts"]);
+  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(["Worklist", "Review queue", "Cohorts", "Review metrics"]);
   await expect(page.getByRole("table")).toBeVisible();
   const text = await page.getByRole("main").innerText();
   expect(text).toMatch(identifierPattern());
@@ -39,7 +39,7 @@ test("researcher sees pseudonyms only, nowhere a name", async ({ page }) => {
 
 test("data steward has no cohort menu and a read-only, de-identified worklist", async ({ page }) => {
   await login(page, "data_steward");
-  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(["Worklist"]);
+  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(["Worklist", "Review queue", "Review metrics"]);
   await expect(page.getByRole("table")).toBeVisible();
   await expect(page.getByRole("button", { name: /Acknowledge|Resolve/ })).toHaveCount(0);
   await expectNoIdentifiers(page);
@@ -51,7 +51,7 @@ test("admin sees no patient data", async ({ page }) => {
   await login(page, "admin");
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByText("You have no access to patient data")).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(["Admin"]);
+  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(["Admin", "Review metrics"]);
   await expectNoIdentifiers(page);
   for (const path of ["/worklist", `/patients/${seed().singleFlagPatient.id}`, "/cohorts"]) {
     await page.goto(path);

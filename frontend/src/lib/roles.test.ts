@@ -2,14 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import type { Route } from "next";
 
-import { asRole, can, homeFor, landingFor, navFor, seesIdentifiers } from "./roles";
+import { areaOf, asRole, can, homeFor, landingFor, navFor, seesIdentifiers } from "./roles";
 
 describe("role navigation", () => {
   it.each([
-    ["clinician", ["Worklist", "Cohorts"], "/worklist"],
-    ["data_steward", ["Worklist"], "/worklist"],
+    ["clinician", ["Worklist", "Review queue", "Cohorts", "Review metrics"], "/worklist"],
+    ["data_steward", ["Worklist", "Review queue", "Review metrics"], "/worklist"],
     ["researcher", ["Cohorts"], "/cohorts"],
-    ["admin", ["Admin"], "/admin"],
+    ["admin", ["Admin", "Review metrics"], "/admin"],
   ] as const)("%s sees %j and lands on %s", (role, labels, home) => {
     expect(navFor(role).map((item) => item.label)).toEqual(labels);
     expect(homeFor(role)).toBe(home);
@@ -27,6 +27,16 @@ describe("role navigation", () => {
     expect(can("admin", "patients")).toBe(false);
     expect(asRole("superuser")).toBeNull();
     expect(navFor(null)).toEqual([]);
+  });
+});
+
+describe("review queue access", () => {
+  it("clinicians and data stewards use the queue; admins see its metrics only", () => {
+    expect(can("clinician", "queue") && can("data_steward", "queue")).toBe(true);
+    expect(can("researcher", "queue") || can("admin", "queue")).toBe(false);
+    expect(can("admin", "metrics") && !can("researcher", "metrics")).toBe(true);
+    expect(areaOf("/review/biopsy_document/abc")).toBe("queue");
+    expect(areaOf("/review/metrics")).toBe("metrics");
   });
 });
 

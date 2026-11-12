@@ -20,6 +20,10 @@ const pages: [Role, string, string][] = [
   ["clinician", `/patients/${seed().singleFlagPatient.id}`, "Results"],
   ["researcher", "/cohorts", "Cohort builder"],
   ["admin", "/admin", "Admin"],
+  ["clinician", "/review", "Review queue"],
+  ["clinician", `/review/biopsy_document/${seed().review.documents.steward.id}`, "Kidney biopsy report: TCMR"],
+  ["data_steward", `/review/biopsy_document/${seed().review.documents.steward.id}`, "Kidney biopsy report: TCMR"],
+  ["admin", "/review/metrics", "Review metrics"],
 ];
 
 for (const [role, path, heading] of pages) {

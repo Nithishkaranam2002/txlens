@@ -5,8 +5,12 @@ with test-only passwords, a surveillance run as of 2025-06-30 and one condition 
 notes. Writes `frontend/e2e/.seed.json` with the ids and names the browser tests look for.
 The database is dropped and rebuilt on every run, so tests always start from the same state.
 
+It also puts three pathology reports in review (with a scanned report file, so page images
+and crops work) and one AI-curated mapping row in the review queue.
+
 `uv run python backend/tests/e2e_seed.py --serve 8001` (the Playwright config does this) then
-serves the API on that database. The owner URL comes from the usual settings (.env or the
+serves the API on that database. No Temporal server runs in e2e: reviews are applied by the
+API itself, as when no workflow is waiting. The owner URL comes from the usual settings (.env or the
 environment); JWT_SECRET and DEID_HMAC_KEY are test-only values set by the Playwright config.
 """
 
@@ -20,6 +24,7 @@ import psycopg
 import uvicorn
 from api_dataset import build, load
 from db_testutils import migrate
+from document_testutils import report_lines_for, seed_document, write_report_pdf
 from note_testutils import NoteCondition, seed_note_condition
 from pydantic import SecretStr
 from sqlalchemy import Engine, create_engine, pool, text
@@ -44,6 +49,47 @@ PASSWORDS = {
     Role.ADMIN: "E2e-admin-pw-1",
 }
 OUT = Path(__file__).parents[2] / "frontend" / "e2e" / ".seed.json"
+DOCUMENTS = Path(tempfile.gettempdir()) / "txlens_e2e_documents"
+REPORT = "pathology/e2e-report.pdf"
+CURATED = ("TXLENS_NOTE_ABBREV", "e2e-abbrev")
+
+
+class NoWorkflowSender:
+    """No document workflow waits in e2e: the API applies each review itself."""
+
+    async def send(self, workflow_id: str, decision: object) -> bool:
+        return False
+
+
+def seed_review(owner: Engine) -> dict[str, object]:
+    """Three center_a reports in review (approve, edit, steward view) and a curated row."""
+    (DOCUMENTS / "pathology").mkdir(parents=True, exist_ok=True)
+    write_report_pdf(DOCUMENTS / REPORT)
+    with owner.begin() as conn:
+        patients = conn.execute(text(
+            "SELECT person_id, mrn, given_name, family_name, birth_date FROM app.patient_identity "
+            "WHERE tenant_id = 'center_a' AND given_name IS NOT NULL ORDER BY person_id LIMIT 3"
+        )).all()  # fmt: skip
+        documents = {}
+        for role, p in zip(("approve", "edit", "steward"), patients, strict=True):
+            lines = report_lines_for(p.mrn, p.given_name, p.family_name or "Doe", p.birth_date,
+                                     date(2025, 5, 6))  # fmt: skip
+            doc = seed_document(conn, "center_a", lines, "in_review", p.person_id,
+                                day=date(2025, 5, 6), body_top=300)  # fmt: skip
+            conn.execute(text("UPDATE app.document SET source_path = :s WHERE document_id = :d"),
+                         {"s": REPORT, "d": doc.document_id})  # fmt: skip
+            documents[role] = {"id": doc.document_id, "givenName": p.given_name}
+        concept = conn.execute(text(
+            "SELECT concept_id FROM vocab.concept WHERE standard_concept = 'S' "
+            "AND domain_id = 'Condition' ORDER BY concept_id LIMIT 1")).scalar_one()  # fmt: skip
+        conn.execute(text(
+            "INSERT INTO vocab.source_to_concept_map (source_code, source_concept_id, "
+            "source_vocabulary_id, source_code_description, target_concept_id, "
+            "target_vocabulary_id, valid_start_date, valid_end_date) VALUES (:c, 0, :v, "
+            "'E2E term [curated by AI assistant, pending clinical review]', :t, 'SNOMED', "
+            "'2026-11-11', '2099-12-31')"),
+            {"v": CURATED[0], "c": CURATED[1], "t": concept})  # fmt: skip
+    return {"documents": documents, "curatedKey": ":".join(CURATED)}
 
 
 def recreate_database(owner_url: str) -> str:
@@ -59,7 +105,9 @@ def recreate_database(owner_url: str) -> str:
     return url
 
 
-def facts(owner: Engine, deid_key: str, noted: NoteCondition) -> dict[str, object]:
+def facts(
+    owner: Engine, deid_key: str, noted: NoteCondition, review: dict[str, object]
+) -> dict[str, object]:
     """Ids and names the browser tests need."""
     with owner.connect() as conn:
         single = conn.execute(text(
@@ -87,6 +135,7 @@ def facts(owner: Engine, deid_key: str, noted: NoteCondition) -> dict[str, objec
             "id": noted.person_id, "pseudonym": pseudonym(deid_key, "center_a", noted.person_id),
             "givenName": noted.given_name, "condition": noted.concept_name,
         },
+        "review": review,
         "names": sorted({n for row in identities for n in (row.given_name, row.family_name) if n}),
         "mrns": sorted(row.mrn for row in identities if row.mrn),
     }  # fmt: skip
@@ -105,8 +154,9 @@ def seed(settings: Settings) -> str:
     for tenant in center_tenants():
         run_tenant(app, tenant, AS_OF, transplant_configs())
     noted = seed_note_condition(owner, app)
+    review = seed_review(owner)
     deid_key = require_secret("deid_hmac_key", settings.deid_hmac_key)
-    OUT.write_text(json.dumps(facts(owner, deid_key, noted)))
+    OUT.write_text(json.dumps(facts(owner, deid_key, noted, review)))
     print(f"E2E database {DATABASE} ready; seed written to {OUT}")
     return url
 
@@ -123,8 +173,11 @@ def main() -> None:
         e2e = settings.model_copy(update={
             "database_url": SecretStr(url),
             "app_database_url": SecretStr(app_url.render_as_string(hide_password=False)),
+            "documents_root": DOCUMENTS,
         })  # fmt: skip
-        uvicorn.run(create_app(e2e), host="127.0.0.1", port=args.serve, proxy_headers=False)
+        api = create_app(e2e)
+        api.state.review_sender = NoWorkflowSender()
+        uvicorn.run(api, host="127.0.0.1", port=args.serve, proxy_headers=False)
 
 
 if __name__ == "__main__":
