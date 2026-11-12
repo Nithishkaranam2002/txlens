@@ -60,7 +60,8 @@ test("researcher runs a survival analysis and exports it, all suppressed and de-
   await page.getByLabel("Compare by").click();
   await page.getByRole("option", { name: "dd-cfDNA >= 1% in year 1" }).click();
   await page.getByRole("button", { name: "Run analysis" }).click();
-  await expect(page.getByText(/immortal time bias/)).toBeVisible();
+  // The error itself (the page's description also mentions immortal time bias).
+  await expect(page.getByRole("alert").filter({ hasText: /known only from day \d+/ })).toBeVisible();
 });
 
 test("data steward has no cohort menu and a read-only, de-identified worklist", async ({ page }) => {

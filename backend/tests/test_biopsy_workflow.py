@@ -283,7 +283,9 @@ def test_real_activities_extract_wait_for_review_and_load(
 ) -> None:
     fake = FakeCompletion(KIDNEY_ANSWER)
     activities = DocumentActivities(
-        documents_engine, Settings(llm_budget_usd=1.0, review_threshold=0.85),
+        # No QC sample: it picks reports by file hash, and the generated PDFs differ per run, so
+        # the confident report was sometimes sent to review (and expired in skipped time).
+        documents_engine, Settings(llm_budget_usd=1.0, review_threshold=0.85, qc_sample_rate=0.0),
         extractor_for=lambda _: LiteLlmExtractor(MODEL, completion=fake),
     )  # fmt: skip
     confident, blurry = report(KIDNEY_OCR_LINES), report(KIDNEY_OCR_LINES, confidence=0.5)
