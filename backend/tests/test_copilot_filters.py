@@ -122,8 +122,21 @@ def test_the_committed_term_list_holds_only_hashes() -> None:
     assert all(len(ln.split("\t")[0]) == 64 for ln in lines)
 
 
+# In evaluation reports, lines quoting a source verbatim (an abstract's sentences, a paper's
+# title) may contain names; everything else, including the copilot's answers, may not.
+VERBATIM_SOURCE = ("  - Quoted from the abstract:", "- PMID [")
+
+
+def our_text(name: str, content: str) -> str:
+    """A file's text without verbatim source quotes (only eval reports have them)."""
+    if not name.startswith("evals/reports/"):
+        return content
+    return "\n".join(ln for ln in content.splitlines() if not ln.startswith(VERBATIM_SOURCE))
+
+
 def test_no_restricted_name_appears_in_the_repository() -> None:
-    """Code, docs, UI text, reports: nothing tracked by git names a real company or product."""
+    """Code, docs, UI text, reports: nothing tracked by git names a real company or product
+    in our own words (verbatim quotes of cited sources excepted)."""
     root = Path(__file__).resolve().parents[2]
     files = subprocess.run(["git", "ls-files"], cwd=root, capture_output=True, text=True,
                            check=True).stdout.split()  # fmt: skip
@@ -131,8 +144,16 @@ def test_no_restricted_name_appears_in_the_repository() -> None:
     for name in files:
         path = root / name
         if path.is_file() and path.suffix not in {".png", ".pdf", ".jpg", ".ico", ".woff2"}:
-            found += [f"{name}:{m.start}" for m in restricted.find(path.read_text(errors="ignore"))]
+            text = our_text(name, path.read_text(errors="ignore"))
+            found += [f"{name}:{m.start}" for m in restricted.find(text)]
     assert found == []
+
+
+def test_only_verbatim_source_lines_of_reports_are_skipped() -> None:
+    report = 'Answer: Acmesure works.\n  - Quoted from the abstract: "Acmesure ..."'
+    kept = our_text("evals/reports/copilot.md", report)
+    assert kept == "Answer: Acmesure works."
+    assert our_text("docs/LEARNING.md", report) == report
 
 
 def test_data_blocks_cannot_be_closed_by_their_content() -> None:
