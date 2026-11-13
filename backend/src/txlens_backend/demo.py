@@ -140,7 +140,9 @@ COPILOT_USER = "researcher.center_a"
 
 def copilot_cache(settings: Settings, *, offline: bool) -> list[tuple[str, str]]:
     """(question, outcome) for each suggested question, asked as COPILOT_USER. Offline, an
-    answer that is not cached comes back as the outcome "not cached"."""
+    answer that is not cached comes back as the outcome "not cached". The conversations it
+    creates are deleted afterwards (the audit rows stay), so checks do not pile up in the
+    user's history."""
     # The copilot (LangGraph and friends) loads only for this command.
     from txlens_backend.copilot import service
     from txlens_backend.copilot.embeddings import make_embedder
@@ -151,7 +153,7 @@ def copilot_cache(settings: Settings, *, offline: bool) -> list[tuple[str, str]]
     engine = make_engine(settings.app_database_url.get_secret_value())
     deps = service.CopilotDeps(settings, engine, make_embedder(settings), offline=offline)
     info = audit.RequestInfo(request_id=f"copilot-cache-{uuid.uuid4().hex[:8]}", ip="")
-    results = []
+    results, created = [], []
     for question in SUGGESTED:
         with tenant_transaction(engine, "center_a") as conn:
             user_id = str(conn.execute(text(
@@ -159,12 +161,18 @@ def copilot_cache(settings: Settings, *, offline: bool) -> list[tuple[str, str]]
             ).scalar_one())  # fmt: skip
             summary = service.create_conversation(conn, user_id, question[:80])
             conversation = service.get_conversation(conn, user_id, summary.conversation_id)
+        created.append(summary.conversation_id)
         assert conversation is not None
         done = [e for e in service.ask(deps, user_id, "center_a", info, conversation, question)
                 if e["type"] == "done"][-1]  # fmt: skip
         missing = done["answer"] == service.LIVE_AI_DISABLED
         results.append((question, "not cached" if missing else done["outcome"]))
     engine.dispose()
+    owner = create_engine(settings.database_url.get_secret_value())
+    with owner.begin() as conn:  # the app role cannot delete conversations; messages cascade
+        conn.execute(text("DELETE FROM app.copilot_conversation WHERE conversation_id = ANY(:c)"),
+                     {"c": created})  # fmt: skip
+    owner.dispose()
     return results
 
 
