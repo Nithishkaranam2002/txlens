@@ -111,7 +111,8 @@ push_snapshot() {
     return
   fi
   step "Uploading the demo snapshot ($(du -sh demo_snapshot | cut -f1), checksums verified on restore)"
-  ssh_vm "mkdir -p $REMOTE/demo_snapshot"
+  # Docker creates a missing bind-mount folder as root (the tools service mounts this one).
+  ssh_vm "mkdir -p $REMOTE/demo_snapshot && sudo chown $ADMIN:$ADMIN $REMOTE/demo_snapshot"
   scp_vm demo_snapshot/manifest.json demo_snapshot/roles.sql demo_snapshot/txlens.dump \
     demo_snapshot/mlruns.tgz demo_snapshot/data_raw.tgz "$ADMIN@$VM_HOST:$REMOTE/demo_snapshot/"
 }
@@ -209,6 +210,7 @@ reset() {
   need_az
   need_key
   resolve_host
+  push_code
   push_snapshot
   step "Restoring the demo data (users and audit trail kept; about 10 minutes)"
   ssh_vm "bash $REMOTE/infra/azure/remote/reset.sh $VM_HOST"
