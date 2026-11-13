@@ -41,7 +41,7 @@ deploy() {
     sshSourceIp="$ip" dnsLabel="$label" tags="$tags"
   [[ "$(power_state)" == "VM running" ]] || az vm start -g "$RG" -n "$VM" -o none
   resolve_host
-  echo "    https://$HOST"
+  echo "    https://$VM_HOST"
 
   pin_host_key
   step "Host setup (Docker, firewall, SSH hardening, unattended upgrades, swap)"
@@ -50,11 +50,11 @@ deploy() {
   push_code
   push_snapshot
   step "Install on the VM"
-  ssh_vm "bash $REMOTE/infra/azure/remote/install.sh $HOST"
+  ssh_vm "bash $REMOTE/infra/azure/remote/install.sh $VM_HOST"
 
   passwords
   bash infra/azure/smoke.sh --fresh
-  step "Done: https://$HOST  (make cloud-stop when you are finished: the VM costs money)"
+  step "Done: https://$VM_HOST  (make cloud-stop when you are finished: the VM costs money)"
 }
 
 # The VM's SSH host key, read through the Azure API (not over the network), so the first SSH
@@ -67,12 +67,12 @@ pin_host_key() {
     | grep -oE 'ssh-ed25519 [A-Za-z0-9+/=]+' | head -1) || true
   [[ -n "$key" ]] || fail "could not read the VM's host key"
   mkdir -p "$HOME/.ssh"
-  printf '%s %s\n' "$HOST" "$key" > "$KNOWN_HOSTS"
+  printf '%s %s\n' "$VM_HOST" "$key" > "$KNOWN_HOSTS"
   for _ in $(seq 1 30); do
     ssh_vm true 2>/dev/null && return
     sleep 5
   done
-  fail "SSH to $HOST does not answer"
+  fail "SSH to $VM_HOST does not answer"
 }
 
 # The committed code (git archive of HEAD): no .env, data, model store or GitHub credentials.
@@ -105,7 +105,7 @@ push_snapshot() {
   step "Uploading the demo snapshot ($(du -sh demo_snapshot | cut -f1), checksums verified on restore)"
   ssh_vm "mkdir -p $REMOTE/demo_snapshot"
   scp_vm demo_snapshot/manifest.json demo_snapshot/roles.sql demo_snapshot/txlens.dump \
-    demo_snapshot/mlruns.tgz demo_snapshot/data_raw.tgz "$ADMIN@$HOST:$REMOTE/demo_snapshot/"
+    demo_snapshot/mlruns.tgz demo_snapshot/data_raw.tgz "$ADMIN@$VM_HOST:$REMOTE/demo_snapshot/"
 }
 
 start() {
@@ -114,15 +114,15 @@ start() {
   az vm start -g "$RG" -n "$VM" -o none
   allow_my_ip
   resolve_host
-  step "Waiting for https://$HOST"
+  step "Waiting for https://$VM_HOST"
   for _ in $(seq 1 60); do
-    if [[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "https://$HOST/login")" == 200 ]]; then
-      echo "    up: https://$HOST  (make cloud-stop afterwards)"
+    if [[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "https://$VM_HOST/login")" == 200 ]]; then
+      echo "    up: https://$VM_HOST  (make cloud-stop afterwards)"
       return
     fi
     sleep 5
   done
-  fail "https://$HOST did not answer within 5 minutes (make cloud-status, make cloud-ssh)"
+  fail "https://$VM_HOST did not answer within 5 minutes (make cloud-status, make cloud-ssh)"
 }
 
 # Home and travel networks change: SSH is opened only to the address this Mac has now.
@@ -147,7 +147,7 @@ status() {
   local state
   state=$(power_state)
   echo "    $VM: $state"
-  echo "    https://$HOST"
+  echo "    https://$VM_HOST"
   echo "    SSH allowed from: $(az network nsg rule show -g "$RG" --nsg-name "$NSG" \
     -n ssh-from-owner --query sourceAddressPrefix -o tsv)"
   [[ "$state" == "VM running" ]] || return 0
@@ -184,7 +184,7 @@ update() {
   resolve_host
   push_code
   step "Rebuild and restart on the VM"
-  ssh_vm "bash $REMOTE/infra/azure/remote/install.sh $HOST"
+  ssh_vm "bash $REMOTE/infra/azure/remote/install.sh $VM_HOST"
   bash infra/azure/smoke.sh
 }
 

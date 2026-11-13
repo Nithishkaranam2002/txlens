@@ -19,7 +19,7 @@ BANNER="Synthetic data. Clinical decision support only, not diagnosis."
 PATIENT_GIVEN=Silas PATIENT_FAMILY=Marmere LOGIN=clinician.center_a
 need_az
 resolve_host
-URL="https://$HOST"
+URL="https://$VM_HOST"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 FAILED=0
@@ -36,13 +36,13 @@ check() {  # check <description> <command...>
 }
 header() { grep -qi "^$2:" "$1"; }
 header_has() { grep -i "^$2:" "$1" | grep -qi "$3"; }
-port_closed() { ! nc -z -G 3 "$HOST" "$1"; }
+port_closed() { ! nc -z -G 3 "$VM_HOST" "$1"; }
 status_is() { [[ "$(curl -s -o /dev/null -w '%{http_code}' "$@")" == "${STATUS:-200}" ]]; }
 
 step "Smoke test of $URL"
 curl -fsS -D "$WORK/page.h" -o /dev/null "$URL/login" || true
 curl -sS -D "$WORK/api.h" -o /dev/null "$URL/api/health" || true
-curl -sS -D "$WORK/http.h" -o /dev/null "http://$HOST/login" || true
+curl -sS -D "$WORK/http.h" -o /dev/null "http://$VM_HOST/login" || true
 check "HTTPS answers with a valid certificate" status_is "$URL/login"
 check "http:// redirects to https://" header_has "$WORK/http.h" location "^location: https://"
 check "HSTS on pages" header "$WORK/page.h" strict-transport-security

@@ -51,6 +51,9 @@ compose exec -T postgres sh -c \
 
 step "MLflow store and source files"
 STAMP=$(date +%Y%m%d-%H%M%S)
+# GNU tar warns once per file about macOS extended attributes in archives made on a Mac.
+TAR_QUIET=()
+tar --version 2>/dev/null | grep -q GNU && TAR_QUIET=(--warning=no-unknown-keyword)
 for pair in "mlruns:mlruns.tgz" "data/raw:data_raw.tgz"; do
   dir=${pair%%:*} archive=${pair#*:}
   saved=$(python3 -c "import json; print(json.load(open('$SNAP/manifest.json'))['folders']['$dir'])")
@@ -62,7 +65,7 @@ for pair in "mlruns:mlruns.tgz" "data/raw:data_raw.tgz"; do
     mv "$dir" "$dir.before-restore-$STAMP"
     echo "    kept the old $dir as $dir.before-restore-$STAMP"
   fi
-  mkdir -p "$(dirname "$dir")" && tar -xzf "$SNAP/$archive"
+  mkdir -p "$(dirname "$dir")" && tar -xzf "$SNAP/$archive" "${TAR_QUIET[@]}"
 done
 # MLflow stores absolute paths: a snapshot from another checkout must point here instead.
 SNAP_CHECKOUT=$(python3 -c "import json; print(json.load(open('$SNAP/manifest.json'))['checkout'])")

@@ -26,8 +26,9 @@ compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -F
   > "$OUT/txlens.dump"
 
 step "MLflow store and source files"
-tar -czf "$OUT/mlruns.tgz" mlruns
-tar -czf "$OUT/data_raw.tgz" data/raw
+# No macOS extended attributes (GNU tar on a Linux restore would warn about each file).
+COPYFILE_DISABLE=1 tar --no-xattrs -czf "$OUT/mlruns.tgz" mlruns
+COPYFILE_DISABLE=1 tar --no-xattrs -czf "$OUT/data_raw.tgz" data/raw
 
 step "Manifest"
 REVISION=$(sql "SELECT version_num FROM alembic_version")

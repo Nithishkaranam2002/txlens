@@ -44,19 +44,19 @@ dns_label() {
   printf 'txlens-%s' "$(az account show --query id -o tsv | shasum -a 256 | cut -c1-6)"
 }
 
-# Sets HOST to the VM's public name, e.g. txlens-1a2b3c.northcentralus.cloudapp.azure.com (once per run;
+# Sets VM_HOST to the VM's public name, e.g. txlens-1a2b3c.northcentralus.cloudapp.azure.com (once per run;
 # call it directly, not in $(...), so the value stays set).
 resolve_host() {
-  [[ -n "${HOST:-}" ]] && return
-  HOST=$(az network public-ip show -g "$RG" -n "$PUBLIC_IP" --query dnsSettings.fqdn -o tsv \
+  [[ -n "${VM_HOST:-}" ]] && return
+  VM_HOST=$(az network public-ip show -g "$RG" -n "$PUBLIC_IP" --query dnsSettings.fqdn -o tsv \
     2>/dev/null) || true
-  [[ -n "$HOST" ]] || fail "no deployment found in $RG (run make cloud-deploy)"
+  [[ -n "$VM_HOST" ]] || fail "no deployment found in $RG (run make cloud-deploy)"
 }
 
 SSH_OPTS=(-i "$SSH_KEY" -o IdentitiesOnly=yes -o UserKnownHostsFile="$KNOWN_HOSTS"
   -o StrictHostKeyChecking=yes -o ServerAliveInterval=30 -o ConnectTimeout=10)
 
-ssh_vm() { resolve_host; ssh "${SSH_OPTS[@]}" "$ADMIN@$HOST" "$@"; }
+ssh_vm() { resolve_host; ssh "${SSH_OPTS[@]}" "$ADMIN@$VM_HOST" "$@"; }
 scp_vm() { scp -q "${SSH_OPTS[@]}" "$@"; }
 
 power_state() {
