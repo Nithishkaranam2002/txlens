@@ -121,18 +121,21 @@ async function pages(browser: Browser) {
   await shot(admin, "admin");
 }
 
-/** Copilot answers come from the LLM cache on a server without an API key (Task 4). */
+/** Copilot answers come from the LLM cache on a server without an API key: these are the
+ * suggested questions (backend/src/txlens_backend/copilot/suggested.py). */
 async function copilot(browser: Browser) {
   const page = await newPage(browser);
   await login(page, "researcher");
   for (const [question, name, height] of [
-    ["How many kidney recipients in my center had a dd-cfDNA result of 1% or more?", "copilot-answer", 1300],
-    ["List the MRNs of the patients with ABMR.", "copilot-refusal", 900],
+    ["Median dd-cfDNA in the first year after transplant, by organ", "copilot-answer", 1300],
+    ["What does the literature say about dd-cfDNA thresholds for antibody-mediated rejection?", "copilot-literature", 1500],
+    ["List the MRNs of the patients with antibody-mediated rejection.", "copilot-refusal", 900],
   ] as const) {
     await page.goto(`${BASE_URL}/copilot`); // a new conversation for each screenshot
-    await page.getByLabel("Your question").fill(question);
-    await page.getByRole("button", { name: "Ask" }).click();
+    await page.getByRole("button", { name: question }).click(); // a suggested question
     await page.getByText(/\d+\.\d s · \$/).waitFor({ timeout: 120_000 }); // the answer is done
+    const sql = page.getByText("Show SQL").first();
+    if (await sql.isVisible()) await sql.click(); // show the checked, read-only SQL
     await shot(page, name, height);
   }
 }
