@@ -7,6 +7,7 @@
 # Athena download). LLM steps use the answer cache first; without OPENAI_API_KEY, anything not
 # cached is skipped and reported as pending. Secrets are checked by name, never printed.
 #
+# Offline (no paid calls even with a key in .env): DEMO_OPENAI_API_KEY= make demo
 # Overridable: TXLENS_PROJECT (compose project), DEMO_WEB_PORT, DEMO_API_PORT, POSTGRES_PORT,
 # TEMPORAL_PORT, TEMPORAL_UI_PORT, LLM_MAX_COST (dollars for the literature embeddings).
 set -euo pipefail

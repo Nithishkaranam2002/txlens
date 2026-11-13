@@ -59,6 +59,7 @@ make demo-down      # stop it (data is kept)
 - **Idempotent:** a second `make demo` only starts the containers.
 - **No API key needed to look around:** LLM steps use the answer cache first. Without
   `OPENAI_API_KEY`, anything not cached is skipped and listed as pending.
+  `DEMO_OPENAI_API_KEY= make demo` keeps a run offline even when `.env` has a key.
 - **Snapshot:** `make demo-snapshot` saves the loaded demo (database, MLflow store, source
   files) to `demo_snapshot/`.
 - **Restore:** `make demo-restore` brings it back offline in minutes. The snapshot holds the

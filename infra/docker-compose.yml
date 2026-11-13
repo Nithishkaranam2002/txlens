@@ -102,6 +102,8 @@ services:
     env_file: ../.env
     environment: &backend-env
       TXLENS_DB_HOST: postgres
+      # `DEMO_OPENAI_API_KEY= make demo` runs offline: cached LLM answers only, no paid calls.
+      OPENAI_API_KEY: ${DEMO_OPENAI_API_KEY-${OPENAI_API_KEY:-}}
       TEMPORAL_ADDRESS: temporal:7233
       LANGFUSE_HOST: http://langfuse:3000
       DOCUMENTS_ROOT: /data/raw
