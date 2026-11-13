@@ -1,7 +1,7 @@
 # TxLens
 
-TxLens is a multi-tenant clinical data and AI platform for organ transplant programs
-(a personal portfolio project, not affiliated with any company).
+TxLens is a multi-tenant clinical data and AI platform for organ transplant programs.
+**Personal portfolio project, synthetic data, not affiliated with any company.**
 
 - Turns messy transplant data (clinical notes, lab feeds, scanned biopsy PDFs) into
   standardized **OMOP CDM v5.4** data.
@@ -590,3 +590,10 @@ there because Databricks has no Postgres load. Setup guide: [docs/DATABRICKS.md]
 | ![Databricks catalog](docs/images/databricks-catalog.png) | ![Databricks pipeline run](docs/images/databricks-run.png) |
 
 ![Databricks data-quality report: 11 of 11 checks passed](docs/images/databricks-report.png)
+
+## License
+
+[MIT](LICENSE) for the code in this repository. The repository contains no patient data
+and no third-party data: the OMOP vocabularies are downloaded by each user from Athena under
+their own licenses (see [omop/README.md](omop/README.md)), and the literature abstracts are
+downloaded from PubMed (`make literature-download`); neither is committed.
