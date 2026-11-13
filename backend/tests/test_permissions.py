@@ -21,6 +21,7 @@ C, R, S, A = Role.CLINICIAN, Role.RESEARCHER, Role.DATA_STEWARD, Role.ADMIN
 MATRIX: dict[str, dict[Role | str, int]] = {
     "GET /health":                 {C: 200, R: 200, S: 200, A: 200, ANON: 200},
     "GET /me":                     {C: 200, R: 200, S: 200, A: 200, ANON: 401},
+    "GET /demo":                   {C: 200, R: 200, S: 200, A: 200, ANON: 200},
     "GET /patients":               {C: 200, R: 200, S: 200, A: 403, ANON: 401},
     "GET /patients/{pid}/timeline": {C: 200, R: 200, S: 200, A: 403, ANON: 401},
     "POST /cohorts/preview":       {C: 200, R: 200, S: 403, A: 403, ANON: 401},
@@ -48,6 +49,7 @@ MATRIX: dict[str, dict[Role | str, int]] = {
     "POST /survival/analysis":     {C: 200, R: 200, S: 403, A: 403, ANON: 401},
     "POST /survival/report.csv":   {C: 200, R: 200, S: 403, A: 403, ANON: 401},
     "POST /survival/report.pdf":   {C: 200, R: 200, S: 403, A: 403, ANON: 401},
+    "GET /copilot/suggestions":    {C: 200, R: 200, S: 403, A: 403, ANON: 401},
     "GET /copilot/conversations":  {C: 200, R: 200, S: 403, A: 403, ANON: 401},
     "POST /copilot/conversations": {C: 201, R: 201, S: 403, A: 403, ANON: 401},
     "GET /copilot/conversations/{conv}": {C: 200, R: 200, S: 403, A: 403, ANON: 401},

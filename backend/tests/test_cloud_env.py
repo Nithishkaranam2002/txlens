@@ -4,6 +4,7 @@ pins surveillance to the restored data's extract date."""
 
 import importlib.util
 import stat
+from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
 
@@ -93,3 +94,26 @@ def test_data_cutoff_comes_from_the_restored_extract_and_is_kept(checkout: Path)
     (raw / "extract.json").unlink()
     gen.main([str(checkout), DOMAIN])
     assert gen.parse((checkout / ".env").read_text())["DATA_CUTOFF"] == "2026-09-30"
+
+
+def test_guest_expiry_is_kept_and_rotation_replaces_only_the_guest_values(
+    checkout: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    gen = load_script()
+    gen.main([str(checkout), DOMAIN])
+    first = gen.parse((checkout / ".env").read_text())
+    assert first["DEMO_GUIDE"] == "1" and len(first["GUEST_PASSWORD"]) >= MIN_PASSWORD_LENGTH
+    days = (datetime.fromisoformat(first["GUEST_EXPIRES_AT"]) - datetime.now(UTC)).days
+    assert days in (29, 30)
+    gen.main([str(checkout), DOMAIN])
+    assert (
+        gen.parse((checkout / ".env").read_text())["GUEST_EXPIRES_AT"] == first["GUEST_EXPIRES_AT"]
+    )
+    gen.main([str(checkout), DOMAIN, "--rotate-guest", "7"])
+    rotated = gen.parse((checkout / ".env").read_text())
+    assert rotated["GUEST_PASSWORD"] != first["GUEST_PASSWORD"]
+    assert (datetime.fromisoformat(rotated["GUEST_EXPIRES_AT"]) - datetime.now(UTC)).days in (6, 7)
+    assert all(
+        rotated[k] == first[k] for k in ("JWT_SECRET", "DEMO_ADMIN_PASSWORD", "DATABASE_URL")
+    )
+    assert rotated["GUEST_PASSWORD"] not in capsys.readouterr().out

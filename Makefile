@@ -11,7 +11,7 @@ ifeq ($(shell uname -s),Darwin)
 export DYLD_FALLBACK_LIBRARY_PATH := $(CURDIR)/.venv/lib/python3.12/site-packages/sklearn/.dylibs
 endif
 
-.PHONY: help setup up up-full down demo demo-down demo-snapshot demo-restore cloud-deploy cloud-start cloud-stop cloud-status cloud-ssh cloud-tunnel cloud-passwords cloud-update cloud-smoke cloud-screenshots cloud-budget cloud-destroy cloud-lint perf lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run risk-train mlflow-ui prune-login-attempts notes-report evals extraction-systems mapping-report review-report rejection-report cohort-report survival-report risk-report copilot-sample copilot-report surveillance-report biopsy-report ocr-report vocab-load vocab-export-curation vocab-load-local vocab-subset vocab-check literature-download literature-index r-build r-parity generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
+.PHONY: help setup up up-full down demo demo-down demo-snapshot demo-restore cloud-deploy cloud-start cloud-stop cloud-status cloud-ssh cloud-tunnel cloud-passwords cloud-update cloud-smoke cloud-guest-rotate cloud-reset cloud-share-on cloud-share-off cloud-screenshots cloud-budget cloud-destroy cloud-lint perf lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run risk-train mlflow-ui prune-login-attempts notes-report evals extraction-systems mapping-report review-report rejection-report cohort-report survival-report risk-report copilot-sample copilot-report surveillance-report biopsy-report ocr-report vocab-load vocab-export-curation vocab-load-local vocab-subset vocab-check literature-download literature-index r-build r-parity generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -69,6 +69,18 @@ cloud-update: ## Azure: upload the current commit, rebuild and restart (data unt
 
 cloud-smoke: ## Azure: HTTPS, headers, closed ports, login, a patient page, no API key
 	infra/azure/cloud.sh smoke
+
+cloud-guest-rotate: ## Azure: new guest password, open for DAYS days (default 30); Keychain updated
+	infra/azure/cloud.sh guest-rotate $(or $(DAYS),30)
+
+cloud-reset: ## Azure: demo data back to the snapshot (users and audit trail kept)
+	infra/azure/cloud.sh reset
+
+cloud-share-on: ## Azure: keep the site up for DAYS days (default 21): no nightly shutdown, prints the cost
+	infra/azure/cloud.sh share-on $(or $(DAYS),21)
+
+cloud-share-off: ## Azure: nightly auto-shutdown on again after sharing
+	infra/azure/cloud.sh share-off
 
 cloud-screenshots: ## Azure: README screenshots from the live demo (MODE=copilot for the copilot ones)
 	infra/azure/cloud.sh screenshots $(or $(MODE),pages)

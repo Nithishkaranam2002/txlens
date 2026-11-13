@@ -15,7 +15,8 @@ export interface paths {
         put?: never;
         /**
          * Log in; sets the access and refresh cookies
-         * @description Check the password and start a session. Every success and failure is recorded.
+         * @description Check the password and start a session. Every success and failure is recorded. An
+         *     expired account cannot log in; a guest account with the right password is told why.
          */
         post: operations["login_auth_login_post"];
         delete?: never;
@@ -228,6 +229,46 @@ export interface paths {
          * @description The conversation is checked first (404); then the answer streams.
          */
         post: operations["ask_copilot_conversations__conversation_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Suggested questions (their answers are cached)
+         * @description The same for every user; they work without an API key too.
+         */
+        get: operations["suggestions_copilot_suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/demo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Is this the public demo, and until when do guest accounts work?
+         * @description No login needed. Names and dates only: never a password.
+         */
+        get: operations["demo_demo_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1002,6 +1043,16 @@ export interface components {
             status: "active" | "graft_failure" | "deceased";
             /** Transplant Date */
             transplant_date: string | null;
+        };
+        /**
+         * DemoInfo
+         * @description What the login page's demo guide shows (public demo only).
+         */
+        DemoInfo: {
+            /** Guest Until */
+            guest_until?: string | null;
+            /** Guide */
+            guide: boolean;
         };
         /**
          * Detected
@@ -2284,7 +2335,7 @@ export interface operations {
                     "application/json": components["schemas"]["Session"];
                 };
             };
-            /** @description Invalid user name or password */
+            /** @description Invalid user name or password (guest accounts: Guest access has ended; ask for new credentials) */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2729,6 +2780,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggestions_copilot_suggestions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+        };
+    };
+    demo_demo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoInfo"];
                 };
             };
         };

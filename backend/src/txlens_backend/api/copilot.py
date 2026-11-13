@@ -27,7 +27,9 @@ from txlens_backend.api.deps import (
 from txlens_backend.api.rate_limit import Bucket, rate_limited
 from txlens_backend.copilot import service
 from txlens_backend.copilot.embeddings import make_embedder
+from txlens_backend.copilot.suggested import SUGGESTED
 from txlens_backend.db import tenant_transaction
+from txlens_backend.documents.llm import key_missing
 
 router = APIRouter(prefix="/copilot", tags=["copilot"])
 Asker = Annotated[Principal, Depends(require_roles(Role.CLINICIAN, Role.RESEARCHER))]
@@ -40,7 +42,10 @@ def copilot_deps(request: Request, ctx: Context) -> service.CopilotDeps:
     """The model and embedder (built once per app; tests override this dependency)."""
     deps: service.CopilotDeps | None = getattr(request.app.state, "copilot_deps", None)
     if deps is None:
-        deps = service.CopilotDeps(ctx.settings, ctx.engine, make_embedder(ctx.settings))
+        # Without an API key (the public demo) only cached answers can be given.
+        offline = key_missing(ctx.settings, ctx.settings.llm_model)
+        deps = service.CopilotDeps(ctx.settings, ctx.engine, make_embedder(ctx.settings),
+                                   offline=offline)  # fmt: skip
         request.app.state.copilot_deps = deps
     return deps
 
@@ -54,6 +59,12 @@ class NewConversation(BaseModel):
 
 class Question(BaseModel):
     question: str = Field(min_length=2, max_length=2000)
+
+
+@router.get("/suggestions", summary="Suggested questions (their answers are cached)")
+def suggestions(principal: Asker) -> list[str]:
+    """The same for every user; they work without an API key too."""
+    return list(SUGGESTED)
 
 
 @router.post("/conversations", status_code=status.HTTP_201_CREATED, dependencies=CSRF,

@@ -13,13 +13,18 @@ import { isApiError } from "@/lib/api/errors";
 import { safeNext, useLogin } from "@/lib/auth";
 import { asRole, landingFor } from "@/lib/roles";
 
+/** The API's message for an expired guest account (the only 401 that says more). */
+export const GUEST_EXPIRED = "Guest access has ended; ask for new credentials";
+
 /** A login failure in words a user can act on. */
 export function loginErrorMessage(error: unknown): string {
   if (isApiError(error, 429)) {
     const minutes = Math.ceil((error.retryAfterSeconds ?? 900) / 60);
     return `Too many failed sign-in attempts. Try again in ${minutes} minutes.`;
   }
-  if (isApiError(error, 401)) return "Invalid user name or password.";
+  if (isApiError(error, 401)) {
+    return error.message === GUEST_EXPIRED ? `${GUEST_EXPIRED}.` : "Invalid user name or password.";
+  }
   if (isApiError(error)) return `Sign-in failed: ${error.message}`;
   return "Cannot reach the server. Check your connection and try again.";
 }

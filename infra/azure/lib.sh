@@ -15,6 +15,11 @@ PUBLIC_IP=txlens-demo-ip
 BUDGET=txlens-monthly
 KEYCHAIN=txlens-azure
 ROLES="clinician researcher data_steward admin"
+SHUTDOWN="shutdown-computevm-$VM"
+# Azure list prices, North Central US, Linux (Retail Prices API, 2026-11-13), for estimates.
+PRICE_VM_HOUR=0.0376      # Standard_B2als_v2
+PRICE_DISK_MONTH=4.80     # Standard SSD E6, 64 GB
+PRICE_IP_HOUR=0.005       # Standard static public IPv4
 
 step() { printf '\n==> %s\n' "$*"; }
 warn() { printf '    warning: %s\n' "$*" >&2; }

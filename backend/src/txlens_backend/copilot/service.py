@@ -23,17 +23,21 @@ from txlens_backend import audit
 from txlens_backend.audit import RequestInfo
 from txlens_backend.config import Settings
 from txlens_backend.copilot.agent import Agent, State
-from txlens_backend.copilot.embeddings import Embedder
+from txlens_backend.copilot.embeddings import CachedEmbedder, Embedder
 from txlens_backend.copilot.llm import CopilotLlm
 from txlens_backend.copilot.tools import ToolContext
 from txlens_backend.copilot.tracing import start_trace
 from txlens_backend.db import tenant_transaction
 from txlens_backend.documents.budget import Budget, BudgetExceededError
+from txlens_backend.documents.llm import LlmOfflineError
 
 log = logging.getLogger(__name__)
 BUDGET_USED_UP = ("The copilot's budget for this month is used up; ask your administrator "
                   "to raise LLM_BUDGET_USD.")  # fmt: skip
 FAILED = "Something went wrong while answering; nothing was changed. Please try again."
+# No API key (the public demo): only answers already in the cache can be given.
+LIVE_AI_DISABLED = ("Live AI is disabled in this public demo; try one of the suggested "
+                    "questions.")  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -47,6 +51,7 @@ class CopilotDeps:
     budget_batch: str | None = None  # None: the center's monthly copilot budget
     budget_cap_usd: float | None = None  # None: LLM_BUDGET_USD
     read_cache: bool = True  # False: ask the model again (evaluation of run-to-run variance)
+    offline: bool = False  # True (no API key): cached answers only, the rest is refused
 
 
 class Message(BaseModel):
@@ -180,10 +185,11 @@ def ask(deps: CopilotDeps, user_id: str, tenant_id: str, info: RequestInfo,
         trace=trace, reasoning_effort=deps.settings.llm_reasoning_effort,
         timeout_seconds=deps.settings.llm_timeout_seconds,
         api_base=deps.settings.ollama_base_url, completion=deps.completion,
-        read_cache=deps.read_cache,
+        read_cache=deps.read_cache, offline=deps.offline,
     )  # fmt: skip
+    embedder = CachedEmbedder(deps.embedder, deps.engine, tenant_id, offline=deps.offline)
     ctx = ToolContext(deps.engine, tenant_id, user_id, deps.settings, info, answer_id,
-                      deps.embedder, budget)  # fmt: skip
+                      embedder, budget)  # fmt: skip
     state: State = {"question": question, "history": history(conversation)}
     final: dict[str, Any] = {}
     steps: list[dict[str, Any]] = []
@@ -201,6 +207,9 @@ def ask(deps: CopilotDeps, user_id: str, tenant_id: str, info: RequestInfo,
         outcome, answer = final.get("outcome", "error"), final.get("answer", "")
     except BudgetExceededError:
         outcome, answer = "error", BUDGET_USED_UP
+        yield {"type": "error", "message": answer}
+    except LlmOfflineError:
+        outcome, answer = "error", LIVE_AI_DISABLED
         yield {"type": "error", "message": answer}
     except Exception:
         log.exception("copilot question failed")

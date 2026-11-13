@@ -21,4 +21,11 @@ echo "data_cutoff_set $([[ -n "$CUTOFF" ]] && echo 1 || echo 0)"
 echo "worker_data_cutoff_set $(compose exec -T worker sh -c '[ -n "${DATA_CUTOFF:-}" ] && echo 1 || echo 0')"
 echo "runs_after_cutoff $(sql "SELECT count(*) FROM app.surveillance_run WHERE as_of > '${CUTOFF:-9999-12-31}'")"
 echo "latest_run_is_cutoff $(sql "SELECT (max(as_of) = '${CUTOFF:-0001-01-01}')::int FROM app.surveillance_run")"
+echo "guest_accounts $(sql "SELECT count(*) FROM app.app_user WHERE username LIKE 'guest.%' AND is_active")"
+GUEST_UNTIL=$(grep -m1 '^GUEST_EXPIRES_AT=' .env | cut -d= -f2)
+echo "guest_expiry_matches_env $(sql "SELECT (count(*) = 2)::int FROM app.app_user
+  WHERE username LIKE 'guest.%' AND expires_at = '${GUEST_UNTIL:-1970-01-01}'::timestamptz")"
+# The copilot's suggested questions, asked offline (cached answers only) as researcher.center_a.
+CACHED=$(tools txlens-demo copilot-cache --offline 2>/dev/null | grep -cE '^ +(answered|refused) ' || true)
+echo "copilot_suggestions_cached $CACHED"
 echo "reboot_required $([[ -f /var/run/reboot-required ]] && echo 1 || echo 0)"

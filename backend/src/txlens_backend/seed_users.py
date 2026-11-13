@@ -3,9 +3,15 @@
 User names are `<role>.<tenant>`, e.g. `clinician.center_a`. All display names are made up.
 Users are written through `tenant_transaction` as the app login, so RLS applies here too.
 Re-running updates the names and passwords (each run makes a new password hash).
+
+`txlens-seed-users --guests`: the public demo's guest accounts, guest.clinician and
+guest.researcher in center_a, with GUEST_PASSWORD and an expiry (GUEST_EXPIRES_AT). Their
+existing sessions end, so a new password takes effect at once.
 """
 
-from collections.abc import Mapping
+import argparse
+from collections.abc import Mapping, Sequence
+from datetime import datetime
 
 from pydantic import SecretStr
 from sqlalchemy import Engine, text
@@ -67,13 +73,56 @@ def seed_users(engine: Engine, tenants: list[str], passwords: Mapping[Role, str]
     return created
 
 
-def main() -> int:
-    """Seed the demo users for every center."""
+GUEST_TENANT = "center_a"
+GUESTS = {"guest.clinician": (Role.CLINICIAN, "Guest clinician"),
+          "guest.researcher": (Role.RESEARCHER, "Guest researcher")}  # fmt: skip
+GUEST_UPSERT = text(
+    "INSERT INTO app.app_user (username, display_name, role, password_hash, expires_at) "
+    "VALUES (:username, :display_name, :role, :password_hash, :expires_at) "
+    "ON CONFLICT (username) DO UPDATE SET display_name = EXCLUDED.display_name, "
+    "role = EXCLUDED.role, password_hash = EXCLUDED.password_hash, "
+    "expires_at = EXCLUDED.expires_at, is_active = true RETURNING user_id"
+)
+END_SESSIONS = text(
+    "UPDATE app.refresh_token SET revoked_at = now() "
+    "WHERE user_id = ANY(:ids) AND revoked_at IS NULL"
+)
+
+
+def seed_guests(engine: Engine, password: str, expires_at: datetime) -> list[str]:
+    """Create or update the guest accounts and end their sessions; returns their names."""
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise SystemExit(f"Set GUEST_PASSWORD in .env (at least {MIN_PASSWORD_LENGTH} characters).")
+    with tenant_transaction(engine, GUEST_TENANT) as conn:
+        ids = [
+            str(conn.execute(GUEST_UPSERT, {
+                "username": username, "display_name": display_name, "role": role.value,
+                "password_hash": hash_password(password), "expires_at": expires_at,
+            }).scalar_one())
+            for username, (role, display_name) in GUESTS.items()
+        ]  # fmt: skip
+        conn.execute(END_SESSIONS, {"ids": ids})
+    return list(GUESTS)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Seed the demo users for every center, or (--guests) the guest accounts."""
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
+    parser.add_argument("--guests", action="store_true", help="the guest accounts only")
+    args = parser.parse_args(argv)
     settings = get_settings()
     engine = make_engine(settings.app_database_url.get_secret_value())
-    names = seed_users(engine, list(center_tenants()), demo_passwords(settings))
+    if args.guests:
+        if settings.guest_expires_at is None:
+            raise SystemExit("Set GUEST_EXPIRES_AT in .env (ISO date and time).")
+        names = seed_guests(engine, settings.guest_password.get_secret_value(),
+                            settings.guest_expires_at)  # fmt: skip
+        until = settings.guest_expires_at.isoformat()
+        print(f"Guest accounts ready until {until}: {', '.join(names)}")
+    else:
+        names = seed_users(engine, list(center_tenants()), demo_passwords(settings))
+        print(f"{len(names)} demo users ready: {', '.join(names)}")
     engine.dispose()
-    print(f"{len(names)} demo users ready: {', '.join(names)}")
     return 0
 
 

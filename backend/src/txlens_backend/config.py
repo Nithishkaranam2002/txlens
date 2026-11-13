@@ -1,6 +1,6 @@
 """Application settings, read from environment variables (and `.env` in development)."""
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -95,6 +95,12 @@ class Settings(BaseSettings):
     demo_researcher_password: SecretStr = SecretStr("")
     demo_data_steward_password: SecretStr = SecretStr("")
     demo_admin_password: SecretStr = SecretStr("")
+    # Guest demo accounts (`txlens-seed-users --guests`): guest.clinician and guest.researcher
+    # in center_a, one shared password, refused after guest_expires_at.
+    guest_password: SecretStr = SecretStr("")
+    guest_expires_at: datetime | None = None
+    # The login page's demo guide (public demo only): which guest account shows what.
+    demo_guide: bool = False
 
     @field_validator("trusted_proxy_ips")
     @classmethod

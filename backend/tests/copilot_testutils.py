@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import litellm
+from fastapi.testclient import TestClient
 
 
 class ScriptedModel:
@@ -107,3 +108,20 @@ class KeywordModel(ScriptedModel):
             self.answer = f"The cohort tool counted the {organ} recipients shown above."
         self.steps = plan[done:]
         return super().__call__(**kwargs)
+
+
+def events(body: str) -> list[dict[str, Any]]:
+    """Parse a text/event-stream body."""
+    found = []
+    for block in body.strip().split("\n\n"):
+        lines = dict(line.split(": ", 1) for line in block.splitlines())
+        event = json.loads(lines["data"])
+        assert event["type"] == lines["event"]
+        found.append(event)
+    return found
+
+
+def new_conversation(client: TestClient) -> str:
+    response = client.post("/copilot/conversations", json={"title": "Heart counts"})
+    assert response.status_code == 201, response.text
+    return str(response.json()["conversation_id"])

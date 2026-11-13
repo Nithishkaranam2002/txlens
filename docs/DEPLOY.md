@@ -113,7 +113,12 @@ It does this, in order:
 | `make cloud-update` | Upload the current commit, rebuild, restart (data untouched) |
 | `make cloud-ssh` | A shell on the VM (`cd /opt/txlens`) |
 | `make cloud-tunnel` | Temporal UI on <http://localhost:18233> through SSH |
-| `make cloud-passwords` | Copy the demo passwords into the Keychain again |
+| `make cloud-passwords` | Copy the demo and guest passwords into the Keychain again |
+| `make cloud-guest-rotate DAYS=30` | New guest password, open for DAYS days; Keychain updated, guest sessions end |
+| `make cloud-reset` | Demo data back to the snapshot (users, guest accounts and audit trail kept; ~10 min) |
+| `make cloud-share-on DAYS=21` | Keep the site up while a link is out: nightly shutdown off, VM running, cost estimate |
+| `make cloud-share-off` | Nightly shutdown on again |
+| `make cloud-screenshots` | README screenshots from the live demo (`MODE=copilot` for the copilot ones) |
 | `make cloud-destroy` | Delete everything (type the resource group name to confirm) |
 
 Before an interview: `make cloud-start` (2-3 minutes), open the URL, log in. Afterwards:
@@ -121,6 +126,41 @@ Before an interview: `make cloud-start` (2-3 minutes), open the URL, log in. Aft
 
 New demo data: `make demo-snapshot` locally, then `make cloud-deploy`. The snapshot has a new
 checksum, so it is uploaded and restored again.
+
+## Sharing the demo with guests
+
+- **Guest accounts:** `guest.clinician` (clinician) and `guest.researcher` (researcher), both
+  in center A, share one password.
+  - The password is made on the VM and stored in your Keychain (service `txlens-azure`,
+    account `guest`).
+  - To copy it: `security find-generic-password -s txlens-azure -a guest -w | pbcopy`.
+  - Send it on request; it is never in the repo or on the page.
+- **Expiry:** guest access ends at `GUEST_EXPIRES_AT`, 30 days after the first deploy
+  (`GUEST_DAYS`). After that, login and token refresh are refused, and a guest with the right
+  password reads "Guest access has ended; ask for new credentials". Other accounts keep the
+  generic message.
+  - A new password and window: `make cloud-guest-rotate DAYS=30`.
+- **What guests can do:** the normal role permissions and rate limits apply, and every action
+  is audited.
+  - Guests can acknowledge, resolve and approve, which changes the demo data.
+  - `make cloud-reset` brings the data back and keeps the users and the audit trail. The
+    snapshot stays on the VM for this, about 0.7 GB.
+- **Shared history:** all visitors share the two guest accounts, so they also share the
+  guest's copilot conversations and saved cohorts.
+- **Demo guide:** the login page shows which guest account opens which view, when guest access
+  ends, and three things to try. It appears only when `DEMO_GUIDE=1` (set on the VM).
+- **Copilot without a key:** the six suggested questions (`backend/src/txlens_backend/copilot/suggested.py`)
+  are answered from the LLM cache.
+  - Any other question gets "Live AI is disabled in this public demo; try one of the
+    suggested questions."
+  - To change them, edit the list, then fill the cache locally with your key
+    (`uv run txlens-demo copilot-cache`, a fraction of a cent).
+  - Check offline (`uv run txlens-demo copilot-cache --offline`), then run
+    `make demo-snapshot` and `make cloud-reset`.
+- **Keep it up while the link is out:** `make cloud-share-on DAYS=21` turns the nightly
+  shutdown off and prints the cost (21 days ≈ $25 at list prices).
+  - `make cloud-share-off` turns the shutdown back on.
+  - `make cloud-status` shows whether sharing is on and until when.
 
 ## Smoke test (`make cloud-smoke`, `infra/azure/smoke.sh`)
 
@@ -137,6 +177,9 @@ checksum, so it is uploaded and restored again.
    refresh tokens from the laptop.
 7. Surveillance is pinned: `DATA_CUTOFF` is set and the worker sees it, no run is dated after
    the cut-off, and the latest run is on the cut-off.
+8. The demo guide is on, guest access is open, both guest accounts log in with their roles,
+   and their expiry in the database matches `.env`.
+9. The copilot's 6 suggested questions are answered from the cache, without an API key.
 
 ## Troubleshooting
 

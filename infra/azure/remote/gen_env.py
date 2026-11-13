@@ -6,13 +6,18 @@ the domain. The OpenAI and Langfuse keys are always empty: the cloud demo answer
 LLM cache and cannot spend money. Once the data is restored, DATA_CUTOFF is set to the
 extract date in data/raw/extract.json, so surveillance never runs past the end of the data.
 
-Usage: python3 gen_env.py <checkout folder> <domain>
+Guest demo accounts: GUEST_PASSWORD and GUEST_EXPIRES_AT (GUEST_DAYS from now, 30 by default)
+are made once and kept; `--rotate-guest DAYS` replaces both (`make cloud-guest-rotate`).
+
+Usage: python3 gen_env.py <checkout folder> <domain> [--rotate-guest DAYS]
 """
 
+import argparse
 import json
 import os
 import secrets
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 ROLES = ("CLINICIAN", "RESEARCHER", "DATA_STEWARD", "ADMIN")
@@ -36,7 +41,23 @@ def new_secrets() -> dict[str, str]:
         "DEID_HMAC_KEY": secrets.token_urlsafe(48),
     }
     values |= {f"DEMO_{role}_PASSWORD": secrets.token_urlsafe(18) for role in ROLES}
+    values["GUEST_PASSWORD"] = secrets.token_urlsafe(18)
     return values
+
+
+def guest_expiry(days: int) -> str:
+    """GUEST_EXPIRES_AT `days` from now, in UTC, to the second."""
+    return (datetime.now(UTC) + timedelta(days=days)).replace(microsecond=0).isoformat()
+
+
+def guests(existing: dict[str, str], rotate_days: int | None) -> dict[str, str]:
+    """The guest expiry (kept, or new on a first run) and, when rotating, a new password."""
+    if rotate_days is not None:
+        return {"GUEST_PASSWORD": secrets.token_urlsafe(18),
+                "GUEST_EXPIRES_AT": guest_expiry(rotate_days)}  # fmt: skip
+    if existing.get("GUEST_EXPIRES_AT"):
+        return {"GUEST_EXPIRES_AT": existing["GUEST_EXPIRES_AT"]}
+    return {"GUEST_EXPIRES_AT": guest_expiry(int(existing.get("GUEST_DAYS") or 30))}
 
 
 def data_cutoff(folder: Path, existing: dict[str, str]) -> dict[str, str]:
@@ -63,6 +84,7 @@ def settings(existing: dict[str, str], domain: str) -> dict[str, str]:
             "TXLENS_DOMAIN": domain,
             "FRONTEND_ORIGIN": f"https://{domain}",
             "COOKIE_SECURE": "true",
+            "DEMO_GUIDE": "1",
         }
         | dict.fromkeys(ALWAYS_EMPTY, "")
     )
@@ -84,13 +106,16 @@ def render(template: str, values: dict[str, str]) -> str:
 
 def main(argv: list[str]) -> int:
     """Entry point."""
-    if len(argv) != 2:
-        print(__doc__, file=sys.stderr)
-        return 2
-    folder, domain = Path(argv[0]), argv[1]
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
+    parser.add_argument("folder", type=Path)
+    parser.add_argument("domain")
+    parser.add_argument("--rotate-guest", type=int, metavar="DAYS", default=None)
+    args = parser.parse_args(argv)
+    folder, domain = args.folder, args.domain
     env = folder / ".env"
     existing = parse(env.read_text()) if env.exists() else {}
-    values = settings(existing, domain) | data_cutoff(folder, existing)
+    values = (settings(existing, domain) | data_cutoff(folder, existing)
+              | guests(existing, args.rotate_guest))  # fmt: skip
     content = render((folder / ".env.example").read_text(), values)
     tmp = folder / ".env.tmp"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -98,7 +123,10 @@ def main(argv: list[str]) -> int:
         f.write(content)
     tmp.replace(env)
     state = "kept the existing secrets" if existing else "generated new secrets"
-    print(f"    .env for {domain}: {state} (values not shown)")
+    if args.rotate_guest is not None:
+        state += "; new guest password"
+    print(f"    .env for {domain}: {state}, guests until {values['GUEST_EXPIRES_AT']} "
+          "(values not shown)")  # fmt: skip
     return 0
 
 

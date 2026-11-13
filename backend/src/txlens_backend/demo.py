@@ -7,6 +7,9 @@
   URLs and the demo user names. Passwords stay in `.env` and are never printed.
 - `reset-sessions`: forget every login attempt and refresh token, e.g. after restoring a
   snapshot onto a server, so no session or IP address from the machine it came from carries over.
+- `copilot-cache [--offline]`: ask the copilot's suggested questions as researcher.center_a,
+  so their answers are cached (needs OPENAI_API_KEY; within the copilot budget). --offline
+  asks with cached answers only and fails if one is missing: the public demo's check.
 - `drop-surveillance-after DATE`: delete surveillance flags and runs dated after the data
   cut-off (a run "as of today" on data that ends earlier), so a run as of the cut-off can
   rebuild the worklist. Refuses if someone already acknowledged or resolved one of them.
@@ -16,6 +19,7 @@ Runs as the database owner (superuser), so counts cover every tenant.
 
 import argparse
 import json
+import uuid
 from collections import Counter
 from collections.abc import Sequence
 from datetime import date
@@ -23,7 +27,9 @@ from datetime import date
 from sqlalchemy import Connection, bindparam, create_engine, text
 from sqlalchemy.dialects.postgresql import JSONB
 
+from txlens_backend import audit
 from txlens_backend.config import InsecureSettingError, Settings, get_settings, require_secret
+from txlens_backend.db import make_engine, tenant_transaction
 from txlens_backend.documents.llm import key_missing
 from txlens_backend.risk.registry import champion_version
 from txlens_backend.seed_users import MIN_PASSWORD_LENGTH
@@ -129,6 +135,39 @@ def drop_surveillance_after(conn: Connection, cutoff: date) -> dict[str, int]:
     return {"flags": flags.total(), "runs": runs.total()}
 
 
+COPILOT_USER = "researcher.center_a"
+
+
+def copilot_cache(settings: Settings, *, offline: bool) -> list[tuple[str, str]]:
+    """(question, outcome) for each suggested question, asked as COPILOT_USER. Offline, an
+    answer that is not cached comes back as the outcome "not cached"."""
+    # The copilot (LangGraph and friends) loads only for this command.
+    from txlens_backend.copilot import service
+    from txlens_backend.copilot.embeddings import make_embedder
+    from txlens_backend.copilot.suggested import SUGGESTED
+
+    if not offline and key_missing(settings, settings.llm_model):
+        raise SystemExit("OPENAI_API_KEY is needed to fill the cache (or use --offline).")
+    engine = make_engine(settings.app_database_url.get_secret_value())
+    deps = service.CopilotDeps(settings, engine, make_embedder(settings), offline=offline)
+    info = audit.RequestInfo(request_id=f"copilot-cache-{uuid.uuid4().hex[:8]}", ip="")
+    results = []
+    for question in SUGGESTED:
+        with tenant_transaction(engine, "center_a") as conn:
+            user_id = str(conn.execute(text(
+                "SELECT user_id FROM app.app_user WHERE username = :u"), {"u": COPILOT_USER}
+            ).scalar_one())  # fmt: skip
+            summary = service.create_conversation(conn, user_id, question[:80])
+            conversation = service.get_conversation(conn, user_id, summary.conversation_id)
+        assert conversation is not None
+        done = [e for e in service.ask(deps, user_id, "center_a", info, conversation, question)
+                if e["type"] == "done"][-1]  # fmt: skip
+        missing = done["answer"] == service.LIVE_AI_DISABLED
+        results.append((question, "not cached" if missing else done["outcome"]))
+    engine.dispose()
+    return results
+
+
 def users(conn: Connection) -> list[tuple[str, str]]:
     """(user name, role) of every active user, by center then role."""
     rows = conn.execute(text(
@@ -165,6 +204,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub.add_parser("has-model", help="exit 0 if a risk model is registered as champion")
     sub.add_parser("counts", help="row counts of the demo tables, as JSON")
     sub.add_parser("reset-sessions", help="delete all login attempts and refresh tokens")
+    warm = sub.add_parser("copilot-cache", help="cache the copilot's suggested questions")
+    warm.add_argument("--offline", action="store_true", help="cached answers only (a check)")
     drop = sub.add_parser("drop-surveillance-after", help="delete flags and runs after a date")
     drop.add_argument("cutoff", type=date.fromisoformat, help="the data cut-off, YYYY-MM-DD")
     status = sub.add_parser("status", help="what is loaded and pending; URLs and users")
@@ -180,6 +221,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1 if found else 0
     if args.command == "has-model":
         return 0 if champion_version(settings.mlflow_tracking_uri) else 1
+    if args.command == "copilot-cache":
+        results = copilot_cache(settings, offline=args.offline)
+        for question, outcome in results:
+            print(f"    {outcome:<11} {question}")
+        return 1 if any(outcome == "not cached" for _, outcome in results) else 0
     engine = create_engine(settings.database_url.get_secret_value())
     if args.command == "reset-sessions":
         with engine.begin() as conn:

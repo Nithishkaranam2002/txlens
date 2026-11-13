@@ -1,5 +1,7 @@
 """Service health and the current user."""
 
+from datetime import datetime
+
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -26,6 +28,21 @@ def health(ctx: Context) -> Health:
     except SQLAlchemyError as error:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "database unavailable") from error
     return Health(status="ok", database="ok")
+
+
+class DemoInfo(BaseModel):
+    """What the login page's demo guide shows (public demo only)."""
+
+    guide: bool
+    guest_until: datetime | None = None
+
+
+@router.get("/demo", summary="Is this the public demo, and until when do guest accounts work?")
+def demo(ctx: Context) -> DemoInfo:
+    """No login needed. Names and dates only: never a password."""
+    if not ctx.settings.demo_guide:
+        return DemoInfo(guide=False)
+    return DemoInfo(guide=True, guest_until=ctx.settings.guest_expires_at)
 
 
 class Me(BaseModel):

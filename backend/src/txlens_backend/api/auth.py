@@ -39,6 +39,10 @@ from txlens_backend.security import (
 
 router = APIRouter(prefix="/auth", tags=["auth"], dependencies=[Depends(require_csrf_header)])
 INVALID_LOGIN = "Invalid user name or password"
+# Guest demo accounts (user names starting "guest.") get a clear message once they expire;
+# every other account keeps the generic one.
+GUEST_PREFIX = "guest."
+GUEST_EXPIRED = "Guest access has ended; ask for new credentials"
 
 
 class LoginRequest(BaseModel):
@@ -66,6 +70,12 @@ class LoginRow:
     role: str
     password_hash: str
     is_active: bool
+    expires_at: datetime | None = None
+
+    @property
+    def expired(self) -> bool:
+        """True once the account's expiry has passed (guest accounts)."""
+        return self.expires_at is not None and self.expires_at <= datetime.now(UTC)
 
 
 def recent_failures(conn: Connection, username: str, ip: str, settings: Settings) -> bool:
@@ -103,12 +113,16 @@ def prune_login_attempts(conn: Connection, retention_days: int) -> int:
 def find_login(conn: Connection, username: str) -> LoginRow | None:
     """The user's login row, found before any tenant is known."""
     row = conn.execute(
-        text("SELECT user_id, tenant_id, role, password_hash, is_active FROM app.find_login(:u)"),
+        text(
+            "SELECT user_id, tenant_id, role, password_hash, is_active, expires_at "
+            "FROM app.find_login(:u)"
+        ),
         {"u": username},
     ).one_or_none()
     if row is None:
         return None
-    return LoginRow(str(row.user_id), row.tenant_id, row.role, row.password_hash, row.is_active)
+    return LoginRow(str(row.user_id), row.tenant_id, row.role, row.password_hash, row.is_active,
+                    row.expires_at)  # fmt: skip
 
 
 def start_session(
@@ -172,10 +186,12 @@ def clear_cookies(response: Response, settings: Settings) -> None:
 @router.post(
     "/login",
     summary="Log in; sets the access and refresh cookies",
-    responses={401: {"description": INVALID_LOGIN}, 429: {"description": "Too many failures"}},
-)
+    responses={401: {"description": f"{INVALID_LOGIN} (guest accounts: {GUEST_EXPIRED})"},
+               429: {"description": "Too many failures"}},
+)  # fmt: skip
 def login(body: LoginRequest, response: Response, ctx: Context, info: Info) -> Session:
-    """Check the password and start a session. Every success and failure is recorded."""
+    """Check the password and start a session. Every success and failure is recorded. An
+    expired account cannot log in; a guest account with the right password is told why."""
     username = body.username.strip().lower()
     settings = ctx.settings
     with ctx.engine.begin() as conn:
@@ -187,7 +203,8 @@ def login(body: LoginRequest, response: Response, ctx: Context, info: Info) -> S
                 headers={"Retry-After": str(settings.login_window_minutes * 60)},
             )
         user = find_login(conn, username)
-    ok = verify_password(user.password_hash if user and user.is_active else None, body.password)
+    usable = user is not None and user.is_active and not user.expired
+    ok = verify_password(user.password_hash if user and usable else None, body.password)
     with ctx.engine.begin() as conn:
         conn.execute(
             text("INSERT INTO app.login_attempt (username, ip, succeeded) VALUES (:u, :ip, :ok)"),
@@ -196,12 +213,14 @@ def login(body: LoginRequest, response: Response, ctx: Context, info: Info) -> S
     if user is None:  # no tenant to audit in; the attempt row above is the record
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, INVALID_LOGIN)
     with tenant_transaction(ctx.engine, user.tenant_id) as conn:
-        action = "login" if ok else "login_failed"
+        action = "login" if ok else "login_expired" if user.expired else "login_failed"
         audit.record(conn, info, user.user_id, action, "session", details={"username": username})
         if ok:
             session, _ = start_session(conn, ctx, response, user.user_id, user.tenant_id, user.role)
             return session
-    raise HTTPException(status.HTTP_401_UNAUTHORIZED, INVALID_LOGIN)
+    told = (user.expired and username.startswith(GUEST_PREFIX)
+            and verify_password(user.password_hash, body.password))  # fmt: skip
+    raise HTTPException(status.HTTP_401_UNAUTHORIZED, GUEST_EXPIRED if told else INVALID_LOGIN)
 
 
 @router.post(
@@ -235,7 +254,8 @@ def rotate(
     """New tokens for a live refresh token; None (after revoking on re-use) otherwise."""
     token = conn.execute(
         text(
-            "SELECT t.revoked_at, t.expires_at > now() AS live, u.role, u.is_active, "
+            "SELECT t.revoked_at, t.expires_at > now() AS live, u.role, "
+            "  u.is_active AND (u.expires_at IS NULL OR u.expires_at > now()) AS is_active, "
             "  r.jti::text AS replacement, r.expires_at AS replacement_expires, "
             "  t.revoked_at > now() - make_interval(secs => :grace) "
             "  AND r.revoked_at IS NULL AND r.expires_at > now() AS in_grace "

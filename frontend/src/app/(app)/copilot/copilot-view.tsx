@@ -1,6 +1,6 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, MessageSquarePlus, Send } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -13,17 +13,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { api, unwrap } from "@/lib/api/client";
 import { isApiError } from "@/lib/api/errors";
 import { applyEvent, askCopilot, newTurn, STAGE_LABEL, turnsOf, type Turn } from "@/lib/copilot";
 import { formatDate } from "@/lib/format";
 import { keys, useConversation, useConversations, useCreateConversation } from "@/lib/queries";
 
-const EXAMPLES = [
-  "How many kidney recipients had a deceased donor?",
-  "Graft survival by donor type, with a 1-year landmark",
-  "Median dd-cfDNA in the first year after transplant, by organ",
-  "What does the literature say about dd-cfDNA thresholds for antibody-mediated rejection?",
-];
 
 type Live = { conversationId: string | null; turns: Turn[] };
 
@@ -38,6 +33,12 @@ export function CopilotView() {
   const create = useCreateConversation();
   const [live, setLive] = useState<Live>({ conversationId: null, turns: [] });
   const [question, setQuestion] = useState("");
+  // Answers to these are cached, so they work in the public demo too (no API key there).
+  const suggestions = useQuery({
+    queryKey: ["copilot", "suggestions"],
+    queryFn: async () => unwrap(await api.GET("/copilot/suggestions")),
+    staleTime: Infinity,
+  });
   const [busy, setBusy] = useState(false);
 
   const turns = [
@@ -146,18 +147,16 @@ export function CopilotView() {
               ))}
             </div>
 
-            {turns.length === 0 && !stored.isPending && (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">Try one of these:</p>
-                <div className="flex flex-wrap gap-2">
-                  {EXAMPLES.map((example) => (
-                    <Button key={example} type="button" variant="outline" size="sm" className="h-auto whitespace-normal text-left" onClick={() => void ask(example)} disabled={busy}>
-                      {example}
-                    </Button>
-                  ))}
-                </div>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Suggested questions:</p>
+              <div className="flex flex-wrap gap-2">
+                {(suggestions.data ?? []).map((suggestion) => (
+                  <Button key={suggestion} type="button" variant="outline" size="sm" className="h-auto whitespace-normal text-left" onClick={() => void ask(suggestion)} disabled={busy}>
+                    {suggestion}
+                  </Button>
+                ))}
               </div>
-            )}
+            </div>
 
             <form onSubmit={submit} className="space-y-2 border-t pt-4">
               <Label htmlFor="copilot-question">Your question</Label>

@@ -129,11 +129,12 @@ def test_extracted_cdm_ids_start_above_every_tenant_range(db: Connection) -> Non
 def test_find_login_works_before_a_tenant_is_known(app_rows: Connection, as_app: AsApp) -> None:
     as_app(app_rows, None)
     row = app_rows.execute(text("SELECT * FROM app.find_login('USER.center_b')")).mappings().one()
-    assert list(row.keys()) == ["user_id", "tenant_id", "role", "password_hash", "is_active"]
+    assert list(row.keys()) == ["user_id", "tenant_id", "role", "password_hash", "is_active",
+                                "expires_at"]  # fmt: skip
     assert (str(row["user_id"]), row["tenant_id"], row["role"]) == (
         USERS["center_b"], "center_b", "clinician"
     )  # fmt: skip
-    assert (row["password_hash"], row["is_active"]) == ("hash", True)
+    assert (row["password_hash"], row["is_active"], row["expires_at"]) == ("hash", True, None)
     assert app_rows.execute(text("SELECT * FROM app.find_login('nobody')")).all() == []
 
 

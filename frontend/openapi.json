@@ -896,6 +896,32 @@
         "title": "DeidentifiedPatient",
         "type": "object"
       },
+      "DemoInfo": {
+        "description": "What the login page's demo guide shows (public demo only).",
+        "properties": {
+          "guest_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guest Until"
+          },
+          "guide": {
+            "title": "Guide",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "guide"
+        ],
+        "title": "DemoInfo",
+        "type": "object"
+      },
       "Detected": {
         "additionalProperties": false,
         "description": "The latest result is at or above the assay's limit of detection.",
@@ -4453,7 +4479,7 @@
   "paths": {
     "/auth/login": {
       "post": {
-        "description": "Check the password and start a session. Every success and failure is recorded.",
+        "description": "Check the password and start a session. Every success and failure is recorded. An\nexpired account cannot log in; a guest account with the right password is told why.",
         "operationId": "login_auth_login_post",
         "parameters": [
           {
@@ -4497,7 +4523,7 @@
             "description": "Successful Response"
           },
           "401": {
-            "description": "Invalid user name or password"
+            "description": "Invalid user name or password (guest accounts: Guest access has ended; ask for new credentials)"
           },
           "422": {
             "content": {
@@ -5175,6 +5201,54 @@
         "summary": "Ask a question; the answer streams as server-sent events",
         "tags": [
           "copilot"
+        ]
+      }
+    },
+    "/copilot/suggestions": {
+      "get": {
+        "description": "The same for every user; they work without an API key too.",
+        "operationId": "suggestions_copilot_suggestions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Suggestions Copilot Suggestions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Suggested questions (their answers are cached)",
+        "tags": [
+          "copilot"
+        ]
+      }
+    },
+    "/demo": {
+      "get": {
+        "description": "No login needed. Names and dates only: never a password.",
+        "operationId": "demo_demo_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Is this the public demo, and until when do guest accounts work?",
+        "tags": [
+          "system"
         ]
       }
     },

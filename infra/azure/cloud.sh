@@ -8,7 +8,11 @@
 #   status     power state, URL, memory/disk and pending reboot
 #   ssh        a shell on the VM
 #   tunnel     Temporal UI of the VM on http://localhost:18233
-#   passwords  copy the demo passwords from the VM into the macOS Keychain
+#   passwords  copy the demo and guest passwords from the VM into the macOS Keychain
+#   guest-rotate  new guest password, open for DAYS days (default 30); Keychain updated
+#   reset      demo data back to the snapshot, keeping users and the audit trail
+#   share-on   keep the site up for DAYS days (default 21): no nightly shutdown, VM running
+#   share-off  nightly shutdown on again
 #   update     upload the current commit, rebuild and restart (data untouched)
 #   smoke      the smoke test (infra/azure/smoke.sh)
 #   screenshots  README screenshots from the live demo (MODE=pages or copilot)
@@ -93,12 +97,15 @@ push_code() {
     rm -rf $REMOTE/.release"
 }
 
-# The demo snapshot, over SSH (scp), unless the VM already restored this exact one.
+# The demo snapshot, over SSH (scp), unless the VM already holds this exact one. It stays on
+# the VM: install.sh restores it when it differs from the last one restored, and
+# make cloud-reset restores it again.
 push_snapshot() {
   [[ -f demo_snapshot/manifest.json ]] || fail "no demo_snapshot/ (run make demo-snapshot)"
   local local_sum remote_sum
   local_sum=$(shasum -a 256 demo_snapshot/manifest.json | cut -d' ' -f1)
-  remote_sum=$(ssh_vm "sha256sum $REMOTE/.restored-manifest.json 2>/dev/null | cut -d' ' -f1" || true)
+  remote_sum=$(ssh_vm "sha256sum $REMOTE/demo_snapshot/manifest.json 2>/dev/null | cut -d' ' -f1" \
+    || true)
   if [[ "$local_sum" == "$remote_sum" ]]; then
     echo "    the VM already has this snapshot"
     return
@@ -149,6 +156,7 @@ status() {
   state=$(power_state)
   echo "    $VM: $state"
   echo "    https://$VM_HOST"
+  echo "    nightly shutdown: $(shutdown_status)$(sharing_note)"
   echo "    SSH allowed from: $(az network nsg rule show -g "$RG" --nsg-name "$NSG" \
     -n ssh-from-owner --query sourceAddressPrefix -o tsv)"
   [[ "$state" == "VM running" ]] || return 0
@@ -161,22 +169,50 @@ tunnel() {
   ssh_vm -N -L 18233:127.0.0.1:8233
 }
 
-# Each demo password goes from the VM's .env into the Keychain through `security -i` on stdin,
-# so it never appears in a process list, a file or the terminal.
+# A password goes from the VM's .env into the Keychain through `security -i` on stdin, so it
+# never appears in a process list, a file or the terminal.
+store_password() {  # store_password <Keychain account> <.env variable>
+  local value
+  value=$(ssh_vm "grep -m1 '^$2=' $REMOTE/.env | cut -d= -f2-")
+  [[ -n "$value" ]] || fail "$2 is missing on the VM"
+  printf 'add-generic-password -U -s %s -a %s -l %s-%s -w %s\n' \
+    "$KEYCHAIN" "$1" "$KEYCHAIN" "$1" "$value" | security -i >/dev/null
+  security find-generic-password -s "$KEYCHAIN" -a "$1" >/dev/null 2>&1 \
+    || fail "could not store the $1 password in the Keychain"
+}
+
 passwords() {
   resolve_host
-  step "Demo passwords -> macOS Keychain (service \"$KEYCHAIN\")"
-  local role var value
+  step "Demo and guest passwords -> macOS Keychain (service \"$KEYCHAIN\")"
+  local role
   for role in $ROLES; do
-    var="DEMO_$(printf '%s' "$role" | tr '[:lower:]' '[:upper:]')_PASSWORD"
-    value=$(ssh_vm "grep -m1 '^$var=' $REMOTE/.env | cut -d= -f2-")
-    [[ -n "$value" ]] || fail "$var is missing on the VM"
-    printf 'add-generic-password -U -s %s -a %s -l %s-%s -w %s\n' \
-      "$KEYCHAIN" "$role" "$KEYCHAIN" "$role" "$value" | security -i >/dev/null
-    security find-generic-password -s "$KEYCHAIN" -a "$role" >/dev/null 2>&1 \
-      || fail "could not store the $role password in the Keychain"
+    store_password "$role" "DEMO_$(printf '%s' "$role" | tr '[:lower:]' '[:upper:]')_PASSWORD"
     echo "    $role: stored (log in as $role.center_a, .center_b or .center_c)"
   done
+  store_password guest GUEST_PASSWORD
+  echo "    guest: stored (guest.clinician and guest.researcher; open until $(guest_until))"
+}
+
+guest_until() { ssh_vm "grep -m1 '^GUEST_EXPIRES_AT=' $REMOTE/.env | cut -d= -f2"; }
+
+guest_rotate() {
+  need_az
+  resolve_host
+  local days="${1:-30}"
+  step "New guest password, open for $days days"
+  ssh_vm "bash $REMOTE/infra/azure/remote/guest-rotate.sh $VM_HOST $days"
+  store_password guest GUEST_PASSWORD
+  echo "    guest: new password stored in the Keychain; open until $(guest_until)"
+}
+
+reset() {
+  need_az
+  need_key
+  resolve_host
+  push_snapshot
+  step "Restoring the demo data (users and audit trail kept; about 10 minutes)"
+  ssh_vm "bash $REMOTE/infra/azure/remote/reset.sh $VM_HOST"
+  bash infra/azure/smoke.sh
 }
 
 update() {
@@ -186,6 +222,7 @@ update() {
   push_code
   step "Rebuild and restart on the VM"
   ssh_vm "bash $REMOTE/infra/azure/remote/install.sh $VM_HOST"
+  passwords
   bash infra/azure/smoke.sh
 }
 
@@ -198,6 +235,60 @@ screenshots() {
     DEMO_DATA_STEWARD_PASSWORD="$(keychain_password data_steward)" \
     DEMO_ADMIN_PASSWORD="$(keychain_password admin)" \
     pnpm --dir frontend screenshots "${1:-pages}"
+}
+
+shutdown_status() {
+  az resource show -g "$RG" -n "$SHUTDOWN" --resource-type Microsoft.DevTestLab/schedules \
+    --query properties.status -o tsv
+}
+
+sharing_note() {
+  local until
+  until=$(az vm show -g "$RG" -n "$VM" --query "tags.\"sharing-until\"" -o tsv 2>/dev/null)
+  [[ -n "$until" ]] && printf ' (sharing until %s)' "$until"
+  return 0
+}
+
+set_shutdown() {  # set_shutdown Enabled|Disabled
+  az resource update -g "$RG" -n "$SHUTDOWN" --resource-type Microsoft.DevTestLab/schedules \
+    --set properties.status="$1" -o none
+}
+
+# What `days` of sharing cost at list prices: the VM always on, plus the disk and the IP.
+share_cost() {
+  python3 -c 'import sys
+days, vm, disk, ip = int(sys.argv[1]), *map(float, sys.argv[2:])
+vm_cost, disk_cost, ip_cost = vm * days * 24, disk * days / 30, ip * days * 24
+total = vm_cost + disk_cost + ip_cost
+print(f"    {days} days always on: about ${total:.2f} (VM ${vm_cost:.2f} + disk ${disk_cost:.2f}"
+      f" + IP ${ip_cost:.2f}; list prices)")' \
+    "$1" "$PRICE_VM_HOUR" "$PRICE_DISK_MONTH" "$PRICE_IP_HOUR"
+}
+
+share_on() {
+  need_az
+  local days="${1:-21}" until
+  until=$(python3 -c 'import datetime as d, sys
+print(d.date.today() + d.timedelta(days=int(sys.argv[1])))' "$days")
+  step "Sharing for $days days (until $until): nightly shutdown off, VM running"
+  set_shutdown Disabled
+  az vm update -g "$RG" -n "$VM" --set "tags.sharing-until=$until" -o none
+  if [[ "$(power_state)" != "VM running" ]]; then
+    start
+  else
+    resolve_host
+    echo "    already running: https://$VM_HOST"
+  fi
+  share_cost "$days"
+  echo "    nightly shutdown: $(shutdown_status). When you are done: make cloud-share-off"
+}
+
+share_off() {
+  need_az
+  step "Sharing over: nightly shutdown on again (23:00 Central)"
+  set_shutdown Enabled
+  az vm update -g "$RG" -n "$VM" --remove tags.sharing-until -o none
+  echo "    nightly shutdown: $(shutdown_status). The VM runs until then (or make cloud-stop)."
 }
 
 budget() {
@@ -226,16 +317,19 @@ destroy() {
   az consumption budget delete --budget-name "$BUDGET" 2>/dev/null || true
   rm -f "$KNOWN_HOSTS"
   local role
-  for role in $ROLES; do
+  for role in $ROLES guest; do
     security delete-generic-password -s "$KEYCHAIN" -a "$role" >/dev/null 2>&1 || true
   done
   echo "    deleted; Keychain items and the pinned host key removed"
 }
 
 case "${1:-}" in
-  deploy | start | stop | status | tunnel | passwords | update | budget | destroy) "$1" ;;
+  deploy | start | stop | status | tunnel | passwords | update | budget | destroy | reset) "$1" ;;
+  guest-rotate) guest_rotate "${2:-30}" ;;
+  share-on) share_on "${2:-21}" ;;
+  share-off) share_off ;;
   ssh) ssh_vm ;;
   smoke) bash infra/azure/smoke.sh ;;
   screenshots) screenshots "${2:-pages}" ;;
-  *) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

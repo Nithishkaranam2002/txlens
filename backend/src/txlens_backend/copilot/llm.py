@@ -26,7 +26,7 @@ from txlens_backend.copilot.tracing import QuestionTrace
 from txlens_backend.db import tenant_transaction
 from txlens_backend.documents import cache
 from txlens_backend.documents.budget import Budget
-from txlens_backend.documents.llm import price_per_token
+from txlens_backend.documents.llm import LlmOfflineError, price_per_token
 
 PROMPT_VERSION = "copilot-2026-11-13.4"  # .4: quote-grounded literature claims, temperature 0
 TEMPERATURE = 0  # as deterministic as the provider allows (ignored by models that fix it)
@@ -58,7 +58,7 @@ class CopilotLlm:
         self, model: str, *, engine: Engine, tenant_id: str, budget: Budget,
         trace: QuestionTrace, reasoning_effort: str = "low", timeout_seconds: int = 60,
         api_base: str | None = None, completion: Callable[..., Any] | None = None,
-        read_cache: bool = True,
+        read_cache: bool = True, offline: bool = False,
     ) -> None:  # fmt: skip
         self.model, self.engine, self.tenant_id = model, engine, tenant_id
         self.budget, self.trace = budget, trace
@@ -66,6 +66,7 @@ class CopilotLlm:
         self.api_base = api_base if model.startswith("ollama/") else None
         self.completion = completion or litellm.completion
         self.read_cache = read_cache  # False: always ask the model (to measure run-to-run variance)
+        self.offline = offline  # True (no API key): a call that is not cached is refused
         self.spend = Spend()
         litellm.drop_params = True
 
@@ -83,6 +84,11 @@ class CopilotLlm:
     def store(self, key: str, answer: cache.CachedAnswer) -> None:
         with tenant_transaction(self.engine, self.tenant_id) as conn:
             cache.put(conn, key, self.model, PROMPT_VERSION, answer)
+
+    def refuse_if_offline(self, name: str) -> None:
+        """Offline (no API key), only cached answers can be given."""
+        if self.offline:
+            raise LlmOfflineError(f"{self.model}: no API key and no cached answer for {name}")
 
     def worst_case(self, messages: Messages) -> float:
         """Upper bound on one call: generous input estimate, full output, one re-ask."""
@@ -119,6 +125,7 @@ class CopilotLlm:
         if hit is not None:
             self.record(name, messages, hit.response, hit, started, cached=True)
             return schema.model_validate(hit.response)
+        self.refuse_if_offline(name)
         tokens = [0, 0]
 
         def count(response: Any) -> None:
@@ -156,6 +163,7 @@ class CopilotLlm:
             for i in range(0, len(words), 4):
                 yield " ".join(words[i : i + 4]) + (" " if i + 4 < len(words) else "")
             return
+        self.refuse_if_offline(name)
         reserved, parts, tokens = self.worst_case(messages), [], (0, 0)
         self.budget.reserve(reserved)
         try:

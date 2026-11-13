@@ -1,12 +1,10 @@
 """Copilot API: roles, CSRF, conversation ownership, and the server-sent event stream."""
 
-import json
 from collections.abc import Iterator
-from typing import Any
 
 import pytest
 from api_testutils import login
-from copilot_testutils import ScriptedModel
+from copilot_testutils import ScriptedModel, events, new_conversation
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from literature_testutils import FakeEmbedder
@@ -32,23 +30,6 @@ def model(api_app: FastAPI, api_app_engine: Engine, api_settings: Settings,
         conn.execute(text("DELETE FROM app.llm_cache"))
     yield scripted
     api_app.dependency_overrides.pop(copilot_deps)
-
-
-def events(body: str) -> list[dict[str, Any]]:
-    """Parse a text/event-stream body."""
-    found = []
-    for block in body.strip().split("\n\n"):
-        lines = dict(line.split(": ", 1) for line in block.splitlines())
-        event = json.loads(lines["data"])
-        assert event["type"] == lines["event"]
-        found.append(event)
-    return found
-
-
-def new_conversation(client: TestClient) -> str:
-    response = client.post("/copilot/conversations", json={"title": "Heart counts"})
-    assert response.status_code == 201, response.text
-    return str(response.json()["conversation_id"])
 
 
 def test_an_answer_streams_as_server_sent_events(client: TestClient, model: ScriptedModel) -> None:

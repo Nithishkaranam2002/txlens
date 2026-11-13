@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/errors";
 import { jsonResponse, renderWithQuery } from "@/test/render";
 
-import { LoginForm, loginErrorMessage } from "./login-form";
+import { GUEST_EXPIRED, LoginForm, loginErrorMessage } from "./login-form";
 
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({
@@ -28,6 +28,13 @@ describe("loginErrorMessage", () => {
   it("gives one message for wrong user or password, and a network message", () => {
     expect(loginErrorMessage(new ApiError(401, "x", "r"))).toBe("Invalid user name or password.");
     expect(loginErrorMessage(new TypeError("fetch failed"))).toMatch(/Cannot reach the server/);
+  });
+
+  it("tells an expired guest why, and only for that exact API message", () => {
+    expect(loginErrorMessage(new ApiError(401, GUEST_EXPIRED, "r"))).toBe(`${GUEST_EXPIRED}.`);
+    expect(loginErrorMessage(new ApiError(401, "Invalid user name or password", "r"))).toBe(
+      "Invalid user name or password.",
+    );
   });
 });
 
