@@ -4,7 +4,7 @@
 # straight into the macOS Keychain, and are read back only into shell variables.
 
 RG="${TXLENS_AZ_RG:-txlens-demo-rg}"
-LOCATION="${TXLENS_AZ_LOCATION:-eastus}"
+LOCATION="${TXLENS_AZ_LOCATION:-northcentralus}"
 VM_SIZE="${TXLENS_AZ_VM_SIZE:-Standard_B2als_v2}"
 SSH_KEY="${TXLENS_AZ_SSH_KEY:-$HOME/.ssh/txlens_azure}"
 KNOWN_HOSTS="$HOME/.ssh/known_hosts_txlens_azure"
@@ -44,7 +44,7 @@ dns_label() {
   printf 'txlens-%s' "$(az account show --query id -o tsv | shasum -a 256 | cut -c1-6)"
 }
 
-# Sets HOST to the VM's public name, e.g. txlens-1a2b3c.eastus.cloudapp.azure.com (once per run;
+# Sets HOST to the VM's public name, e.g. txlens-1a2b3c.northcentralus.cloudapp.azure.com (once per run;
 # call it directly, not in $(...), so the value stays set).
 resolve_host() {
   [[ -n "${HOST:-}" ]] && return

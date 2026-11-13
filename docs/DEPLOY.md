@@ -2,7 +2,7 @@
 
 The public demo runs on **one small Ubuntu VM** with the same Docker Compose stack as
 `make demo`, restored from `demo_snapshot/`. **Caddy** is the only public entry and serves
-HTTPS on a free Azure name such as `https://txlens-1a2b3c.eastus.cloudapp.azure.com`. The
+HTTPS on a free Azure name such as `https://txlens-1a2b3c.northcentralus.cloudapp.azure.com`. The
 decision and its alternatives are in [ADR 0021](adr/0021-azure-vm-demo-deploy.md).
 
 - Synthetic data only. No OpenAI key on the server: LLM answers come from the cache, so
@@ -13,7 +13,7 @@ decision and its alternatives are in [ADR 0021](adr/0021-azure-vm-demo-deploy.md
 - Secrets and demo passwords are generated on the server, differ from your local `.env`, are
   never printed and never committed. The demo passwords go into your macOS Keychain.
 
-## What it costs (Azure list prices, East US, Linux, November 2026)
+## What it costs (Azure list prices, North Central US, Linux, November 2026)
 
 | Item | Price | Always on (730 h) | Around interviews (~20 h/month) |
 |---|---|---|---|
@@ -45,7 +45,7 @@ Settings (environment variables, all optional):
 
 | Variable | Default |
 |---|---|
-| `TXLENS_AZ_LOCATION` | `eastus` |
+| `TXLENS_AZ_LOCATION` | `northcentralus` |
 | `TXLENS_AZ_VM_SIZE` | `Standard_B2als_v2` |
 | `TXLENS_AZ_RG` | `txlens-demo-rg` |
 | `TXLENS_AZ_SSH_KEY` | `~/.ssh/txlens_azure` |
@@ -135,10 +135,12 @@ checksum, so it is uploaded and restored again.
 
 - **SSH times out** after a network change: `make cloud-start` (or `make cloud-status`, then
   `make cloud-start`) moves the SSH rule to your current IP.
-- **Policy or quota errors on deploy:** the student subscription allows only some regions and
-  sizes. Try `TXLENS_AZ_LOCATION=eastus2 make cloud-deploy`, or
-  `TXLENS_AZ_VM_SIZE=Standard_B2s`. Check with `az vm list-skus -l <region> --size Standard_B2`
-  and `az vm list-usage -l <region>`.
+- **Policy or quota errors on deploy:** the student subscription allows only some regions
+  (in November 2026: northcentralus, canadacentral, swedencentral, francecentral, denmarkeast;
+  see `az policy assignment list`). North Central US is the cheapest of them and the default.
+  B2s and B2ls_v2 are not offered there. Try another allowed region with
+  `TXLENS_AZ_LOCATION=swedencentral make cloud-deploy`. Check with
+  `az vm list-skus -l <region> --size Standard_B2` and `az vm list-usage -l <region>`.
 - **No certificate yet:** Caddy needs ports 80/443 reachable and the DNS name resolving.
   Check `make cloud-ssh`, then `cd /opt/txlens && docker compose -p txlens -f infra/docker-compose.yml -f infra/azure/compose.cloud.yml --env-file .env logs caddy`.
   Certificates are kept in the `caddy-data` volume, so restarts do not request new ones.

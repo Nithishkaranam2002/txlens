@@ -3,7 +3,7 @@
 // address only updates the NSG rule. Host setup (Docker, firewall, updates) is done over SSH
 // by remote/host-setup.sh, so it can be re-run without recreating the VM.
 
-@description('Azure region, e.g. eastus (must be allowed by the subscription policy).')
+@description('Azure region, e.g. northcentralus (must be allowed by the subscription policy).')
 param location string = resourceGroup().location
 
 @description('VM size: the cheapest one with 4 GB RAM that the subscription allows.')
