@@ -318,12 +318,12 @@ def test_a_slow_query_is_a_tool_error_the_planner_sees(
     from psycopg.errors import QueryCanceled
     from sqlalchemy.exc import OperationalError
 
-    from txlens_backend.copilot import tools
+    from txlens_backend.copilot import sql_exec
 
     def timeout(*_: object, **__: object) -> None:
         raise OperationalError("SELECT ...", {}, QueryCanceled("statement timeout"))
 
-    monkeypatch.setattr(tools.sql_exec, "run", timeout)
+    monkeypatch.setattr(sql_exec, "run", timeout)
     sql = "SELECT count(DISTINCT person_id) FROM copilot.patient"
     model = ScriptedModel(steps=[{"tool": "sql_query", "purpose": "x", "sql": sql}])
     events = ask("How many patients?", model)
