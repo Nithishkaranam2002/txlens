@@ -15,8 +15,8 @@ TxLens is a multi-tenant clinical data and AI platform for organ transplant prog
 
 **Status:** Phases 1 and 2 are done: synthetic data, OMOP database, medallion pipeline, API,
 surveillance worklist, frontend, biopsy-report extraction, clinic-note NLP, the review queue
-and their evaluation. Phase 3 has started with survival analysis and its R parity checks
-(Step 3.1). Features arrive step by step.
+and their evaluation. Phase 3 adds survival analysis with R parity checks (Step 3.1), a
+rejection-risk model (Step 3.2) and the research copilot (Step 3.3).
 
 ## Tech stack
 
@@ -28,6 +28,7 @@ and their evaluation. Phase 3 has started with survival analysis and its R parit
 | Workflows | Temporal |
 | Data platform | PySpark + Delta Lake (bronze/silver/gold), runs in Docker and on Databricks |
 | AI | LiteLLM, Instructor, LangGraph, Langfuse |
+| Stats / ML | lifelines, scikit-learn, LightGBM, MLflow (tracking + model registry) |
 
 ## Repo layout
 
@@ -46,7 +47,9 @@ docs/            architecture, ADRs, LEARNING.md
 ## How to run
 
 You need: [uv](https://docs.astral.sh/uv/), [pnpm](https://pnpm.io/), Node 22 and Docker Desktop.
-**No Java needed**: Spark runs inside a Docker container.
+**No Java needed**: Spark runs inside a Docker container. LightGBM needs the OpenMP runtime:
+on macOS `brew install libomp` (without it, the Makefile falls back to the copy bundled with
+scikit-learn; plain `uv run` commands then need `DYLD_FALLBACK_LIBRARY_PATH` set the same way).
 
 ```bash
 make setup          # install dependencies, create .env from .env.example
@@ -80,8 +83,11 @@ make cohort-report  # cohort rules vs ground truth -> evals/reports/cohort_rules
 make r-build        # once: R reference image (R 4.4.2 + survival + cmprsk) for r_parity/
 make r-parity       # Python survival port vs R on the same extracts (pytest -m r)
 make survival-report  # parity, immortal time, competing risks -> evals/reports/survival.md
-make worker         # Temporal worker for surveillance runs (keep it running)
-make surveillance-run  # surveillance for every center as of the data cutoff (2026-09-30);
+make risk-train     # train + evaluate the rejection-risk model, register a new MLflow version
+make risk-report    # full model evaluation -> evals/reports/risk_model.md
+make mlflow-ui      # MLflow runs and model registry (http://localhost:5001)
+make worker         # Temporal worker for surveillance runs (keep it running; restart after updates)
+make surveillance-run  # surveillance + risk scoring for every center as of the data cutoff (2026-09-30);
                        # AS_OF=YYYY-MM-DD replays another date
 make surveillance-schedule  # nightly run at 02:00 UTC
 make surveillance-report    # replay vs ground truth -> evals/reports/surveillance.md
@@ -406,6 +412,45 @@ From [evals/reports/survival.md](evals/reports/survival.md), produced by
 ![Survival page: Kaplan-Meier with bands and risk table, cumulative incidence vs 1 − KM, forest plot, methods](docs/images/app-survival.png)
 
 Design: [ADR 0017](docs/adr/0017-survival-analysis-and-r-parity.md).
+
+## Rejection-risk model
+
+From [evals/reports/risk_model.md](evals/reports/risk_model.md), produced by
+`make risk-report`. **Trained on synthetic data, not clinically validated, decision support
+only.**
+
+- **Task:** at each scheduled dd-cfDNA visit, once its results are back, estimate the chance
+  of a biopsy-proven rejection (TCMR, ABMR or mixed) in the next 90 days.
+  - Features use only facts dated up to the visit, and a test proves it.
+  - Features: dd-cfDNA level and trend, creatinine change from baseline, tacrolimus
+    variability, DSA, time since transplant, prior rejection, organ, donor type and DGF.
+- **Validation:** patient-level splits on centers A+B, and an external test on center C,
+  which was never used for training. Logistic regression and LightGBM were compared under a
+  champion rule fixed in advance; logistic regression won.
+- **Center C (external test, 4,943 visits, 78 followed by rejection):**
+  - AUROC **0.804 (0.756–0.854)**;
+  - AUPRC **0.235 (0.154–0.361)** against a prevalence of 0.016;
+  - calibration slope 0.93.
+- **Against the rule engine at the same alert burden** (7.7% of visits): the model catches
+  43.6% of rejection visits and the rules 44.9%. The difference is −1.3 points (−7.8 to +5.5):
+  **no better than the rules** on this synthetic data, whose rejection signal is the dd-cfDNA
+  rise the rules already watch. The model's net benefit is higher from a 5% risk threshold
+  upward.
+- **Honest about for-cause draws:** OMOP does not record why a draw was taken. 16% of the
+  visits before a rejection were really for-cause. Without draws in the 14 days before a
+  biopsy (an analysis that uses the future), the external AUROC is 0.744.
+- **Run like a product:**
+  - MLflow tracking and registry (`txlens-rejection-risk@champion`);
+  - a [model card](docs/model_card_risk.md) with fairness checks by age band and sex;
+  - API scores with the model version stored on every prediction;
+  - nightly scoring in the Temporal surveillance workflow;
+  - drift (PSI) per run.
+- **Privacy:** clinicians and data stewards (de-identified) see a patient's score; researchers
+  never see individual scores.
+
+![Risk card on the patient page: score, band, top contributing features, model version](docs/images/app-risk.png)
+
+Design: [ADR 0019](docs/adr/0019-rejection-risk-model.md).
 
 ## Research copilot
 

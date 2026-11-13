@@ -1483,6 +1483,173 @@ experiencer flags).
    built up, and stopping before fewer than 11 are at risk, keeps every number aggregate,
    including in exports.
 
+## Phase 3, Step 3.2 — A rejection-risk model, built and run properly
+
+### What was built
+- **A 90-day rejection-risk model.** At each scheduled dd-cfDNA visit, once the results are
+  back, it estimates the chance of a biopsy-proven rejection (TCMR, ABMR or mixed) in the
+  next 90 days. Label everywhere: *trained on synthetic data, not clinically validated,
+  decision support only*.
+- **Leakage-safe features** (`backend/.../risk/features.py`):
+  - dd-cfDNA level, trend and ratio to the patient's own lowest;
+  - creatinine % change from the day 30–90 baseline;
+  - tacrolimus variability (CV over 180 days);
+  - DSA status, time since transplant, prior rejection, organ, donor type and DGF.
+  - A test proves no feature changes when anything after the visit changes.
+- **Two models compared fairly:** logistic regression (the interpretable baseline) and
+  LightGBM (gradient boosting).
+  - Patient-level splits: no patient in both training and test.
+  - An external test on center C, which was never used for training.
+  - A champion rule written down before testing.
+- **`make risk-train`** logs the run to MLflow and registers a new version of
+  `txlens-rejection-risk` with the alias `champion`. It also writes the model card
+  (`docs/model_card_risk.md`).
+- **`make risk-report`** writes `evals/reports/risk_model.md`. It contains:
+  - AUROC and AUPRC;
+  - calibration, with a plot;
+  - decision curves;
+  - the rule-engine comparison at the same alert burden;
+  - sensitivity analyses;
+  - fairness by age band and sex;
+  - drift (PSI);
+  - a check that the registered champion is the model it evaluated.
+- **Serving.**
+  - The API returns the latest score with its top three features and the model version.
+    Clinicians can re-score on demand.
+  - The nightly surveillance workflow scores every patient's latest visit after the rule
+    engine and stores score drift.
+  - Every prediction row records the model version.
+- **Patient page.** A risk card for clinicians and data stewards. Researchers never see
+  individual scores: the API returns 403 and the page never asks.
+
+### The ideas in plain English
+- **Leakage** means the model sees information it would not have at prediction time. Then
+  it looks great in testing and fails in real use. Examples here: a result recorded after
+  the visit, or knowing a biopsy is coming. Our features are built from a dated record cut
+  at the visit day, and a test scrambles everything after the visit to prove nothing
+  changes.
+- **The for-cause trap.** Extra dd-cfDNA draws are often taken *because* a doctor is
+  already worried. A model that sees them learns the doctor's worry, not the graft. OMOP
+  does not record why a draw was taken, so a visit is "the first draw in a schedule window".
+  Dropping draws taken just before a biopsy would look cleaner, but that uses the future (you
+  only know a biopsy follows afterwards). The report measures the effect instead:
+  - 1.4% of kept visits were really for-cause;
+  - 16% of the visits before a rejection were;
+  - without them the AUROC falls from 0.80 to 0.74.
+- **Split by patient.** One patient's visits look alike. If some are in training and some in
+  test, the model is graded partly on patients it has already seen. Every split here groups
+  by patient, and the bootstrap intervals resample patients, not visits.
+- **External validation.** Center C was never used for training or model choice. Testing
+  there asks whether the model travels to a new hospital, which a random split cannot show.
+- **AUROC vs AUPRC.** AUROC asks "does a rejection visit usually score higher than a quiet
+  one?" (0.5 is chance). With rejection at about 2% of visits, AUROC can look good while
+  most alerts are false. AUPRC focuses on the alerts: chance level is the prevalence (0.016),
+  and we get 0.23.
+- **Calibration.** If the model says 10%, do about 10% of such visits have a rejection? We
+  report the Brier score and a calibration slope (1 is perfect). Ours are close: 0.93 to
+  1.11.
+- **Same alert burden.** A model can always catch more by alerting more often. The fair
+  question is: alerting on exactly as many visits as the rule engine, does it catch more
+  rejections? Here, no: 43.6% vs 44.9% on center C. The difference is inside the noise.
+- **Decision curves** ask "is acting on this score better than biopsying everyone or no
+  one?" at the risk level where a clinician would act. The model beats the fixed rule alerts
+  from a 5% threshold upward.
+
+### How the tricky parts work
+- **Labels from two OMOP sources.**
+  - A pathology report's result is dated on the biopsy.
+  - A clinic note's is dated when the note was written, days later. A note result counts
+    only if a biopsy came at most 14 days before it, and it is tied to that biopsy.
+  - The label uses the biopsy date. "Prior rejection" uses the date the result was
+    recorded, which is when a doctor could know it.
+  - Checked against the generator: 213 of 213 rejection biopsies found, none invented.
+- **"First draw in the window", not "nearest".** The nearest draw to a due date can be one
+  that has not happened yet. The first one is known on its own day, so the nightly job and
+  the training data agree.
+- **Explanations that add up.**
+  - For logistic regression, each feature's push is coefficient × standardised value. A
+    missing value's indicator term is folded into its feature.
+  - For LightGBM, the library computes exact TreeSHAP values.
+  - Either way the pushes plus a base value equal the model's log-odds, which a test checks.
+  - The UI says "compared with an average visit".
+- **Drift with the right reference.** The first nightly run showed PSI 1.5, "massive drift",
+  on unchanged data. The reference was all training visits, but the nightly job scores each
+  patient's *latest* visit, which is later in follow-up and lower risk. The reference is now
+  the same population at training time. Nightly PSI is 0.007–0.012.
+- **Scoring never blocks surveillance.** Scoring is its own Temporal activity after the rule
+  engine. With no model registered it is skipped. If it fails, the workflow logs it and
+  returns the flags anyway.
+
+### Why these tools
+- **scikit-learn** for logistic regression, imputation, scaling and patient-grouped stratified
+  folds (`StratifiedGroupKFold`).
+- **LightGBM** for gradient boosting. It handles missing values natively and has built-in
+  exact TreeSHAP, so no `shap` package is needed. It is imported only when needed, because
+  it requires OpenMP.
+- **MLflow (skinny client + SQLite registry)**: runs, metrics, artifacts, versions and an
+  alias that moves to the new champion. One `make` target serves the UI from compose.
+- **matplotlib** for the calibration and decision-curve figures in the report (already used
+  for the survival PDF).
+- **Temporal** (already running surveillance) for nightly scoring, with retries and a
+  failure that cannot block flags.
+
+### Trade-offs
+- **The model is not better than the rules here.** The generator's signal is a
+  dd-cfDNA/creatinine ramp that the rules already watch, and the extra features carry no
+  built-in effect. Saying so plainly is the point of comparing at equal burden.
+- **Synthetic data flatters labels.** OMOP labels match the truth 100% only because the note
+  templates always mention the result. Real notes would leave gaps.
+- **One pooled model for all centers.** It is simple and validated externally. With real
+  data, pooling needs data-sharing agreements, and per-center recalibration may be needed.
+- **Logistic regression won by rule.** LightGBM had a slightly higher AUPRC on center C
+  (0.29 vs 0.23), but the rule was fixed before testing and cross-validation did not show a
+  0.01 gain. Changing the rule after seeing the test would be cheating.
+- **Fairness checks are descriptive.** Age bands and sex show similar AUROC (0.79–0.82), but
+  groups are small and the generator has no group effects to find.
+
+### Results (synthetic data; `make risk-report`)
+- **Data:** 21,684 visits from 1,997 patients; 19,467 labelled, 326 followed by a rejection
+  biopsy within 90 days (1.7%).
+- **Champion: logistic regression.**
+  - Internal test: AUROC 0.814 (0.745–0.868), AUPRC 0.240 (0.131–0.380).
+  - External test (center C, 4,943 visits): AUROC 0.804 (0.756–0.854), AUPRC 0.235
+    (0.154–0.361) against a prevalence of 0.016. Calibration slope 0.93.
+- **Same alert burden as the rule engine** (7.7% of center C visits):
+  - the model catches 43.6% of rejection visits, the rules 44.9%;
+  - difference −1.3 points (−7.8 to +5.5);
+  - episodes caught 63% vs 65%.
+- **Sensitivity:**
+  - without draws ≤ 14 days before a biopsy, external AUROC 0.744;
+  - visits from the true draw reason, 0.778;
+  - borderline as rejection or ground-truth labels: unchanged.
+- **Drift:** largest feature PSI between A+B and C 0.025 (stable); nightly score PSI
+  0.007–0.012.
+
+### Likely interview questions
+1. **How do you know your model has no data leakage?** Features come from a patient record
+   cut at the visit day, and a test proves it. The test changes, deletes and adds everything
+   dated after the visit and checks that every feature stays the same. It runs on
+   hand-built records and on records loaded from the database. Prior rejection uses the date
+   a result was recorded, not the biopsy date, because that is when a doctor could know it.
+2. **Why AUPRC and not just AUROC?** Rejection is about 2% of visits. AUROC can look high
+   while almost every alert is false. AUPRC is about the alerts themselves, and its chance
+   level is the prevalence (0.016). Ours is 0.23, about 15× chance, which is useful but far
+   from perfect.
+3. **Your model did not beat the rules. Is that a failure?** No, it is the finding. At the
+   same alert rate it catches the same share of rejections, because in this synthetic data
+   the signal is the dd-cfDNA rise the rules already watch. What it adds is a calibrated,
+   explained score and better net benefit at higher thresholds. Comparing at equal burden is
+   what stops a model looking better just by alerting more.
+4. **How did you validate it would work at a new hospital?** I trained on centers A and B
+   and tested once on center C, which was never used for training or model choice. Splits
+   were also by patient, and the confidence intervals resample patients. The external AUROC
+   (0.80) matched the internal one (0.81), and feature drift between centers was small.
+5. **How is the model run in production?** MLflow registers each training run as a new
+   version; the `champion` alias points at the one in use. The API and the nightly Temporal
+   job load the champion, and every prediction row stores the model name and version, its
+   inputs and its top contributions. Each nightly run stores drift (PSI) against the same
+   population at training time. Scoring can fail without blocking surveillance flags.
+
 ## Phase 3, Step 3.3 — An AI research copilot
 
 ### What was built
