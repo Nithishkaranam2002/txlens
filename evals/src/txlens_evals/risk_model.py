@@ -803,8 +803,8 @@ def nightly_lines(engine: Engine) -> Lines:
                 return ["Nightly scoring has not been set up in this database yet."]
             found = conn.execute(
                 text(
-                    "SELECT as_of, model_version, scored, score_psi FROM app.risk_run "
-                    "ORDER BY created_at DESC LIMIT 1"
+                    "SELECT as_of, model_version, scored, score_psi, feature_psi "
+                    "FROM app.risk_run ORDER BY created_at DESC LIMIT 1"
                 )
             ).one_or_none()
         if found is not None:
@@ -816,16 +816,29 @@ def nightly_lines(engine: Engine) -> Lines:
                     str(found.scored),
                     "n/a" if found.score_psi is None else f"{found.score_psi:.3f}",
                     "n/a" if found.score_psi is None else drift_band(found.score_psi),
+                    worst_feature(found.feature_psi),
                 ]
             )
     if not rows:
         return ["No nightly scoring run is stored yet (`make surveillance-run`)."]
     return [
-        "**Latest nightly scoring run per center** (score PSI against the training "
-        "reference stored with the model version):",
+        "**Latest nightly scoring run per center.** The nightly job scores each active "
+        "patient's latest visit and compares the scores and inputs with the same population "
+        "at training time (the reference stored with the model version):",
         "",
-        *table(["Center", "As of", "Model", "Patients scored", "Score PSI", ""], rows),
+        *table(
+            ["Center", "As of", "Model", "Patients scored", "Score PSI", "", "Largest feature PSI"],
+            rows,
+        ),
     ]
+
+
+def worst_feature(values: dict[str, float]) -> str:
+    """The feature that drifted most in a nightly run."""
+    if not values:
+        return "n/a"
+    name = max(values, key=lambda k: values[k])
+    return f"{LABELS.get(name, name)} {values[name]:.3f} ({drift_band(values[name])})"
 
 
 # --- 11. registry -----------------------------------------------------------------------

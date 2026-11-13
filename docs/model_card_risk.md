@@ -1,4 +1,4 @@
-# Model card: txlens-rejection-risk v1
+# Model card: txlens-rejection-risk v2
 
 **Trained on synthetic data, not clinically validated, decision support only.**
 
@@ -46,29 +46,29 @@ Internal test: 20% of center A+B patients (no patient in both development and te
 ## Performance (95% intervals resample patients)
 | Model / test | Visits | AUROC | AUPRC | Brier | Calibration intercept / slope |
 |---|---|---|---|---|---|
-| Logistic regression, internal | 2909 (52 events) | 0.814 (0.745-0.868) | 0.240 (0.131-0.380) (prevalence 0.018) | 0.0157 (0.0107-0.0214) | 0.06 / 0.98 |
-| Logistic regression, external (center C) | 4943 (78 events) | 0.804 (0.756-0.854) | 0.235 (0.154-0.361) (prevalence 0.016) | 0.0134 (0.0098-0.0174) | -0.09 / 0.93 |
-| Gradient boosting (LightGBM), internal | 2909 (52 events) | 0.815 (0.752-0.867) | 0.224 (0.117-0.348) (prevalence 0.018) | 0.0154 (0.0107-0.0212) | 0.07 / 1.03 |
-| Gradient boosting (LightGBM), external (center C) | 4943 (78 events) | 0.807 (0.758-0.855) | 0.291 (0.204-0.392) (prevalence 0.016) | 0.0129 (0.0094-0.0166) | -0.04 / 1.11 |
+| Logistic regression, internal | 2909 (52 events) | 0.814 (0.745 to 0.868) | 0.240 (0.131 to 0.380) (prevalence 0.018) | 0.0157 (0.0107 to 0.0214) | 0.06 / 0.98 |
+| Logistic regression, external (center C) | 4943 (78 events) | 0.804 (0.756 to 0.854) | 0.235 (0.154 to 0.361) (prevalence 0.016) | 0.0134 (0.0098 to 0.0174) | -0.09 / 0.93 |
+| Gradient boosting (LightGBM), internal | 2909 (52 events) | 0.815 (0.752 to 0.867) | 0.224 (0.117 to 0.348) (prevalence 0.018) | 0.0154 (0.0107 to 0.0212) | 0.07 / 1.03 |
+| Gradient boosting (LightGBM), external (center C) | 4943 (78 events) | 0.807 (0.758 to 0.855) | 0.291 (0.204 to 0.392) (prevalence 0.016) | 0.0129 (0.0094 to 0.0166) | -0.04 / 1.11 |
 
 ## Compared with the rule engine at the same alert burden
 The model alerts on the highest-scored share of visits equal to the share the rule engine (any medium/high flag) alerts on.
 
 | Test | Alert rate | Rejections caught: rules | Model | Difference (model - rules) |
 |---|---|---|---|---|
-| Internal | 9.4% | 0.423 (0.315-0.524) | 0.462 (0.321-0.586) | 0.038 (-0.037-0.117) |
-| External | 7.7% | 0.449 (0.371-0.539) | 0.436 (0.351-0.529) | -0.013 (-0.078-0.055) |
+| Internal | 9.4% | 0.423 (0.315 to 0.524) | 0.462 (0.321 to 0.586) | 0.038 (-0.037 to 0.117) |
+| External | 7.7% | 0.449 (0.371 to 0.539) | 0.436 (0.351 to 0.529) | -0.013 (-0.078 to 0.055) |
 
 ## Fairness checks (internal + external test visits)
 Groups with fewer than 11 rejection visits are not scored.
 
 | By | Group | Visits | Rejection visits | AUROC | Alert rate | Rejections caught |
 |---|---|---|---|---|---|---|
-| age_band | 18-39 | 2911 | 53 | 0.800 | 7.4% | 43.4% |
-| age_band | 40-59 | 3032 | 52 | 0.814 | 8.5% | 44.2% |
-| age_band | 60+ | 1909 | 25 | 0.810 | 9.5% | 40.0% |
-| sex | female | 3051 | 53 | 0.789 | 8.1% | 39.6% |
-| sex | male | 4801 | 77 | 0.820 | 8.4% | 45.5% |
+| Age band | 18-39 | 2911 | 53 | 0.800 | 7.4% | 43.4% |
+| Age band | 40-59 | 3032 | 52 | 0.814 | 8.5% | 44.2% |
+| Age band | 60+ | 1909 | 25 | 0.810 | 9.5% | 40.0% |
+| Sex | female | 3051 | 53 | 0.789 | 8.1% | 39.6% |
+| Sex | male | 4801 | 77 | 0.820 | 8.4% | 45.5% |
 
 ## Limits
 - Synthetic data: the generator raises dd-cfDNA and creatinine 14-56 days before a rejection biopsy and makes DSA appear before ABMR. Tacrolimus variability, donor type, delayed graft function and age have no built-in effect, so the model cannot learn one. Real-world performance is unknown.

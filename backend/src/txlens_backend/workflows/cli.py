@@ -53,7 +53,7 @@ async def serve() -> None:
     settings = get_settings()
     engine = make_engine(settings.app_database_url.get_secret_value())
     check_role_is_rls_bound(engine)
-    activities = SurveillanceActivities(engine)
+    activities = SurveillanceActivities(engine, settings.mlflow_tracking_uri)
     documents = DocumentActivities(engine, settings)
     notes = NoteActivities(engine, settings)
     # Two LLM passes per document: room for `llm_concurrency` documents at once.
@@ -62,7 +62,8 @@ async def serve() -> None:
     with ThreadPoolExecutor(max_workers=4) as pool, ThreadPoolExecutor(llm_slots) as doc_pool:
         surveillance = Worker(
             client, task_queue=TASK_QUEUE, workflows=[SurveillanceWorkflow],
-            activities=[activities.list_centers, activities.run_center], activity_executor=pool,
+            activities=[activities.list_centers, activities.run_center, activities.score_center],
+            activity_executor=pool,
         )  # fmt: skip
         biopsies = Worker(
             client, task_queue=DOCUMENTS_QUEUE,

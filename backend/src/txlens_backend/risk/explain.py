@@ -8,7 +8,6 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from lightgbm import LGBMClassifier
 from numpy.typing import NDArray
 from sklearn.base import ClassifierMixin
 from sklearn.pipeline import Pipeline
@@ -37,7 +36,7 @@ def contributions(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """(per-feature contributions, base value) for each row; rows sum to the logit."""
     x = x[list(FEATURE_NAMES)]
-    if isinstance(model, LGBMClassifier):
+    if type(model).__name__ == "LGBMClassifier":  # no import: see models.make
         raw = np.asarray(model.predict(x, pred_contrib=True), dtype=float)
         return raw[:, :-1], raw[:, -1]
     if not isinstance(model, Pipeline):

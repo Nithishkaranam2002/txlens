@@ -169,8 +169,14 @@ Population stability index (PSI): < 0.1 stable, 0.1-0.25 watch, > 0.25 shifted. 
 | Delayed graft function | 0.002 | stable | 0.000 | stable |
 | **Risk score** | 0.002 | stable | 0.242 | watch |
 
-Nightly scoring has not been set up in this database yet.
+**Latest nightly scoring run per center.** The nightly job scores each active patient's latest visit and compares the scores and inputs with the same population at training time (the reference stored with the model version):
+
+| Center | As of | Model | Patients scored | Score PSI |  | Largest feature PSI |
+|---|---|---|---|---|---|---|
+| center_a | 2026-09-30 | v2 | 741 | 0.008 | stable | dd-cfDNA (log) 0.017 (stable) |
+| center_b | 2026-09-30 | v2 | 644 | 0.012 | stable | dd-cfDNA (log) 0.019 (stable) |
+| center_c | 2026-09-30 | v2 | 468 | 0.007 | stable | dd-cfDNA vs own lowest 0.029 (stable) |
 
 ## 11. Registered model
 
-`txlens-rejection-risk@champion` is version 1 (run `a46ba6d2a7b8471fbfed1462d0c8ec15`). Its logged external AUROC is 0.8037; this report's is 0.8037: the same development, as expected.
+`txlens-rejection-risk@champion` is version 2 (run `e864b9d88ee14a4dace8f7d69511be9e`). Its logged external AUROC is 0.8037; this report's is 0.8037: the same development, as expected.

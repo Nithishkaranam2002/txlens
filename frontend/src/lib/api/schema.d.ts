@@ -414,6 +414,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/patients/{patient_id}/risk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The patient's latest rejection-risk score with its top contributing features
+         * @description `patient_id` is the person id for clinicians and the pseudonym (`R-...`) for others.
+         */
+        get: operations["get_risk_patients__patient_id__risk_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/patients/{patient_id}/risk/score": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Score the patient's latest surveillance visit now with the champion model
+         * @description Stores the score with the model version (a visit already scored by this version keeps
+         *     its first score) and returns the patient's latest score.
+         */
+        post: operations["score_now_patients__patient_id__risk_score_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/patients/{patient_id}/timeline": {
         parameters: {
             query?: never;
@@ -1881,12 +1922,65 @@ export interface components {
             /** N Risk */
             n_risk: number | string;
         };
+        /**
+         * RiskContribution
+         * @description One feature's push on this score (log-odds; positive raises the risk).
+         */
+        RiskContribution: {
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "raises" | "lowers";
+            /** Feature */
+            feature: string;
+            /** Label */
+            label: string;
+            /** Log Odds */
+            log_odds: number;
+            /** Value */
+            value: number | null;
+        };
         /** RiskRow */
         RiskRow: {
             /** Cells */
             cells: components["schemas"]["RiskCell"][];
             /** Group */
             group: string;
+        };
+        /**
+         * RiskScore
+         * @description The latest stored score of a patient, or `available: false` if never scored.
+         */
+        RiskScore: {
+            /** Available */
+            available: boolean;
+            /** Band */
+            band?: ("lower" | "elevated") | null;
+            /**
+             * Contributions
+             * @default []
+             */
+            contributions: components["schemas"]["RiskContribution"][];
+            /**
+             * Label
+             * @default Trained on synthetic data, not clinically validated, decision support only.
+             */
+            label: string;
+            /** Model Name */
+            model_name?: string | null;
+            /** Model Version */
+            model_version?: string | null;
+            /** Score */
+            score?: number | null;
+            /** Scored At */
+            scored_at?: string | null;
+            /** Source */
+            source?: ("nightly" | "on_demand") | null;
+            /** Threshold */
+            threshold?: number | null;
+            /** Visit Date */
+            visit_date?: string | null;
         };
         /**
          * Schedule
@@ -2951,6 +3045,99 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    get_risk_patients__patient_id__risk_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                patient_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RiskScore"];
+                };
+            };
+            /** @description No such patient in your center */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    score_now_patients__patient_id__risk_score_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Any non-empty value; requests without it get 403 (CSRF defence). */
+                "X-Requested-With"?: string | null;
+            };
+            path: {
+                patient_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RiskScore"];
+                };
+            };
+            /** @description No such patient in your center */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The patient has no surveillance visit to score */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description No risk model is registered */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

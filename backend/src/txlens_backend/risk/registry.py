@@ -9,6 +9,7 @@ registry this deployment writes to may be loaded (never one from an untrusted so
 
 import json
 import subprocess
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
@@ -36,6 +37,7 @@ EXPERIMENT = "rejection-risk"
 INTENDED_USE = ("Decision support at scheduled transplant surveillance visits: ranks visits by "
                 "estimated 90-day risk of biopsy-proven rejection. Not a diagnosis.")  # fmt: skip
 REFERENCE_FILE = "drift_reference.json"
+CHAMPION_LOCK = threading.Lock()
 CARD_FILE = "model_card.md"
 
 
@@ -84,7 +86,16 @@ def production_threshold(model: ClassifierMixin, data: pd.DataFrame) -> float:
     return threshold_for_rate(scores, float(data["rule_alert"].mean()))
 
 
-def reference(model: ClassifierMixin, data: pd.DataFrame) -> Reference:
+def latest_active_visits(frame: pd.DataFrame) -> pd.DataFrame:
+    """Each patient's latest visit among patients still under surveillance at the extract
+    date: the same population the nightly job scores, so its drift can be compared."""
+    active = frame[frame["active"]]
+    return active.sort_values("visit").groupby("key", sort=False).tail(1)
+
+
+def reference(model: ClassifierMixin, frame: pd.DataFrame) -> Reference:
+    """Feature and score distributions of the nightly population at training time."""
+    data = latest_active_visits(frame)
     scores = model.predict_proba(data[list(FEATURE_NAMES)])[:, 1]
     return Reference({f: reference_bins(data[f].to_numpy(dtype=float)) for f in FEATURE_NAMES},
                      reference_bins(scores))  # fmt: skip
@@ -142,7 +153,7 @@ def register(
         mlflow.log_metrics(flat_metrics(summary))
         folder = Path(tmp)
         (folder / "evaluation.json").write_text(json.dumps(summary.as_dict(), indent=2))
-        (folder / REFERENCE_FILE).write_text(json.dumps(reference(production, data).as_dict()))
+        (folder / REFERENCE_FILE).write_text(json.dumps(reference(production, frame).as_dict()))
         mlflow.log_artifacts(str(folder))
         sample = data[list(FEATURE_NAMES)].head(5)
         info = mlflow.sklearn.log_model(
@@ -165,12 +176,11 @@ def register(
     return version
 
 
-def load_champion(tracking_uri: str) -> Champion:
-    """The model behind the `champion` alias with its threshold and drift reference."""
+def load_champion(tracking_uri: str, version: str) -> Champion:
+    """One registered version with its threshold and drift reference."""
     mlflow.set_tracking_uri(tracking_uri)
-    client = MlflowClient()
-    mv = client.get_model_version_by_alias(MODEL_NAME, ALIAS)
-    model = mlflow.sklearn.load_model(f"models:/{MODEL_NAME}@{ALIAS}")
+    mv = MlflowClient().get_model_version(MODEL_NAME, version)
+    model = mlflow.sklearn.load_model(f"models:/{MODEL_NAME}/{version}")
     path = mlflow.artifacts.download_artifacts(run_id=mv.run_id, artifact_path=REFERENCE_FILE)
     ref = Reference.from_dict(json.loads(Path(path).read_text()))
     return Champion(model, MODEL_NAME, str(mv.version), float(mv.tags["alert_threshold"]), ref)
@@ -179,10 +189,7 @@ def load_champion(tracking_uri: str) -> Champion:
 @lru_cache(maxsize=4)
 def cached_champion(tracking_uri: str, version: str) -> Champion:
     """Loaded once per (registry, version), so a new champion is picked up without a restart."""
-    champion = load_champion(tracking_uri)
-    if champion.version != version:  # the alias moved while loading: try again next call
-        cached_champion.cache_clear()
-    return champion
+    return load_champion(tracking_uri, version)
 
 
 def champion_version(tracking_uri: str) -> str | None:
@@ -192,3 +199,12 @@ def champion_version(tracking_uri: str) -> str | None:
         return str(MlflowClient().get_model_version_by_alias(MODEL_NAME, ALIAS).version)
     except mlflow.exceptions.MlflowException:
         return None
+
+
+def champion_for(tracking_uri: str) -> Champion | None:
+    """The current champion (loaded once per version), or None when nothing is registered.
+    One thread at a time: the worker scores centers in parallel threads, and MLflow's
+    tracking URI is process-wide."""
+    with CHAMPION_LOCK:
+        version = champion_version(tracking_uri)
+        return None if version is None else cached_champion(tracking_uri, version)

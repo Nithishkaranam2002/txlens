@@ -13,7 +13,7 @@ AsApp = Callable[[Connection, str | None], None]
 ISOLATED = ("patient_identity", "app_user", "refresh_token", "cohort", "cohort_member",
             "surveillance_run", "surveillance_flag", "document", "extraction", "extracted_field",
             "document_review", "document_cdm_row", "llm_cache", "review_decision",
-            "labelled_example", "mapping_gap")  # fmt: skip
+            "labelled_example", "mapping_gap", "risk_run", "risk_prediction")  # fmt: skip
 USERS = {"center_a": "00000000-0000-0000-0000-00000000000a",
          "center_b": "00000000-0000-0000-0000-00000000000b"}  # fmt: skip
 COHORTS = {"center_a": "00000000-0000-0000-0000-0000000000ca",
@@ -72,6 +72,11 @@ def app_rows(db: Connection) -> Connection:
             "agrees, qc_sample) VALUES (:t, :e, 'biopsy_document', 'diagnosis', true, false)",
             "INSERT INTO app.mapping_gap (tenant_id, source_value, reason, rows) "
             "VALUES (:t, 'odd text', 'unmapped', 1)",
+            "INSERT INTO app.risk_run (run_id, tenant_id, as_of, model_name, model_version, "
+            "scored) VALUES (:r, :t, :d, 'm', '1', 1)",
+            "INSERT INTO app.risk_prediction (tenant_id, person_id, visit_date, model_name, "
+            "model_version, score, threshold, band, contributions, features, source, run_id) "
+            "VALUES (:t, :p, :d, 'm', '1', 0.1, 0.2, 'lower', '[]', '{}', 'nightly', :r)",
         ):
             db.execute(text(statement), params)
     return db

@@ -22,6 +22,7 @@ from txlens_backend.workflows.surveillance import (
     TASK_QUEUE,
     CenterResult,
     CenterRun,
+    RiskResult,
     SurveillanceActivities,
     SurveillanceRequest,
     SurveillanceWorkflow,
@@ -39,6 +40,16 @@ def fake_list_centers() -> list[str]:
 def fake_run_center(run: CenterRun) -> CenterResult:
     SEEN.append(run)
     return CenterResult(run.tenant_id, run.as_of, "run", 1, 2, 0)
+
+
+@activity.defn(name="score_center")
+def fake_score_center(run: CenterRun) -> RiskResult:
+    return RiskResult(5, "7")
+
+
+@activity.defn(name="score_center")
+def failing_score_center(run: CenterRun) -> RiskResult:
+    raise RuntimeError("registry unreachable")
 
 
 async def with_worker(
@@ -71,11 +82,11 @@ def test_one_activity_per_center_with_the_requested_date() -> None:
 
     async def body(env: WorkflowEnvironment) -> None:
         results = await execute(env, "2024-03-31")
-        assert [(r.tenant_id, r.as_of, r.flags_opened) for r in results] == [
-            ("center_a", "2024-03-31", 2), ("center_b", "2024-03-31", 2)
-        ]  # fmt: skip
+        assert [(r.tenant_id, r.as_of, r.flags_opened, r.risk_scored, r.risk_model_version)
+                for r in results] == [("center_a", "2024-03-31", 2, 5, "7"),
+                                      ("center_b", "2024-03-31", 2, 5, "7")]  # fmt: skip
 
-    asyncio.run(with_worker([fake_list_centers, fake_run_center], body))
+    asyncio.run(with_worker([fake_list_centers, fake_run_center, fake_score_center], body))
     assert sorted(r.tenant_id for r in SEEN) == ["center_a", "center_b"]
 
 
@@ -87,17 +98,30 @@ def test_as_of_defaults_to_the_day_the_workflow_starts() -> None:
         results = await execute(env, None)
         assert {r.as_of for r in results} == {today}
 
-    asyncio.run(with_worker([fake_list_centers, fake_run_center], body))
+    asyncio.run(with_worker([fake_list_centers, fake_run_center, fake_score_center], body))
+
+
+def test_a_scoring_failure_never_blocks_surveillance() -> None:
+    async def body(env: WorkflowEnvironment) -> None:
+        results = await execute(env, "2024-03-31")
+        assert [(r.flags_opened, r.risk_scored, r.risk_model_version) for r in results] == [
+            (2, 0, ""), (2, 0, "")
+        ]  # fmt: skip
+
+    asyncio.run(with_worker([fake_list_centers, fake_run_center, failing_score_center], body))
 
 
 @pytest.mark.db
 def test_real_run_against_the_database(api_app_engine: Engine, api_flags: date) -> None:
-    activities = SurveillanceActivities(api_app_engine)
+    activities = SurveillanceActivities(api_app_engine)  # no registry: scoring is skipped
 
     async def body(env: WorkflowEnvironment) -> None:
         results = await execute(env, api_flags.isoformat())
         assert {r.tenant_id for r in results} == {"center_a", "center_b", "center_c"}
         assert all(r.patients > 0 for r in results)
         assert all(r.flags_opened == 0 for r in results)  # same date as api_flags: idempotent
+        assert all(r.risk_model_version == "" for r in results)
 
-    asyncio.run(with_worker([activities.list_centers, activities.run_center], body))
+    asyncio.run(with_worker(
+        [activities.list_centers, activities.run_center, activities.score_center], body
+    ))  # fmt: skip

@@ -78,7 +78,7 @@
   },
   "registry": {
     "matches_report": true,
-    "version": "1"
+    "version": "2"
   },
   "sensitivity": {
     "no_pre_biopsy_external_auroc": 0.7439284192586281,

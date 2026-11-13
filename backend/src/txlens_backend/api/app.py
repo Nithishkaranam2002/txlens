@@ -20,6 +20,7 @@ from txlens_backend.api import (
     documents,
     patients,
     review,
+    risk,
     surveillance,
     survival,
     system,
@@ -122,6 +123,7 @@ def build_app(
     app.include_router(cohorts.router)
     app.include_router(concepts.router)
     app.include_router(surveillance.router)
+    app.include_router(risk.router)
     app.include_router(documents.router)
     app.include_router(review.router)
     app.include_router(survival.router)

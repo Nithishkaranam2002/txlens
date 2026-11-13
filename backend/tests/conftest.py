@@ -38,6 +38,7 @@ from document_testutils import (
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
+from risk_testutils import register_test_model
 from sqlalchemy import Connection, Engine, create_engine, pool, text
 from sqlalchemy.engine import make_url
 
@@ -47,6 +48,8 @@ from txlens_backend.config import Settings
 from txlens_backend.db_setup import ensure_login_role
 from txlens_backend.documents import service
 from txlens_backend.documents.ocr import OcrResult
+from txlens_backend.risk.registry import champion_for
+from txlens_backend.risk.serve import score_tenant
 from txlens_backend.seed_users import demo_passwords, seed_users
 from txlens_backend.surveillance.run import run_tenant, transplant_configs
 from txlens_omop.mappings import LOCAL_CONCEPT_FILE, mappings_dir
@@ -132,10 +135,12 @@ def app_engine(database_url: str, app_login: tuple[str, str]) -> Iterator[Engine
 
 
 @pytest.fixture(scope="session")
-def api_settings(database_url: str) -> Settings:
-    """Settings with strong test-only secrets."""
+def api_settings(database_url: str, tmp_path_factory: pytest.TempPathFactory) -> Settings:
+    """Settings with strong test-only secrets and an empty MLflow registry of its own."""
+    registry = tmp_path_factory.mktemp("mlflow") / "mlflow.db"
     return Settings(
         database_url=SecretStr(database_url),
+        mlflow_tracking_uri=f"sqlite:///{registry}",
         refresh_cookie_path="/auth",  # the tests call the API directly, not through /api
         jwt_secret=SecretStr("test-jwt-secret-" + "j" * 32),
         deid_hmac_key=SecretStr("test-deid-key-" + "d" * 32),
@@ -212,6 +217,24 @@ def client(api_app: FastAPI, api_owner: Engine) -> Iterator[TestClient]:
         conn.execute(text("DELETE FROM app.released_count"))
     with TestClient(api_app, base_url=BASE_URL, headers={CSRF_HEADER: "test"}) as test_client:
         yield test_client
+
+
+@pytest.fixture(scope="session")
+def api_risk_model(api_settings: Settings) -> str:
+    """A rejection-risk model (trained on fake visits) registered as champion; its version."""
+    return register_test_model(api_settings.mlflow_tracking_uri)
+
+
+@pytest.fixture(scope="session")
+def api_risk_scores(
+    api_app: FastAPI, api_app_engine: Engine, api_settings: Settings, api_risk_model: str
+) -> date:
+    """Nightly risk scores for every API center, committed, as of SURVEILLANCE_AS_OF."""
+    champion = champion_for(api_settings.mlflow_tracking_uri)
+    assert champion is not None
+    for tenant in API_TENANTS:
+        score_tenant(api_app_engine, tenant, SURVEILLANCE_AS_OF, champion)
+    return SURVEILLANCE_AS_OF
 
 
 @pytest.fixture(scope="session")

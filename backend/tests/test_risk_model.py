@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from risk_testutils import visits
 
 from txlens_backend.risk import LABEL_TEXT
 from txlens_backend.risk.card import render
@@ -36,33 +37,11 @@ from txlens_backend.risk.models import Kind
 from txlens_backend.risk.registry import (
     MODEL_NAME,
     champion_version,
+    latest_active_visits,
     load_champion,
     register,
 )
-
-
-def visits(n_patients: int = 240, seed: int = 0) -> pd.DataFrame:
-    """Fake visits across three centers in which a high dd-cfDNA raises the risk."""
-    rng = np.random.default_rng(seed)
-    rows = []
-    for p in range(n_patients):
-        tenant = ("center_a", "center_b", "center_c")[p % 3]
-        for v in range(8):
-            level = rng.normal(-1.6, 0.8)
-            risk = 1 / (1 + np.exp(-(-4.2 + 1.6 * (level + 1.6))))
-            rows.append({
-                "key": f"{tenant}:{p}", "person_id": p, "tenant": tenant,
-                "organ": "kidney", "sex": ("female", "male")[p % 2], "age": 20 + p % 55,
-                "transplant_year": 2023, "visit": date(2024, 1, 1),
-                "label": float(rng.random() < risk), "label_borderline": 0.0,
-                "rule_alert": bool(level > -0.5), "pre_biopsy": False,
-                "dd_cfdna_log": level, "dd_cfdna_slope": rng.normal(0, 0.1) if v else np.nan,
-                "dd_cfdna_vs_min": np.nan if v == 0 else rng.uniform(1, 3),
-                "creatinine_change_pct": rng.normal(0, 10), "tacrolimus_cv": rng.uniform(5, 40),
-                "dsa_positive": float(rng.random() < 0.05), "months_since_transplant": v * 2.0,
-                "prior_rejection": 0.0, "organ_heart": 0.0, "donor_deceased": 1.0, "dgf": 0.0,
-            })  # fmt: skip
-    return pd.DataFrame(rows)
+from txlens_backend.risk.serve import feature_psi, score, score_psi
 
 
 @pytest.fixture(scope="module")
@@ -192,7 +171,7 @@ def test_register_load_and_promote(development, frame: pd.DataFrame, tmp_path: P
     first = register(development, summary, production, frame, card, date(2026, 9, 30), uri)
     second = register(development, summary, production, frame, card, date(2026, 9, 30), uri)
     assert (first, second) == ("1", "2") and champion_version(uri) == "2"
-    loaded = load_champion(uri)
+    loaded = load_champion(uri, "2")
     assert (loaded.name, loaded.version) == (MODEL_NAME, "2")
     rows = frame[list(FEATURE_NAMES)].head(5)
     assert loaded.model.predict_proba(rows)[:, 1] == pytest.approx(
@@ -203,3 +182,23 @@ def test_register_load_and_promote(development, frame: pd.DataFrame, tmp_path: P
     assert alert_share == pytest.approx(frame["rule_alert"].mean(), abs=0.01)
     assert set(loaded.reference.features) == set(FEATURE_NAMES)
     assert f"{MODEL_NAME} v2" in cards[-1] and LABEL_TEXT in cards[-1]
+    # nightly scoring: version on every prediction, drift against the stored reference
+    predictions = score(loaded, frame.groupby("key").tail(1))
+    assert {(p.model_name, p.model_version) for p in predictions} == {(MODEL_NAME, "2")}
+    assert all(len(p.contributions) == 3 for p in predictions)
+    assert set(feature_psi(loaded, predictions)) == set(FEATURE_NAMES)
+    psi_now = score_psi(loaded, predictions)
+    assert psi_now is not None and psi_now < 0.1  # same population as the reference
+
+
+def test_drift_reference_is_the_nightly_population() -> None:
+    frame = pd.DataFrame({
+        "key": ["a", "a", "b", "b", "c"],
+        "visit": [date(2024, 1, 1), date(2024, 4, 1), date(2024, 2, 1), date(2024, 1, 1),
+                  date(2024, 3, 1)],
+        "active": [True, True, True, True, False],
+    })  # fmt: skip
+    latest = latest_active_visits(frame)
+    assert sorted(zip(latest["key"], latest["visit"], strict=True)) == [
+        ("a", date(2024, 4, 1)), ("b", date(2024, 2, 1))
+    ]  # fmt: skip

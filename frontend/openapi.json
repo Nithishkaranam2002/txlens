@@ -3534,6 +3534,51 @@
         "title": "RiskCell",
         "type": "object"
       },
+      "RiskContribution": {
+        "description": "One feature's push on this score (log-odds; positive raises the risk).",
+        "properties": {
+          "direction": {
+            "enum": [
+              "raises",
+              "lowers"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "feature": {
+            "title": "Feature",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "log_odds": {
+            "title": "Log Odds",
+            "type": "number"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "feature",
+          "label",
+          "value",
+          "log_odds",
+          "direction"
+        ],
+        "title": "RiskContribution",
+        "type": "object"
+      },
       "RiskRow": {
         "properties": {
           "cells": {
@@ -3553,6 +3598,131 @@
           "cells"
         ],
         "title": "RiskRow",
+        "type": "object"
+      },
+      "RiskScore": {
+        "description": "The latest stored score of a patient, or `available: false` if never scored.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "band": {
+            "anyOf": [
+              {
+                "enum": [
+                  "lower",
+                  "elevated"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Band"
+          },
+          "contributions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RiskContribution"
+            },
+            "title": "Contributions",
+            "type": "array"
+          },
+          "label": {
+            "default": "Trained on synthetic data, not clinically validated, decision support only.",
+            "title": "Label",
+            "type": "string"
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Name"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "scored_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scored At"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "nightly",
+                  "on_demand"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          },
+          "visit_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visit Date"
+          }
+        },
+        "required": [
+          "available"
+        ],
+        "title": "RiskScore",
         "type": "object"
       },
       "Schedule": {
@@ -5525,6 +5695,122 @@
         "summary": "All surveillance flags of one patient, newest first, with status history",
         "tags": [
           "surveillance"
+        ]
+      }
+    },
+    "/patients/{patient_id}/risk": {
+      "get": {
+        "description": "`patient_id` is the person id for clinicians and the pseudonym (`R-...`) for others.",
+        "operationId": "get_risk_patients__patient_id__risk_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskScore"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such patient in your center"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "The patient's latest rejection-risk score with its top contributing features",
+        "tags": [
+          "risk"
+        ]
+      }
+    },
+    "/patients/{patient_id}/risk/score": {
+      "post": {
+        "description": "Stores the score with the model version (a visit already scored by this version keeps\nits first score) and returns the patient's latest score.",
+        "operationId": "score_now_patients__patient_id__risk_score_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+            "in": "header",
+            "name": "X-Requested-With",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskScore"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such patient in your center"
+          },
+          "409": {
+            "description": "The patient has no surveillance visit to score"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "No risk model is registered"
+          }
+        },
+        "summary": "Score the patient's latest surveillance visit now with the champion model",
+        "tags": [
+          "risk"
         ]
       }
     },

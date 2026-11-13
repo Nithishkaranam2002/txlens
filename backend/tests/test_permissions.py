@@ -32,6 +32,8 @@ MATRIX: dict[str, dict[Role | str, int]] = {
     "GET /surveillance/configs/kidney": {C: 200, R: 200, S: 200, A: 403, ANON: 401},
     "GET /worklist":               {C: 200, R: 403, S: 200, A: 403, ANON: 401},
     "GET /patients/{pid}/flags":   {C: 200, R: 403, S: 200, A: 403, ANON: 401},
+    "GET /patients/{pid}/risk":    {C: 200, R: 403, S: 200, A: 403, ANON: 401},
+    "POST /patients/{pid}/risk/score": {C: 200, R: 403, S: 403, A: 403, ANON: 401},
     "POST /flags/{fid}/acknowledge": {C: 200, R: 403, S: 403, A: 403, ANON: 401},
     "POST /flags/{fid}/resolve":   {C: 200, R: 403, S: 403, A: 403, ANON: 401},
     "GET /documents/{did}/evidence": {C: 200, R: 403, S: 200, A: 403, ANON: 401},
@@ -113,6 +115,7 @@ def test_permission_matrix(
     fresh_flag: Callable[..., str],
     cohort_id: str,
     document_id: str,
+    api_risk_model: str,
     endpoint: str,
     caller: Role | str,
 ) -> None:
@@ -132,6 +135,8 @@ def test_permission_matrix(
         response = client.post(path, json={"note": "permission matrix"})
     elif path.startswith("/survival/"):
         response = client.post(path, json={"grouping": "donor_type"})
+    elif path.endswith("/risk/score"):
+        response = client.post(path)
     elif path.startswith("/copilot/"):
         response = client.post(path, json=COPILOT_QUESTION if path.endswith("messages") else {})
     else:

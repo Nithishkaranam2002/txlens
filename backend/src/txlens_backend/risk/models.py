@@ -10,7 +10,6 @@ from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any
 
-from lightgbm import LGBMClassifier
 from sklearn.base import ClassifierMixin
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
@@ -48,4 +47,8 @@ def make(kind: Kind, params: Mapping[str, Any]) -> ClassifierMixin:
             ("scale", StandardScaler()),
             ("model", LogisticRegression(C=params["C"], max_iter=5000)),
         ])  # fmt: skip
+    # Imported here: LightGBM needs the OpenMP runtime, which the API and the worker only
+    # load when the champion is a LightGBM model.
+    from lightgbm import LGBMClassifier
+
     return LGBMClassifier(**LIGHTGBM_FIXED, **params)

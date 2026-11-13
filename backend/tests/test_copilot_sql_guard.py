@@ -116,6 +116,9 @@ REJECTED = {
     f"SELECT {N} FROM {P} WHERE organ::regclass IS NULL": "casts to",
     f"SELECT {N} FROM {P} WHERE organ = chr(107)": "not allowed",
     f"SELECT {N} FROM {P} WHERE version() LIKE '%'": "not allowed",
+    # individual risk scores are never reachable from the copilot
+    f"SELECT avg(score), {N} FROM app.risk_prediction": "",
+    f"SELECT {N} FROM {P} WHERE person_id IN (SELECT person_id FROM app.risk_prediction)": "",
 }
 
 

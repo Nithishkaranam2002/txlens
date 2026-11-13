@@ -28,7 +28,11 @@ RULES = {"organ": "kidney",
 
 @pytest.fixture(scope="module")
 def identifiers(
-    api_owner: Engine, api_app: object, api_flags: object, api_documents: object
+    api_owner: Engine,
+    api_app: object,
+    api_flags: object,
+    api_documents: object,
+    api_risk_scores: object,
 ) -> re.Pattern[str]:
     """One case-insensitive, whole-word pattern matching any identifier of any patient."""
     with api_owner.connect() as conn:
@@ -66,6 +70,7 @@ def crawl(
                     yield client.get(url)
             if sees_worklist:
                 yield client.get(f"/patients/{item['patient_id']}/flags")
+                yield client.get(f"/patients/{item['patient_id']}/risk")
         offset += len(items)
         if not items:
             break

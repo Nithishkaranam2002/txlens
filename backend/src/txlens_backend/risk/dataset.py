@@ -42,7 +42,8 @@ FEATURE_MARKERS = {
 }  # fmt: skip
 # pre_biopsy and next_rejection look into the future: evaluation only, never model inputs.
 META = ["key", "person_id", "tenant", "organ", "sex", "age", "transplant_year", "visit",
-        "label", "label_borderline", "rule_alert", "pre_biopsy", "next_rejection"]  # fmt: skip
+        "label", "label_borderline", "rule_alert", "pre_biopsy", "next_rejection",
+        "active"]  # fmt: skip
 COLUMNS = META + list(FEATURE_NAMES)
 
 FACTS_SQL = f"""
@@ -178,6 +179,8 @@ def visit_rows(
             "rule_alert": any(f.severity in ALERT for f in flags),
             "pre_biopsy": shortly_before_biopsy(record, visit),
             "next_rejection": next_rejection(record, visit),
+            # still under surveillance at `as_of` (alive with a functioning graft)
+            "active": record.end_day is None or record.end_day > as_of,
             **features_at(record, config.schedule, visit),
         })  # fmt: skip
     return rows
