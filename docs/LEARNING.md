@@ -1804,7 +1804,7 @@ experiencer flags).
 ### What was built
 - **Test isolation.** Tests now run in random order on every CI run (pytest-randomly), and a
   hanging test fails after 300 seconds (pytest-timeout) instead of blocking the run. Random
-  order found six hidden order bugs; all are fixed.
+  order found seven hidden order bugs; all are fixed.
 - **Security review** with fixes and a findings table in [SECURITY.md](SECURITY.md):
   - security headers on every page and API response;
   - per-user rate limits on the expensive endpoints;
@@ -1883,7 +1883,7 @@ experiencer flags).
 
 ### Results
 - **Tests:** about 1,550 Python tests pass in five random orders and in file order.
-  - Order bugs found and fixed: 6, one of them a hang.
+  - Order bugs found and fixed: 7, one of them a hang (one only in the Spark job, by CI).
   - Playwright: 50 browser tests pass, including the header, a11y and keyboard checks.
 - **Security:** 16 findings, listed in SECURITY.md.
   - 8 fixed, including the one High: there were no security headers at all.

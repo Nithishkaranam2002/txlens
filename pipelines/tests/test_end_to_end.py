@@ -41,11 +41,12 @@ def ids(runtime: LocalRuntime) -> dict[tuple[str, str], int]:
     return {(r.omop_table, r.natural_key): r.omop_id for r in rows}
 
 
-@pytest.fixture(scope="module")
-def root(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    path = tmp_path_factory.mktemp("e2e")
-    write_vocab(path / "vocab")
-    return path
+@pytest.fixture
+def root(tmp_path: Path) -> Path:
+    """A fresh folder per test: the tests build lakes of different sizes, and in random order
+    one would otherwise find the other's patients in a shared lake."""
+    write_vocab(tmp_path / "vocab")
+    return tmp_path
 
 
 def test_generated_data_reconciles_and_reruns_are_idempotent(
