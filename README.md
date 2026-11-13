@@ -82,7 +82,7 @@ template-generated data**: these are upper bounds, not estimates for real clinic
 ## Architecture
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph Sources["Synthetic sources"]
         L[Lab feeds]
         N[Clinic notes]
