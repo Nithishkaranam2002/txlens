@@ -16,6 +16,7 @@ export const keys = {
   patient: (id: string) => ["patient", id] as const,
   timeline: (id: string) => ["patient", id, "timeline"] as const,
   flags: (id: string) => ["patient", id, "flags"] as const,
+  risk: (id: string) => ["patient", id, "risk"] as const,
   config: (program: string) => ["config", program] as const,
   cohorts: ["cohorts"] as const,
   cohort: (id: string) => ["cohorts", id] as const,
@@ -107,6 +108,35 @@ export function usePatientFlags(patientId: string, enabled: boolean) {
     queryFn: async () =>
       unwrap(await api.GET("/patients/{patient_id}/flags", { params: { path: { patient_id: patientId } } })),
     enabled,
+  });
+}
+
+/** A patient's latest rejection-risk score; only for roles that may see individual scores. */
+export function useRisk(patientId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: keys.risk(patientId),
+    queryFn: async () =>
+      unwrap(await api.GET("/patients/{patient_id}/risk", { params: { path: { patient_id: patientId } } })),
+    enabled,
+  });
+}
+
+/** Score the patient's latest surveillance visit now (clinicians); the card shows the result. */
+export function useRescore(patientId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async () =>
+      unwrap(await api.POST("/patients/{patient_id}/risk/score", { params: { path: { patient_id: patientId } } })),
+    onSuccess: (risk) => {
+      client.setQueryData(keys.risk(patientId), risk);
+      toast.success(`Scored with model version ${risk.model_version}`);
+    },
+    onError: (error) => {
+      const requestId = isApiError(error) ? error.requestId : null;
+      toast.error(isApiError(error) ? error.message : "The visit could not be scored.", {
+        description: requestId ? `Request id: ${requestId}` : undefined,
+      });
+    },
   });
 }
 

@@ -8,20 +8,24 @@ import { DdcfdnaChart, DsaChart, KidneyFunctionChart, TacrolimusChart } from "@/
 import { FlagList } from "@/components/flag-list";
 import { PatientHeader } from "@/components/patient-header";
 import { PatientTimeline } from "@/components/patient-timeline";
+import { RiskCard } from "@/components/risk-card";
 import { ErrorState, PageSkeleton } from "@/components/states";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRole } from "@/lib/auth";
 import { seriesByLab } from "@/lib/chart-data";
 import { patientName } from "@/lib/format";
-import { usePatientFlags, useSurveillanceConfig, useTimeline } from "@/lib/queries";
+import { usePatientFlags, useRescore, useRisk, useSurveillanceConfig, useTimeline } from "@/lib/queries";
 import { can, homeFor } from "@/lib/roles";
 
 export function PatientView({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const role = useRole();
   const showFlags = can(role, "flags");
+  const showRisk = can(role, "risk"); // researchers never see individual scores
   const timeline = useTimeline(id);
   const flags = usePatientFlags(id, showFlags);
+  const risk = useRisk(id, showRisk);
+  const rescore = useRescore(id);
   const config = useSurveillanceConfig(timeline.data?.patient.organ);
   const series = useMemo(() => seriesByLab(timeline.data?.labs ?? []), [timeline.data]);
   const flagList = useMemo(() => flags.data?.flags ?? [], [flags.data]);
@@ -55,6 +59,20 @@ export function PatientView({ params }: { params: Promise<{ id: string }> }) {
           <ErrorState error={flags.error} onRetry={() => flags.refetch()} />
         ) : (
           <FlagList flags={flags.data.flags} canReview={can(role, "review")} subject={patientName(patient)} />
+        ))}
+
+      {showRisk &&
+        (risk.isPending ? (
+          <Skeleton className="h-40 w-full" />
+        ) : risk.isError ? (
+          <ErrorState error={risk.error} onRetry={() => risk.refetch()} />
+        ) : (
+          <RiskCard
+            risk={risk.data}
+            canRescore={can(role, "rescore")}
+            onRescore={() => rescore.mutate()}
+            rescoring={rescore.isPending}
+          />
         ))}
 
       <PatientTimeline timeline={timeline.data} />

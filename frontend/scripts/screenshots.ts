@@ -56,6 +56,12 @@ async function main() {
   await clinician.getByRole("table").getByRole("link").first().click();
   await clinician.getByRole("heading", { name: "Results" }).waitFor();
   await shot(clinician, "patient", 1500);
+  const risk = clinician
+    .locator('[data-slot="card"]')
+    .filter({ has: clinician.getByRole("heading", { name: "Rejection-risk model" }) });
+  await risk.scrollIntoViewIfNeeded();
+  await risk.screenshot({ path: join(OUT, "app-risk.png") });
+  console.log("docs/images/app-risk.png");
 
   const researcher = await (await context()).newPage();
   await login(researcher, "researcher");

@@ -33,6 +33,7 @@ test("researcher sees pseudonyms only, nowhere a name", async ({ page }) => {
   await member.click();
   await expect(page.getByText("De-identified view: dates are shifted for privacy.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Surveillance flags" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Rejection-risk model" })).toHaveCount(0);
   await expect(page.getByText("Age band")).toBeVisible();
   await expectNoIdentifiers(page, consoleLines);
 });
@@ -121,4 +122,30 @@ test("a condition read from notes: clinicians see the sentence, researchers only
   await expect(page.getByRole("button", { name: /From note: show the sentence/ })).toHaveCount(0);
   await expect(page.getByText(/reports graft rejection/)).toHaveCount(0);
   await expectNoIdentifiers(page, consoleLines);
+});
+
+test("rejection-risk score: clinicians see it with its version and label, researchers never", async ({ page }) => {
+  const { noteConditionPatient: patient } = seed();
+  const riskCalls: number[] = [];
+  page.on("response", (response) => {
+    if (/\/patients\/[^/]+\/risk/.test(response.url())) riskCalls.push(response.status());
+  });
+  await login(page, "clinician");
+  await page.goto(`/patients/${patient.id}`);
+  await expect(page.getByRole("heading", { name: "Rejection-risk model" })).toBeVisible();
+  await expect(page.getByText("Trained on synthetic data, not clinically validated, decision support only.")).toBeVisible();
+  await expect(page.getByText("Elevated model risk")).toBeVisible();
+  await expect(page.getByText(/Model txlens-rejection-risk v1/)).toBeVisible();
+  await expect(page.getByRole("list", { name: "Top contributing features" }).getByRole("listitem")).toHaveCount(3);
+  const card = page.locator('[data-slot="card"]').filter({ has: page.getByRole("heading", { name: "Rejection-risk model" }) });
+  expect(await card.innerText()).not.toMatch(/diagnos|rejection detected/i);
+  await page.getByRole("button", { name: "Log out" }).click();
+  await page.waitForURL(/\/login/);
+
+  riskCalls.length = 0;
+  await login(page, "researcher");
+  await page.goto(`/patients/${patient.pseudonym}`);
+  await expect(page.getByText("Age band")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Rejection-risk model" })).toHaveCount(0);
+  expect(riskCalls).toEqual([]); // the page never even asks for an individual score
 });

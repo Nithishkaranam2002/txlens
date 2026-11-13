@@ -71,3 +71,12 @@ describe("copilot access", () => {
     expect(areaOf("/copilot?c=abc")).toBe("copilot");
   });
 });
+
+describe("rejection-risk scores", () => {
+  it("clinicians and data stewards see individual scores; researchers and admins never do", () => {
+    expect(can("clinician", "risk") && can("data_steward", "risk")).toBe(true);
+    expect(can("researcher", "risk") || can("admin", "risk")).toBe(false);
+    expect(can("clinician", "rescore")).toBe(true);
+    expect(can("data_steward", "rescore") || can("researcher", "rescore")).toBe(false);
+  });
+});

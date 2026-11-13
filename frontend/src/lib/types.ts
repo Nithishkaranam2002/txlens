@@ -27,6 +27,8 @@ export type SurvivalOptions = Schemas["Options"];
 export type ShownCurve = Schemas["ShownCurve"];
 export type CoxOut = Schemas["CoxOut"];
 export type RiskRow = Schemas["RiskRow"];
+export type RiskScore = Schemas["RiskScore"];
+export type RiskContribution = Schemas["RiskContribution"];
 export type Organ = NonNullable<IdentifiedPatient["organ"]>;
 
 export function isIdentified(patient: Patient): patient is IdentifiedPatient {

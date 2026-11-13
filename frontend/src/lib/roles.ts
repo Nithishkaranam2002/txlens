@@ -5,7 +5,10 @@ import type { components } from "@/lib/api/schema";
 export type Role = "clinician" | "researcher" | "data_steward" | "admin";
 export type Me = components["schemas"]["Me"];
 
-/** "review": act on surveillance flags; "queue": the human review queue; "metrics": its numbers. */
+/**
+ * "review": act on surveillance flags; "queue": the human review queue; "metrics": its numbers;
+ * "risk": individual rejection-risk scores (never researchers); "rescore": score a visit now.
+ */
 export type Area =
   | "worklist"
   | "cohorts"
@@ -16,12 +19,26 @@ export type Area =
   | "review"
   | "queue"
   | "metrics"
+  | "risk"
+  | "rescore"
   | "admin";
 
 /** What each role may use. The API enforces the same rules; this only shapes the UI. */
 const ACCESS: Record<Role, readonly Area[]> = {
-  clinician: ["worklist", "cohorts", "survival", "copilot", "patients", "flags", "review", "queue", "metrics"],
-  data_steward: ["worklist", "patients", "flags", "queue", "metrics"],
+  clinician: [
+    "worklist",
+    "cohorts",
+    "survival",
+    "copilot",
+    "patients",
+    "flags",
+    "review",
+    "queue",
+    "metrics",
+    "risk",
+    "rescore",
+  ],
+  data_steward: ["worklist", "patients", "flags", "queue", "metrics", "risk"],
   researcher: ["cohorts", "survival", "copilot", "patients"],
   admin: ["admin", "metrics"],
 };

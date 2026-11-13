@@ -111,6 +111,30 @@ def recreate_database(owner_url: str) -> str:
     return url
 
 
+RISK_CONTRIBUTIONS = [
+    {"feature": "dd_cfdna_log", "label": "dd-cfDNA (log)", "value": 0.405, "log_odds": 1.1},
+    {"feature": "dsa_positive", "label": "DSA positive", "value": 1.0, "log_odds": 0.4},
+    {"feature": "months_since_transplant", "label": "Time since transplant", "value": 14.0,
+     "log_odds": -0.5},
+]  # fmt: skip
+
+
+def seed_risk(owner: Engine) -> None:
+    """A stored nightly score (model v1) for every center A patient, so the patient page shows
+    the risk card without a model registry. Scoring itself is tested in the backend."""
+    with owner.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO app.risk_prediction (tenant_id, person_id, visit_date, model_name, "
+                "model_version, score, threshold, band, contributions, features, source) "
+                "SELECT tenant_id, person_id, :day, 'txlens-rejection-risk', '1', 0.123, 0.05, "
+                "'elevated', CAST(:contributions AS jsonb), '{}', 'nightly' "
+                "FROM cdm.person WHERE tenant_id = 'center_a'"
+            ),
+            {"day": AS_OF, "contributions": json.dumps(RISK_CONTRIBUTIONS)},
+        )
+
+
 def facts(
     owner: Engine, deid_key: str, noted: NoteCondition, review: dict[str, object]
 ) -> dict[str, object]:
@@ -159,6 +183,7 @@ def seed(settings: Settings) -> str:
     seed_users(app, list(center_tenants()), PASSWORDS)
     for tenant in center_tenants():
         run_tenant(app, tenant, AS_OF, transplant_configs())
+    seed_risk(owner)
     noted = seed_note_condition(owner, app)
     review = seed_review(owner)
     corpus_budget = Budget(owner, "e2e-literature", 1.0)
