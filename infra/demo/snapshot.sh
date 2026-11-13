@@ -7,8 +7,9 @@
 # MLflow store (mlruns/) and the source files the app reads (data/raw: PDFs, notes, labs).
 # manifest.json holds the schema revision, row counts and checksums.
 #
-# The dump contains the licensed OMOP vocabulary: keep it on this machine; never commit or
-# share it. MLflow records absolute paths, so a snapshot restores into this checkout only.
+# The dump contains the licensed OMOP vocabulary: never commit or share it (it only goes to
+# this machine and your own private demo VM, docs/DEPLOY.md). MLflow's absolute paths are
+# moved on restore, so a snapshot restores into any checkout.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 source infra/demo/common.sh
