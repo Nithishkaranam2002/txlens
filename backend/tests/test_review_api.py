@@ -28,7 +28,7 @@ CURATED = ("TXLENS_NOTE_ABBREV", "test-abbrev")
 
 @dataclass(frozen=True)
 class Seeded:
-    """What this module puts in the API database."""
+    """What each test of this module puts in the API database (fresh per test)."""
 
     rejection_doc: str  # center_a, linked to a patient, diagnosis TCMR
     qc_doc: str  # center_a, QC sample, no rejection
@@ -44,7 +44,7 @@ def owner_run(owner: Engine, sql: str, **params: object) -> None:
         conn.execute(text(sql), params)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def seeded(
     api_owner: Engine, api_app_engine: Engine, api_app: FastAPI,
     tmp_path_factory: pytest.TempPathFactory,
@@ -299,6 +299,35 @@ def test_a_condition_gap_takes_the_suggestion(client: TestClient, seeded: Seeded
     assert seeded.gap in keys(queue(client, status="decided"))
 
 
+@pytest.fixture
+def decided(api_owner: Engine) -> Iterator[None]:
+    """One center A decision per item type (and a disagreeing banff_t example), so the
+    metrics do not depend on which review tests ran before (tests run in random order)."""
+    with api_owner.begin() as conn:
+        reviewer = conn.execute(
+            text("SELECT user_id FROM app.app_user WHERE username = 'clinician.center_a'")
+        ).scalar_one()
+        ids = list(conn.execute(text(
+            "INSERT INTO app.review_decision (tenant_id, item_type, item_key, action, "
+            "reason_code, reviewer_id, queued_at) SELECT 'center_a', t, 'metrics-' || t, 'edit', "
+            "'ocr_error', :r, now() - interval '2 hours' FROM unnest(CAST(:t AS text[])) AS t "
+            "RETURNING decision_id"),
+            {"r": reviewer, "t": ["biopsy_document", "note_mention", "curated_mapping"]},
+        ).scalars())  # fmt: skip
+        conn.execute(text(
+            "INSERT INTO app.labelled_example (tenant_id, decision_id, item_type, field, "
+            "model_value, reviewer_value, agrees, qc_sample) SELECT 'center_a', decision_id, "
+            "item_type, 'banff_t', '2', '3', false, false FROM app.review_decision "
+            "WHERE decision_id = :d"), {"d": ids[0]})  # fmt: skip
+    yield
+    with api_owner.begin() as conn:
+        conn.execute(text("DELETE FROM app.labelled_example WHERE decision_id = ANY(:d)"),
+                     {"d": ids})  # fmt: skip
+        conn.execute(text("DELETE FROM app.review_decision WHERE decision_id = ANY(:d)"),
+                     {"d": ids})  # fmt: skip
+
+
+@pytest.mark.usefixtures("decided")
 def test_metrics_count_queue_reviews_and_agreement(client: TestClient, seeded: Seeded) -> None:
     login(client, Role.ADMIN)
     metrics = client.get("/review/metrics").json()

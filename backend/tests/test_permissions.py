@@ -1,6 +1,6 @@
 """Role x endpoint permission matrix: the exact status code for every role and endpoint."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
 import pytest
 from api_dataset import Dataset
@@ -70,13 +70,44 @@ def cohort_id(api_app: FastAPI) -> str:
 @pytest.fixture(scope="module")
 def document_id(
     api_app: FastAPI, api_owner: Engine, tmp_path_factory: pytest.TempPathFactory
-) -> str:
-    """A center A document whose scanned file is in the API's document store."""
+) -> Iterator[str]:
+    """A center A document whose scanned file is in the API's document store. The store is
+    put back and the document deleted afterwards, so later tests see the session's own."""
+    settings = api_app.state.ctx.settings
     root = tmp_path_factory.mktemp("documents")
     (root / "pathology").mkdir()
     write_report_pdf(root / "pathology" / "matrix.pdf")
-    api_app.state.ctx.settings.documents_root = root
-    return new_document(api_owner, "extracted", "pathology/matrix.pdf")
+    before, settings.documents_root = settings.documents_root, root
+    doc = new_document(api_owner, "extracted", "pathology/matrix.pdf")
+    yield doc
+    settings.documents_root = before
+    delete_documents(api_owner, [doc])
+
+
+@pytest.fixture
+def fresh_document(api_owner: Engine) -> Iterator[Callable[[], str]]:
+    """Hands out new center A documents in review and deletes them after the test. Left in
+    the shared API database they would join every later review queue, pointing at a file
+    no document store has (the de-identification scan would then fail on their crops)."""
+    made: list[str] = []
+
+    def make() -> str:
+        made.append(new_document(api_owner, "in_review"))
+        return made[-1]
+
+    yield make
+    delete_documents(api_owner, made)
+
+
+def delete_documents(owner: Engine, ids: list[str]) -> None:
+    """Remove these documents and the review decisions (and examples) taken on them."""
+    with owner.begin() as conn:
+        conn.execute(text("DELETE FROM app.labelled_example WHERE decision_id IN (SELECT "
+                          "decision_id FROM app.review_decision WHERE item_key = ANY(:d))"),
+                     {"d": ids})  # fmt: skip
+        conn.execute(text("DELETE FROM app.review_decision WHERE item_key = ANY(:d)"), {"d": ids})
+        conn.execute(text("DELETE FROM app.document WHERE document_id = ANY(CAST(:d AS uuid[]))"),
+                     {"d": ids})  # fmt: skip
 
 
 def new_document(owner: Engine, status: str, source_path: str = "pathology/x.pdf") -> str:
@@ -113,6 +144,7 @@ def test_permission_matrix(
     api_settings: Settings,
     api_owner: Engine,
     fresh_flag: Callable[..., str],
+    fresh_document: Callable[[], str],
     cohort_id: str,
     document_id: str,
     api_risk_model: str,
@@ -123,7 +155,7 @@ def test_permission_matrix(
         assert login(client, caller).status_code == 200
     method, path = endpoint.split(" ")
     fid = fresh_flag() if "{fid}" in path else ""
-    rid = new_document(api_owner, "in_review") if "{rid}" in path else ""
+    rid = fresh_document() if "{rid}" in path else ""
     conv = own_conversation(client, caller) if "{conv}" in path else ""
     path = path.format(pid=patient_id(caller, api_data, api_settings), cid=cohort_id, fid=fid,
                        did=document_id, rid=rid, conv=conv)  # fmt: skip

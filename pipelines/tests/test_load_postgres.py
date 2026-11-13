@@ -72,6 +72,8 @@ def counts(conn: Conn, tenant: str | None) -> tuple[int, int, int]:
 def test_reload_replaces_rows_and_tenants_stay_isolated(urls: tuple[str, str]) -> None:
     _, app = urls
     with psycopg.connect(app, autocommit=True) as conn:
+        # Audit rows only grow (other tests here load too), so count this test's own.
+        audits_a, audits_b = counts(conn, "center_a")[2], counts(conn, "center_b")[2]
         assert load_tenant(conn, "center_a", people("center_a", [1, 2]), "b1") == {
             "person": 2,
             "death": 1,
@@ -81,8 +83,8 @@ def test_reload_replaces_rows_and_tenants_stay_isolated(urls: tuple[str, str]) -
         }
         load_tenant(conn, "center_a", people("center_a", [1, 2, 3]), "b2")  # re-run
         load_tenant(conn, "center_b", people("center_b", [9]), "b2")
-        assert counts(conn, "center_a") == (3, 3, 10)  # no duplicates; 5 audit rows per load
-        assert counts(conn, "center_b") == (1, 1, 5)
+        assert counts(conn, "center_a") == (3, 3, audits_a + 10)  # no duplicates; 5 per load
+        assert counts(conn, "center_b") == (1, 1, audits_b + 5)
         assert counts(conn, None) == (0, 0, 0)  # no tenant set: nothing visible
 
 

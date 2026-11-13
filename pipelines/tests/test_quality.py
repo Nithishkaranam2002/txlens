@@ -46,6 +46,7 @@ def test_first_failing_rule_names_the_reason(spark: SparkSession) -> None:
     assert '"bronze_source_row":2' in quarantined.row_json
 
 
+@pytest.mark.usefixtures("spark")  # F.lit needs an active Spark session
 def test_unknown_reason_is_rejected() -> None:
     with pytest.raises(ValueError):
         Rule("looks_odd", F.lit(True), F.lit(""))

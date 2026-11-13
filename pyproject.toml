@@ -81,6 +81,8 @@ dev = [
     "ruff>=0.12",
     "mypy>=1.17",
     "pytest>=8.4",
+    "pytest-randomly>=4.1,<5.1",  # random test order (Step 4.1); 5.1.0 was 4 days old
+    "pytest-timeout>=2.4",  # a hanging test fails instead of blocking the run
     "httpx>=0.28",
     "httpx2>=2.16",  # Starlette's TestClient uses it once installed (langsmith brings it)
     "types-pyyaml>=6.0,<6.0.12.20261001",
@@ -136,6 +138,8 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers --import-mode=importlib"
+# Per test. Spark runs (marker "slow") get longer in pipelines/tests/conftest.py.
+timeout = 300
 testpaths = ["backend/tests", "data_generator/tests", "evals/tests", "omop/tests", "pipelines/tests",
              "r_parity/tests"]
 # Shared test helpers (uniquely named so they cannot clash with other packages).

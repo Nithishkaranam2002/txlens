@@ -68,8 +68,10 @@ def fake_zip(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="module")
 def loaded(vocab_db: str, fake_zip: Path) -> Iterator[Conn]:
-    """The fake vocabulary loaded from the zip; yields an open connection."""
-    with psycopg.connect(vocab_db) as conn:
+    """The fake vocabulary loaded from the zip; yields an open connection. Autocommit, so
+    lookups hold no locks between tests: an open read transaction here would block a reload
+    on another connection (its TRUNCATE) forever when tests run in random order."""
+    with psycopg.connect(vocab_db, autocommit=True) as conn:
         load_vocabulary(conn, AthenaSource(fake_zip))
         yield conn
 

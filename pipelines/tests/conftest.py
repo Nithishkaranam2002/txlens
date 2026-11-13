@@ -13,6 +13,16 @@ if TYPE_CHECKING:
     from txlens_pipelines.runtime import LocalRuntime
 
 
+SLOW_TEST_TIMEOUT = 1800  # seconds; minutes-long Spark runs exceed the 300 s default
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Give Spark end-to-end runs (marker "slow") a longer timeout than the default."""
+    for item in items:
+        if item.get_closest_marker("slow") and not item.get_closest_marker("timeout"):
+            item.add_marker(pytest.mark.timeout(SLOW_TEST_TIMEOUT))
+
+
 # Test data is tiny, so per-job overhead dominates: one partition, no whole-stage code
 # generation (compiling each plan costs more than running it). This halves the Spark test time.
 TEST_SPARK_CONF = {
