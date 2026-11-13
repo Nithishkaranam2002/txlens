@@ -7,7 +7,8 @@ claims, each with quotes copied from the abstracts it cites. A claim is shown on
   abstracts are exact text, unlike OCR'd biopsy reports);
 - a quote has at least MIN_QUOTE_WORDS words (a quote like "rejection" proves nothing);
 - every number in the claim appears in one of its verified quotes (a claim may not add
-  figures its sources do not state).
+  figures its sources do not state); a year may instead appear anywhere in the cited
+  abstract, also written as "'13".
 Claims without a verified quote are dropped and counted. Claims from the center's data (no
 quotes) are allowed only when a data tool actually returned results.
 """
@@ -87,6 +88,14 @@ class Checked:
     problem: str | None = None
 
 
+def year_in(number: str, text: str) -> bool:
+    """A year (1950-2039) named anywhere in the cited abstract, also as "'13" for 2013: years
+    give context ("Banff 2022") and often sit in the title rather than in the quote."""
+    if not (len(number) == 4 and number.isdigit() and 1950 <= int(number) <= 2039):
+        return False
+    return number in NUMBER.findall(text) or f"'{number[2:]}" in text
+
+
 def check(claim: Claim, docs: dict[int, Document], *, data_allowed: bool) -> Checked:
     """Keep the claim with its verified quotes, or drop it with the reason."""
     if not claim.quotes:
@@ -97,7 +106,9 @@ def check(claim: Claim, docs: dict[int, Document], *, data_allowed: bool) -> Che
     if not verified:
         return Checked(None, problem="quote not found in the cited abstract")
     quoted = {float(n) for q in verified for n in NUMBER.findall(normalize(q.quote))}
-    missing = [n for n in NUMBER.findall(claim.text) if float(n) not in quoted]
+    cited = " ".join(normalize(f"{docs[q.pmid].title} {docs[q.pmid].abstract}") for q in verified)
+    missing = [n for n in NUMBER.findall(claim.text)
+               if float(n) not in quoted and not year_in(n, cited)]  # fmt: skip
     if missing:
         return Checked(None, verified, problem=f"numbers not in the quotes: {missing}")
     return Checked(claim.text, verified)

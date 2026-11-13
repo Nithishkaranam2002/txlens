@@ -1,64 +1,68 @@
 {
   "answer_relevancy": {
-    "high": 0.7904,
-    "low": 0.7353,
-    "value": 0.7629
+    "high": 0.738,
+    "low": 0.5963,
+    "value": 0.6703
   },
+  "answered_from_literature": [
+    57,
+    60
+  ],
   "citation_supported": {
-    "high": 0.8725,
-    "low": 0.7696,
-    "value": 0.8235
+    "high": 0.8646,
+    "low": 0.75,
+    "value": 0.8073
   },
   "citation_supported_or_partly": {
     "high": 1.0,
-    "low": 0.9853,
-    "value": 0.9951
+    "low": 0.9844,
+    "value": 0.9948
   },
-  "citations": 204,
-  "cost_per_question_usd": 0.001919056880733945,
+  "citations": 192,
+  "cost_per_question_usd": 0.0019082816513761468,
   "data_questions": 40,
   "execution_accuracy": {
     "high": 1.0,
-    "low": 0.925,
-    "value": 0.975
+    "low": 1.0,
+    "value": 1.0
   },
   "faithfulness": {
-    "high": 0.992,
-    "low": 0.9608,
-    "value": 0.9775
+    "high": 0.9693,
+    "low": 0.8332,
+    "value": 0.9108
   },
   "gaps": 0,
   "judge_model": "openai/gpt-5.6-luna",
-  "latency_median_ms": 9482,
-  "latency_p90_ms": 14173,
+  "latency_median_ms": 8649,
+  "latency_p90_ms": 12878,
   "literature_questions": 60,
   "literature_runs": [
     {
-      "citations": 60,
-      "claims_dropped": 6,
-      "faithfulness": 0.9907407407407407,
-      "relevancy": 0.7478897412244705,
+      "citations": 59,
+      "claims_dropped": 10,
+      "faithfulness": 0.8626180836707152,
+      "relevancy": 0.5812711240719306,
       "run": 1,
-      "supported": 0.8833333333333333,
+      "supported": 0.7627118644067796,
       "supported_or_partly": 1.0
     },
     {
-      "citations": 73,
+      "citations": 72,
       "claims_dropped": 4,
-      "faithfulness": 0.960127591706539,
-      "relevancy": 0.756817777010862,
+      "faithfulness": 0.9421052631578948,
+      "relevancy": 0.7383852354351773,
       "run": 2,
-      "supported": 0.7945205479452054,
-      "supported_or_partly": 1.0
+      "supported": 0.7777777777777778,
+      "supported_or_partly": 0.9861111111111112
     },
     {
-      "citations": 71,
-      "claims_dropped": 5,
-      "faithfulness": 0.9828700711053652,
-      "relevancy": 0.7855822730077574,
+      "citations": 61,
+      "claims_dropped": 7,
+      "faithfulness": 0.9276315789473685,
+      "relevancy": 0.691129774470978,
       "run": 3,
-      "supported": 0.8028169014084507,
-      "supported_or_partly": 0.9859154929577465
+      "supported": 0.8852459016393442,
+      "supported_or_partly": 1.0
     }
   ],
   "red_team_passed": [
@@ -66,23 +70,23 @@
     25
   ],
   "relevancy_over_runs": {
-    "max": 0.7856,
-    "mean": 0.7634,
-    "min": 0.7479
+    "max": 0.7384,
+    "mean": 0.6703,
+    "min": 0.5813
   },
   "scored": 40,
   "spend": {
     "batch": "eval-copilot",
-    "batch_spent_usd": 0.375265,
+    "batch_spent_usd": 0.703077,
     "cap_usd": 1.0,
-    "copilot_usd": 0.20917719999999998,
-    "copilot_without_cache_usd": 0.20917719999999998,
-    "judge_usd": 0.15181219999999992
+    "copilot_usd": 0.1707187,
+    "copilot_without_cache_usd": 0.20800269999999998,
+    "judge_usd": 0.1569394
   },
   "sql_used_share": {
-    "high": 0.65,
-    "low": 0.35,
-    "value": 0.5
+    "high": 0.675,
+    "low": 0.375,
+    "value": 0.525
   },
   "structured_not_sql": {
     "high": 0.9583,
@@ -90,14 +94,14 @@
     "value": 0.7917
   },
   "supported_over_runs": {
-    "max": 0.8833,
-    "mean": 0.8269,
-    "min": 0.7945
+    "max": 0.8852,
+    "mean": 0.8086,
+    "min": 0.7627
   },
   "tool_choice_accuracy": {
     "high": 0.95,
-    "low": 0.725,
-    "value": 0.85
+    "low": 0.775,
+    "value": 0.875
   },
   "unanswerable_declined": [
     9,

@@ -34,3 +34,12 @@ Details: [extraction_systems.md](extraction_systems.md), [notes_nlp.md](notes_nl
 - Immortal time bias, simulated true HR 1: naive 0.56, landmark 0.99.
 - ABMR in year 1 vs no rejection, from a 1-year landmark: HR 17.7 (9.3-33.4).
 - 1 - KM overstates 3-year graft loss by 0.10 percentage points (main data).
+
+## Research copilot ([copilot.md](copilot.md))
+
+From `make copilot-report`, which is not part of `make evals`: it asks the literature questions 3 times without the answer cache to measure run-to-run variance, so each run costs about $0.30.
+
+- Data questions (40): execution accuracy 100.0% (100.0%-100.0%), tool choice 87.5% (77.5%-95.0%), structured tool where one fits 79.2% (62.5%-95.8%).
+- Literature (60): faithfulness 0.91, answer relevancy 0.67 (RAGAS, judge `openai/gpt-5.6-luna`); citations supported 80.7% (75.0%-86.5%), supported or partly 99.5% (98.4%-100.0%); unanswerable declined 9 of 9.
+- Red team: 25 of 25 attacks refused or neutralized.
+- $0.0019 per question; latency median 8.6 s.

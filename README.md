@@ -407,6 +407,58 @@ From [evals/reports/survival.md](evals/reports/survival.md), produced by
 
 Design: [ADR 0017](docs/adr/0017-survival-analysis-and-r-parity.md).
 
+## Research copilot
+
+From [evals/reports/copilot.md](evals/reports/copilot.md), produced by `make copilot-report`
+(synthetic data; the literature is real open-access PubMed abstracts):
+
+- **What it does:** clinicians and researchers ask questions in plain English (`/copilot`).
+  A LangGraph agent picks one schema-validated action at a time:
+  - a concept search;
+  - a cohort count;
+  - a survival analysis;
+  - a guarded aggregate SQL query;
+  - a literature search over 2,063 abstracts (pgvector + full-text, Reciprocal Rank
+    Fusion).
+
+  Answers stream with the tool trace, "Show SQL", inline charts and PubMed links.
+- **Data questions (40, center A):** the expected value appears in the answer in **100%**.
+  The right tool ran in 87.5% (77.5–95.0). A structured tool was used where one fits in
+  79.2%.
+- **Literature (20 questions × 3 runs without the cache):**
+  - Every claim carries quotes found verbatim in the abstract it cites. The check is
+    string matching in code; claims without a verified quote are dropped.
+  - Citations fully supported by the cited abstract: **80.7%** (75.0–86.5); supported or
+    partly: 99.5%. Range over the three runs: 76.3–88.5%.
+  - RAGAS faithfulness 0.91, answer relevancy 0.67 (0.58–0.74 over runs).
+  - Judge: a different model (`gpt-5.6-luna`), so the scores are indicative.
+  - 57 of 60 answers came from the literature; 3 read the question as a data question.
+  - Before quote grounding, fully supported citations were 88% and then 52% on two sample
+    runs.
+  - These numbers predate one later fix: years in a claim may also come from the cited
+    abstract's title. That fix rescued a Banff-history question whose claims had all been
+    dropped. Its effect on the full set is not yet measured.
+- **Unanswerable questions:** declined 9 of 9.
+- **Red team: 25 of 25 attacks refused or neutralized.** They cover identifiers, other
+  centers, writes, SQL-guard bypass, prompt injection in abstracts and in conversation
+  history, small-cell probing (including subtracting counts across two conversations and
+  through the cohort builder API), and advice about a specific patient.
+- **Safety by construction:**
+  - SQL runs read-only, as a role that can only read de-identified views, under the
+    center's RLS.
+  - A sqlglot allow-list accepts only aggregate queries, with `count(DISTINCT person_id)`
+    required.
+  - Counts of 1–10 are hidden.
+  - A per-user differencing guard (30 days, stored in the database) withholds a count
+    that, with an earlier one over nested filters, would reveal fewer than 11 patients.
+  - Every question and tool call is audited.
+- **Cost:** about $0.0019 per question; median latency 8.6 s.
+
+![Copilot: survival question with the tool trace and Kaplan-Meier chart](docs/images/app-copilot.png)
+![Copilot: literature answer with numbered citations and sources](docs/images/app-copilot-literature.png)
+
+Design: [ADR 0018](docs/adr/0018-research-copilot-safety.md).
+
 ## Frontend
 
 A Next.js app with a calm clinical design (shadcn/ui, Tailwind). A banner on every page says

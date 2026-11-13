@@ -65,3 +65,15 @@ def test_comparison_signs_match_their_ascii_form() -> None:
     doc = Document(pmid=3, title="T", journal="J", abstract="dd-cfDNA \u22651% was associated "
                    "with active antibody-mediated rejection in most cohorts.")  # fmt: skip
     assert quote_found(Quote(pmid=3, quote="dd-cfDNA >=1% was associated with active"), {3: doc})
+
+
+def test_years_may_come_from_anywhere_in_the_cited_abstract() -> None:
+    doc = Document(pmid=4, title="What changed in Banff 2022", journal="J",
+                   abstract="Inclusion of C4d-negative ABMR in Banff'13 was a major change for "
+                   "pathologists.")  # fmt: skip
+    quote = Quote(pmid=4, quote="Inclusion of C4d-negative ABMR in Banff'13 was")
+    assert check(Claim(text="Banff 2013 added C4d-negative ABMR, kept in Banff 2022.",
+                       quotes=[quote]), {4: doc}, data_allowed=False).text  # fmt: skip
+    dropped = check(Claim(text="Banff 2019 added C4d-negative ABMR in 40% of cases.",
+                          quotes=[quote]), {4: doc}, data_allowed=False)  # fmt: skip
+    assert dropped.text is None and "2019" in str(dropped.problem) and "40" in str(dropped.problem)

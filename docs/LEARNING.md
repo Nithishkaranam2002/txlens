@@ -1482,3 +1482,152 @@ experiencer flags).
    single patients ("one graft lost on day 412"). Showing a step only after 11 events have
    built up, and stopping before fewer than 11 are at risk, keeps every number aggregate,
    including in exports.
+
+## Phase 3, Step 3.3 — An AI research copilot
+
+### What was built
+- **A chat page** (`/copilot`, for clinicians and researchers). Questions about the center's
+  data and the transplant literature stream back with:
+  - the tools used ("searched concepts → built cohort → ran survival");
+  - "Show SQL";
+  - inline charts;
+  - PubMed links, each with the quote it rests on.
+- **A LangGraph agent with five tools.** The model only chooses; code acts.
+  - concept search;
+  - cohort count (the cohort builder's service);
+  - survival analysis (the Step 3.1 service);
+  - guarded SQL;
+  - literature search.
+- **A literature corpus:** 2,063 open-access PubMed abstracts on dd-cfDNA, kidney and heart
+  rejection, DSA, Banff and BK virus. A script downloads them (NCBI E-utilities). Hybrid
+  retrieval: pgvector plus Postgres full-text, merged by Reciprocal Rank Fusion.
+- **Safety layers:**
+  - de-identified `copilot` views and a database role that can read only them;
+  - a sqlglot guard;
+  - a per-user differencing guard in the database, also used by the cohort builder and the
+    survival API;
+  - deterministic refusals;
+  - quote-grounded answers;
+  - a filter that rewrites company names;
+  - a budget, a cache, Langfuse traces and an audit row for every question and tool call.
+- **`make copilot-report`:** 40 data, 20 + 3 literature and 25 red-team questions. The
+  literature questions are asked 3 times to measure run-to-run variance. RAGAS scores come
+  from a different judge model, and the report ends with a checklist for a human
+  spot-check.
+
+### The ideas in plain English
+- **Tools before text-to-SQL.** "How many kidney recipients…" goes to the same cohort
+  service the cohort builder uses, with all its rules. SQL is only for the rest
+  (distributions, counts by year). A tool can only do what it was built to do; free SQL
+  can do anything its role allows.
+- **Defence in depth.** The prompt asks the model to behave. The guard checks the SQL.
+  The database role makes the dangerous SQL impossible anyway. Tests skip the guard on
+  purpose and check that the database still refuses.
+- **Small cells and differencing.** A count of 1–10 can point at a few people, so it shows
+  as "<11". But two big counts can be subtracted: "aged ≥ 18" minus "aged ≥ 19" is the
+  number aged 18. So every count shown to a user is remembered for 30 days. A new count is
+  withheld if an earlier one, over filters that nest inside each other, is 1–10 away.
+- **Prompt injection.** An abstract can say "ignore your instructions". Text from tools and
+  abstracts reaches the model only as quoted data. Even when the model obeys, it can only
+  pick from a fixed list of actions, and the guard and database stop the rest.
+- **Grounded citations.** For medical claims, "the model says it cited a paper" is not
+  enough. Each claim must come with a quote copied from the paper, and code checks the
+  quote is really there. If the check fails, the claim is not shown.
+- **RRF.** Vector search finds the same meaning in other words; full-text search finds
+  exact terms like "C4d" or "BKPyV". Reciprocal Rank Fusion adds 1/(60 + rank) from each
+  list, so documents both lists rank high win.
+
+### How the tricky parts work
+- **The SQL guard is an allow-list of syntax-tree node kinds.** Anything sqlglot knows but
+  I did not list is rejected: `set_config`, `pg_sleep`, window functions, FILTER, locks.
+  Aggregates may appear only in the outermost SELECT and over plain columns, so `sum(CASE
+  ...)` or a CTE's count cannot smuggle out a small number. Grouping by a measured value
+  is refused, because each distinct value would be one patient's result.
+- **The views are owned by a NOLOGIN, non-bypass role**, so tenant RLS still applies
+  through them. The copilot role is granted to the app WITHOUT INHERIT, and `set_config`
+  is revoked from PUBLIC, so the role cannot switch centers.
+- **Comparing filters.** Each count's filters become constraints: equality, ranges, any-of
+  sets, lab rules with day windows. "Nested" means one constraint set refines the other.
+  The same code serves the cohort builder (cohort rules) and the SQL tool (WHERE clauses
+  parsed by sqlglot, and join conditions too).
+- **Quote check.** Case, whitespace and typography are normalized: Unicode hyphens,
+  dashes, quotes, ≥ and ≤. Then it is plain substring matching. A quote needs at least 6
+  words. Numbers in a claim must be in its quotes; a year may also come from the cited
+  abstract.
+- **No names in our words, yet verbatim sources.** The repository holds only salted hashes
+  of the names. The copilot's text is checked phrase by phrase and rewritten ("a
+  commercial dd-cfDNA assay"). Quoted abstracts stay as published.
+
+### Why these tools
+- **LangGraph:** an explicit state machine (screen → plan ⇄ act → answer) that is easy to
+  test and trace. The model's freedom is one action per step.
+- **sqlglot:** a real SQL parser with qualification against a schema. Regex checks on SQL
+  are easy to bypass.
+- **pgvector + Postgres full-text:** one database, RLS and backups we already have; behind
+  a `VectorStore` interface, so it could move to Milvus or Databricks Vector Search.
+- **Instructor (JSON schema):** validated actions and claims. LiteLLM 1.106's native
+  tool-calling pulls in its MCP proxy, so we use JSON-schema mode.
+- **RAGAS with another judge model:** standard faithfulness and relevancy metrics, judged
+  by a different model to reduce self-grading bias.
+
+### Trade-offs
+- **Strict grounding drops true claims a model cannot back with a 6-word quote.** The first
+  full run dropped every claim of one Banff question: claims said "Banff 2013", the quote
+  said "Banff'13". The year rule fixed it, but strictness will always cost some coverage.
+- **Grounded answers arrive claim by claim, not word by word.** They are checked as a whole
+  after one structured call. Data answers still stream sentence by sentence.
+- **The differencing guard compares only filters it can describe.** Rewritten filters, and
+  several accounts working together, can still combine results. Real deployments add access
+  agreements and output review (ADR 0018).
+- **Temperature 0 is not determinism.** The provider still varies, and so does the
+  planner's search query. The three runs ranged 76–89% fully supported citations.
+- **The judge is a model too.** Hence the human spot-check checklist.
+
+### Results (synthetic data; `make copilot-report`)
+- **Data, 40 questions** (all 40 agree between ground truth and the database):
+  - execution accuracy 100%;
+  - tool choice 87.5%;
+  - structured tool where one fits 79.2%.
+- **Literature, 20 questions × 3 runs:**
+  - citations fully supported 80.7% (range 76.3–88.5% over runs); supported or partly
+    99.5%;
+  - faithfulness 0.91, answer relevancy 0.67;
+  - 57 of 60 answered from the literature.
+  - Before quote grounding: 88% and then 52% fully supported on two sample runs.
+  - The year fix came after this run; its effect on the full set is not measured yet.
+- **Unanswerable:** declined 9 of 9.
+- **Red team:** 25 of 25 refused or neutralized.
+- **Cost and speed:** $0.0019 per question, 8.6 s median. The whole evaluation cost $0.70;
+  embedding the corpus cost $0.016.
+- **Found by the evaluation and fixed:**
+  - a lab value rounded to one decimal (0.24% shown as 0.2%);
+  - views taking 16 s on a join (now 30 ms);
+  - a timeout crashing a question;
+  - over-long search queries failing a plan;
+  - the year rule above.
+
+### Likely interview questions
+1. **How do you stop text-to-SQL from leaking patient data?** In layers. Structured tools
+   come first. SQL goes through an allow-list parser (aggregates only, `count(DISTINCT
+   person_id)` required, no min/max). It runs read-only, as a role that can only read
+   de-identified views, under the center's row-level security. Small counts are hidden,
+   and a differencing guard stops subtraction attacks. Tests bypass the guard to prove the
+   database alone holds.
+2. **What is a differencing attack?** Learning about a small group by subtracting two large
+   counts, like "aged ≥ 18" minus "aged ≥ 19". I remember every count shown to a user for
+   30 days and withhold a new one if it is 1–10 away from an earlier count over nested
+   filters. It works across conversations and across the cohort builder and copilot.
+   Several colluding accounts remain a residual risk.
+3. **How do you defend against prompt injection in retrieved documents?** Treat all
+   retrieved text as data: it is escaped inside a data block and never trusted. More
+   importantly, nothing depends on the model obeying. It can only choose from fixed
+   actions, and the SQL guard, database role and answer checks run in code. The red team
+   plants injected abstracts and history; all were neutralized.
+4. **How do you know a citation is real?** Each claim must carry a quote copied from the
+   cited abstract, and code checks the quote is in that abstract (normalized string match).
+   Numbers in the claim must appear in the quote. A judge model then rated 80.7% of
+   citations fully supported and 99.5% at least partly, and a human spot-check list checks
+   the judge.
+5. **Why hybrid retrieval with RRF?** Embeddings capture meaning but blur exact terms like
+   "C4d" or "Banff". Full-text catches those but misses paraphrases. RRF merges the two
+   rankings by rank, not by incomparable scores, so a document both rank highly wins.
