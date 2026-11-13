@@ -6,6 +6,7 @@
 #   4. a clinician can log in; the cookies are Secure and HttpOnly
 #   5. Silas Marmere is found by name; his timeline and patient page load
 #   6. no OpenAI key on the server, no Langfuse database
+#   7. surveillance is pinned to the data cut-off: no run after it, the latest run is on it
 # --fresh (right after a deploy): also no login attempt or refresh token carried over.
 # The clinician password is read from the Keychain into a variable, never printed.
 set -euo pipefail
@@ -61,6 +62,10 @@ check "no OpenAI key in the server's .env" fact env_file_openai_key 0
 check "no OpenAI key in the API container" fact api_openai_key 0
 check "no OpenAI key in the worker container" fact worker_openai_key 0
 check "no Langfuse database" fact langfuse_db 0
+check "surveillance pinned: DATA_CUTOFF set" fact data_cutoff_set 1
+check "surveillance pinned: the worker sees DATA_CUTOFF" fact worker_data_cutoff_set 1
+check "no surveillance run after the data cut-off" fact runs_after_cutoff 0
+check "latest surveillance run is as of the cut-off" fact latest_run_is_cutoff 1
 if [[ "$FRESH" == 1 ]]; then
   check "no login attempts carried over" fact login_attempts 0
   check "no refresh tokens carried over" fact refresh_tokens 0

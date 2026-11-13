@@ -7,6 +7,9 @@
   URLs and the demo user names. Passwords stay in `.env` and are never printed.
 - `reset-sessions`: forget every login attempt and refresh token, e.g. after restoring a
   snapshot onto a server, so no session or IP address from the machine it came from carries over.
+- `drop-surveillance-after DATE`: delete surveillance flags and runs dated after the data
+  cut-off (a run "as of today" on data that ends earlier), so a run as of the cut-off can
+  rebuild the worklist. Refuses if someone already acknowledged or resolved one of them.
 
 Runs as the database owner (superuser), so counts cover every tenant.
 """
@@ -15,6 +18,7 @@ import argparse
 import json
 from collections import Counter
 from collections.abc import Sequence
+from datetime import date
 
 from sqlalchemy import Connection, bindparam, create_engine, text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -43,6 +47,10 @@ FINAL_DOCUMENT_STATUSES = ("extracted", "approved", "rejected", "in_review", "re
 RESET_AUDIT = text(
     "INSERT INTO app.audit_log (tenant_id, action, object_type, details) "
     "VALUES (:tenant_id, 'sessions_reset', 'deployment', :details)"
+).bindparams(bindparam("details", type_=JSONB))
+DROP_AUDIT = text(
+    "INSERT INTO app.audit_log (tenant_id, action, object_type, details) "
+    "VALUES (:tenant_id, 'surveillance_dropped_after_cutoff', 'surveillance_run', :details)"
 ).bindparams(bindparam("details", type_=JSONB))
 
 
@@ -95,6 +103,32 @@ def reset_sessions(conn: Connection) -> dict[str, int]:
     return {"refresh_tokens": len(tokens), "login_attempts": attempts}
 
 
+class ReviewedFlagsError(RuntimeError):
+    """Flags a person already acted on: they are never deleted by a clean-up."""
+
+
+def drop_surveillance_after(conn: Connection, cutoff: date) -> dict[str, int]:
+    """Delete surveillance flags and runs dated after `cutoff`, with one audit row per center.
+    Returns the deleted counts. Raises ReviewedFlagsError if a person acted on one of them."""
+    reviewed = conn.execute(text(
+        "SELECT count(*) FROM app.surveillance_flag "
+        "WHERE as_of > :c AND status_changed_at IS NOT NULL"
+    ), {"c": cutoff}).scalar_one()  # fmt: skip
+    if reviewed:
+        raise ReviewedFlagsError(f"{reviewed} flags after {cutoff} were reviewed; not deleted")
+    flags = Counter(conn.execute(text(
+        "DELETE FROM app.surveillance_flag WHERE as_of > :c RETURNING tenant_id"
+    ), {"c": cutoff}).scalars())  # fmt: skip
+    runs = Counter(conn.execute(text(
+        "DELETE FROM app.surveillance_run WHERE as_of > :c RETURNING tenant_id"
+    ), {"c": cutoff}).scalars())  # fmt: skip
+    for tenant_id in sorted(set(flags) | set(runs)):
+        details = {"cutoff": cutoff.isoformat(), "flags": flags[tenant_id],
+                   "runs": runs[tenant_id]}  # fmt: skip
+        conn.execute(DROP_AUDIT, {"tenant_id": tenant_id, "details": details})
+    return {"flags": flags.total(), "runs": runs.total()}
+
+
 def users(conn: Connection) -> list[tuple[str, str]]:
     """(user name, role) of every active user, by center then role."""
     rows = conn.execute(text(
@@ -131,6 +165,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub.add_parser("has-model", help="exit 0 if a risk model is registered as champion")
     sub.add_parser("counts", help="row counts of the demo tables, as JSON")
     sub.add_parser("reset-sessions", help="delete all login attempts and refresh tokens")
+    drop = sub.add_parser("drop-surveillance-after", help="delete flags and runs after a date")
+    drop.add_argument("cutoff", type=date.fromisoformat, help="the data cut-off, YYYY-MM-DD")
     status = sub.add_parser("status", help="what is loaded and pending; URLs and users")
     status.add_argument("--web", default="http://localhost:3000")
     status.add_argument("--api", default="http://localhost:8000")
@@ -151,6 +187,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         engine.dispose()
         print(f"    deleted {deleted['refresh_tokens']} refresh tokens and "
               f"{deleted['login_attempts']} login attempts")  # fmt: skip
+        return 0
+    if args.command == "drop-surveillance-after":
+        try:
+            with engine.begin() as conn:
+                dropped = drop_surveillance_after(conn, args.cutoff)
+        except ReviewedFlagsError as error:
+            print(f"    refused: {error}")
+            return 1
+        finally:
+            engine.dispose()
+        print(f"    deleted {dropped['flags']} flags and {dropped['runs']} runs after "
+              f"{args.cutoff.isoformat()}")  # fmt: skip
         return 0
     with engine.connect() as conn:
         if args.command == "counts":

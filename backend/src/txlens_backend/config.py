@@ -1,5 +1,6 @@
 """Application settings, read from environment variables (and `.env` in development)."""
 
+from datetime import date
 from pathlib import Path
 from typing import Literal
 
@@ -54,6 +55,12 @@ class Settings(BaseSettings):
     # A count is withheld if, with one shown to the same user within this many days over
     # overlapping filters, it would reveal fewer than small_cell_threshold patients.
     disclosure_window_days: int = 30
+
+    # --- Surveillance ---
+    # Last day of the data (a synthetic extract ends on one date). When set, a run without a
+    # date runs as of this day, and a run after it is refused: later dates would invent
+    # "missed test" flags. Unset (production): runs default to today.
+    data_cutoff: date | None = None
 
     # --- Rejection-risk model (MLflow tracking + registry) ---
     mlflow_tracking_uri: str = "sqlite:///mlruns/mlflow.db"  # relative to the repo root

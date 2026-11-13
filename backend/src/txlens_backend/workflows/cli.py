@@ -3,6 +3,9 @@
 - `txlens-worker`: the Temporal worker for surveillance, biopsy document and note NLP workflows.
 - `txlens-surveillance schedule`: create or update the nightly schedule (02:00 UTC).
 - `txlens-surveillance run [--as-of YYYY-MM-DD]`: run now and print what each center did.
+
+With `DATA_CUTOFF` set (the demo), both are pinned to the cut-off: a run without a date and
+the nightly schedule run as of that day, and a later `--as-of` is refused.
 """
 
 import argparse
@@ -25,6 +28,7 @@ from temporalio.worker import Worker
 
 from txlens_backend.config import get_settings
 from txlens_backend.db import check_role_is_rls_bound, make_engine
+from txlens_backend.surveillance.cutoff import AfterCutoffError, pinned_as_of
 from txlens_backend.workflows.biopsy import TASK_QUEUE as DOCUMENTS_QUEUE
 from txlens_backend.workflows.biopsy import (
     BiopsyBatchWorkflow,
@@ -53,7 +57,7 @@ async def serve() -> None:
     settings = get_settings()
     engine = make_engine(settings.app_database_url.get_secret_value())
     check_role_is_rls_bound(engine)
-    activities = SurveillanceActivities(engine, settings.mlflow_tracking_uri)
+    activities = SurveillanceActivities(engine, settings.mlflow_tracking_uri, settings.data_cutoff)
     documents = DocumentActivities(engine, settings)
     notes = NoteActivities(engine, settings)
     # Two LLM passes per document: room for `llm_concurrency` documents at once.
@@ -74,12 +78,12 @@ async def serve() -> None:
         await asyncio.gather(surveillance.run(), biopsies.run())
 
 
-def nightly() -> Schedule:
-    """The nightly schedule: run as of the day it starts."""
+def nightly(cutoff: date | None = None) -> Schedule:
+    """The nightly schedule: run as of the day it starts, or as of the data cut-off if set."""
     return Schedule(
         action=ScheduleActionStartWorkflow(
             SurveillanceWorkflow.run,
-            SurveillanceRequest(),
+            SurveillanceRequest(cutoff.isoformat() if cutoff else None),
             id="surveillance-nightly-run",
             task_queue=TASK_QUEUE,
         ),
@@ -89,17 +93,19 @@ def nightly() -> Schedule:
 
 async def schedule() -> None:
     """Create the nightly schedule, or update it if it already exists."""
+    cutoff = get_settings().data_cutoff
+    pinned = f", as of the data cut-off {cutoff.isoformat()}" if cutoff else ""
     client = await connect()
     try:
-        await client.create_schedule(NIGHTLY_SCHEDULE_ID, nightly())
-        print(f"Created schedule {NIGHTLY_SCHEDULE_ID} ({NIGHTLY_CRON} UTC)")
+        await client.create_schedule(NIGHTLY_SCHEDULE_ID, nightly(cutoff))
+        print(f"Created schedule {NIGHTLY_SCHEDULE_ID} ({NIGHTLY_CRON} UTC{pinned})")
     except ScheduleAlreadyRunningError:
 
         def replace(_: ScheduleUpdateInput) -> ScheduleUpdate:
-            return ScheduleUpdate(schedule=nightly())
+            return ScheduleUpdate(schedule=nightly(cutoff))
 
         await client.get_schedule_handle(NIGHTLY_SCHEDULE_ID).update(replace)
-        print(f"Updated schedule {NIGHTLY_SCHEDULE_ID} ({NIGHTLY_CRON} UTC)")
+        print(f"Updated schedule {NIGHTLY_SCHEDULE_ID} ({NIGHTLY_CRON} UTC{pinned})")
 
 
 async def run_now(as_of: date | None) -> None:
@@ -121,7 +127,7 @@ def worker_main() -> None:
     asyncio.run(serve())
 
 
-def main() -> None:
+def main() -> int:
     """`txlens-surveillance schedule | run [--as-of DATE]`."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -131,5 +137,11 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "schedule":
         asyncio.run(schedule())
-    else:
-        asyncio.run(run_now(args.as_of))
+        return 0
+    try:
+        as_of = pinned_as_of(args.as_of, get_settings().data_cutoff)
+    except AfterCutoffError as error:
+        print(f"Refused: {error}")
+        return 2
+    asyncio.run(run_now(as_of))
+    return 0

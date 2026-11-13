@@ -42,6 +42,10 @@ when it is being shown.
   - blocks the test-only login role.
   MLflow's absolute paths are rewritten to the new folder (`infra/demo/relocate_mlruns.py`),
   so a snapshot now restores into any checkout, not only the same path.
+  Surveillance is pinned to the data cut-off (`DATA_CUTOFF`, the extract date). Runs dated
+  after it are deleted and the worklist is rebuilt as of the cut-off. Later dates are refused
+  by the CLI and by the worker's activity, so even a stray schedule cannot invent "missed
+  test" flags.
 - **Secrets are made on the server** (`infra/azure/remote/gen_env.py`), are different from the
   laptop's, are never printed and stay in a mode-600 `.env`. The demo passwords go from the VM
   straight into the macOS Keychain (`security -i` on stdin), never to the terminal.

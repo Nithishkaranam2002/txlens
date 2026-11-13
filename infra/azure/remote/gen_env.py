@@ -3,11 +3,13 @@
 Starts from .env.example (so every setting has its default) and fills in fresh values for
 every password and key. Secrets that already exist are kept, so running it again only updates
 the domain. The OpenAI and Langfuse keys are always empty: the cloud demo answers from the
-LLM cache and cannot spend money.
+LLM cache and cannot spend money. Once the data is restored, DATA_CUTOFF is set to the
+extract date in data/raw/extract.json, so surveillance never runs past the end of the data.
 
 Usage: python3 gen_env.py <checkout folder> <domain>
 """
 
+import json
 import os
 import secrets
 import sys
@@ -35,6 +37,14 @@ def new_secrets() -> dict[str, str]:
     }
     values |= {f"DEMO_{role}_PASSWORD": secrets.token_urlsafe(18) for role in ROLES}
     return values
+
+
+def data_cutoff(folder: Path, existing: dict[str, str]) -> dict[str, str]:
+    """DATA_CUTOFF from the restored data's extract date (before a restore: the value kept)."""
+    extract = folder / "data" / "raw" / "extract.json"
+    if extract.exists():
+        return {"DATA_CUTOFF": json.loads(extract.read_text())["extract_date"]}
+    return {"DATA_CUTOFF": existing["DATA_CUTOFF"]} if existing.get("DATA_CUTOFF") else {}
 
 
 def settings(existing: dict[str, str], domain: str) -> dict[str, str]:
@@ -80,7 +90,8 @@ def main(argv: list[str]) -> int:
     folder, domain = Path(argv[0]), argv[1]
     env = folder / ".env"
     existing = parse(env.read_text()) if env.exists() else {}
-    content = render((folder / ".env.example").read_text(), settings(existing, domain))
+    values = settings(existing, domain) | data_cutoff(folder, existing)
+    content = render((folder / ".env.example").read_text(), values)
     tmp = folder / ".env.tmp"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:

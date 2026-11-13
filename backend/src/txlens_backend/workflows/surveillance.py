@@ -2,7 +2,8 @@
 
 The workflow lists the centers, then runs the engine for each center in its own activity
 (retried on failure). A run is idempotent, so a retry or a re-run of the same date is safe.
-Passing an old `as_of` replays the engine over history.
+Passing an old `as_of` replays the engine over history. With a data cut-off configured, a date
+after it is refused here too (non-retryable), whoever started the run.
 
 After the rule engine, each center's patients are scored by the rejection-risk model (each
 score stored with the model version). Scoring never blocks surveillance: with no registered
@@ -16,11 +17,12 @@ from datetime import date, timedelta
 
 from temporalio import activity, workflow
 from temporalio.common import RetryPolicy
-from temporalio.exceptions import ActivityError
+from temporalio.exceptions import ActivityError, ApplicationError
 
 with workflow.unsafe.imports_passed_through():
     from sqlalchemy import Engine
 
+    from txlens_backend.surveillance.cutoff import AfterCutoffError, check_as_of
     from txlens_backend.surveillance.run import list_tenants, run_tenant, transplant_configs
 
 TASK_QUEUE = "txlens-surveillance"
@@ -67,11 +69,15 @@ class RiskResult:
 
 class SurveillanceActivities:
     """Activities that touch the database, bound to the app engine (RLS always applies).
-    `tracking_uri` is the MLflow registry of the risk model (None: no risk scoring)."""
+    `tracking_uri` is the MLflow registry of the risk model (None: no risk scoring);
+    `data_cutoff` is the last day of the data (None: any date may run)."""
 
-    def __init__(self, engine: Engine, tracking_uri: str | None = None) -> None:
+    def __init__(
+        self, engine: Engine, tracking_uri: str | None = None, data_cutoff: date | None = None
+    ) -> None:
         self.engine = engine
         self.tracking_uri = tracking_uri
+        self.data_cutoff = data_cutoff
 
     @activity.defn(name="list_centers")
     def list_centers(self) -> list[str]:
@@ -80,9 +86,14 @@ class SurveillanceActivities:
 
     @activity.defn(name="run_center")
     def run_center(self, run: CenterRun) -> CenterResult:
-        """Run the engine for one center (one transaction)."""
-        summary = run_tenant(self.engine, run.tenant_id, date.fromisoformat(run.as_of),
-                             transplant_configs())  # fmt: skip
+        """Run the engine for one center (one transaction). A date after the data cut-off
+        fails without retries, so a stray schedule cannot write flags the data cannot have."""
+        as_of = date.fromisoformat(run.as_of)
+        try:
+            check_as_of(as_of, self.data_cutoff)
+        except AfterCutoffError as error:
+            raise ApplicationError(str(error), type="AfterCutoff", non_retryable=True) from error
+        summary = run_tenant(self.engine, run.tenant_id, as_of, transplant_configs())
         return CenterResult(run.tenant_id, run.as_of, summary.run_id, summary.patients,
                             summary.flags_opened, summary.flags_cleared)  # fmt: skip
 

@@ -90,6 +90,11 @@ It does this, in order:
    - `txlens-demo reset-sessions`: deletes every login attempt and refresh token from your
      laptop, with an audit row per center;
    - no Langfuse database, and the test-only database role cannot log in;
+   - surveillance is pinned to the data cut-off. `DATA_CUTOFF` is the extract date from
+     `data/raw/extract.json` (2026-09-30). Runs dated after it are deleted
+     (`txlens-demo drop-surveillance-after`, audited), and the worklist is rebuilt as of the
+     cut-off. A later date is refused by the CLI and by the worker, and a nightly schedule
+     created with `DATA_CUTOFF` set runs as of the cut-off. The VM has no schedule;
    - starts the stack with Caddy.
 7. **Passwords → Keychain** (`make cloud-passwords`): items `txlens-azure` / `clinician`,
    `researcher`, `data_steward`, `admin`. Log in as `<role>.center_a` (or `.center_b`, `.center_c`).
@@ -130,8 +135,19 @@ checksum, so it is uploaded and restored again.
 6. There is no OpenAI key in the server's `.env` or in the API or worker containers, and no
    Langfuse database. Right after a deploy (`--fresh`), there are also no login attempts or
    refresh tokens from the laptop.
+7. Surveillance is pinned: `DATA_CUTOFF` is set and the worker sees it, no run is dated after
+   the cut-off, and the latest run is on the cut-off.
 
 ## Troubleshooting
+
+- **"Missed test" flags for dates after the data ends, or every flag marked "older data":**
+  a surveillance run was dated after the data cut-off. This happens, for example, when a
+  laptop's nightly schedule ran before `make demo-snapshot`. `make cloud-update` removes such
+  runs and rebuilds the worklist as of the cut-off.
+  - On a laptop, set `DATA_CUTOFF=2026-09-30` in `.env`, then run
+    `make surveillance-schedule` to pin the schedule.
+  - Or pause it: `docker compose -p txlens -f infra/docker-compose.yml --env-file .env exec temporal temporal
+    schedule toggle --schedule-id surveillance-nightly --pause --reason demo`.
 
 - **SSH times out** after a network change: `make cloud-start` (or `make cloud-status`, then
   `make cloud-start`) moves the SSH rule to your current IP.

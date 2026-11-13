@@ -1,5 +1,6 @@
 """infra/azure/remote/gen_env.py: the VM's .env gets strong new secrets once, keeps them on a
-re-run, is readable by its owner only, never prints a value and never holds an OpenAI key."""
+re-run, is readable by its owner only, never prints a value, never holds an OpenAI key, and
+pins surveillance to the restored data's extract date."""
 
 import importlib.util
 import stat
@@ -78,3 +79,17 @@ def test_two_servers_never_share_a_secret(tmp_path: Path, checkout: Path) -> Non
     gen.main([str(other), DOMAIN])
     a, b = (gen.parse((d / ".env").read_text()) for d in (checkout, other))
     assert all(a[k] != b[k] for k in gen.new_secrets())
+
+
+def test_data_cutoff_comes_from_the_restored_extract_and_is_kept(checkout: Path) -> None:
+    gen = load_script()
+    gen.main([str(checkout), DOMAIN])
+    assert "DATA_CUTOFF" not in gen.parse((checkout / ".env").read_text())  # before the restore
+    raw = checkout / "data" / "raw"
+    raw.mkdir(parents=True)
+    (raw / "extract.json").write_text('{"extract_date": "2026-09-30"}')
+    gen.main([str(checkout), DOMAIN])
+    assert gen.parse((checkout / ".env").read_text())["DATA_CUTOFF"] == "2026-09-30"
+    (raw / "extract.json").unlink()
+    gen.main([str(checkout), DOMAIN])
+    assert gen.parse((checkout / ".env").read_text())["DATA_CUTOFF"] == "2026-09-30"

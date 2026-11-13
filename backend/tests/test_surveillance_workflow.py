@@ -1,5 +1,6 @@
 """The surveillance workflow on Temporal's test server: one activity per center, the "as of"
-date passed through (or defaulted to the start date), and a real run against the database.
+date passed through (or defaulted to the start date), a real run against the database, and a
+run past the data cut-off refused.
 
 The test server binary is downloaded on first use; without network these tests skip, unless
 TXLENS_REQUIRE_DB=1 (CI) makes that a failure.
@@ -10,11 +11,12 @@ import os
 import uuid
 from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, date
+from datetime import UTC, date, timedelta
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
 from temporalio import activity
+from temporalio.client import WorkflowFailureError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
@@ -125,3 +127,24 @@ def test_real_run_against_the_database(api_app_engine: Engine, api_flags: date) 
     asyncio.run(with_worker(
         [activities.list_centers, activities.run_center, activities.score_center], body
     ))  # fmt: skip
+
+
+def test_a_run_past_the_data_cutoff_fails_and_writes_nothing(
+    api_app_engine: Engine, api_owner: Engine, api_flags: date
+) -> None:
+    """A schedule without the pinned date (as of today) on data that ends earlier."""
+    cutoff = api_flags - timedelta(days=1)
+    activities = SurveillanceActivities(api_app_engine, None, cutoff)
+    count = text("SELECT count(*) FROM app.surveillance_run WHERE as_of > :c")
+    with api_owner.connect() as conn:
+        before = conn.execute(count, {"c": cutoff}).scalar_one()
+
+    async def body(env: WorkflowEnvironment) -> None:
+        with pytest.raises(WorkflowFailureError):
+            await execute(env, None)
+
+    asyncio.run(with_worker(
+        [activities.list_centers, activities.run_center, activities.score_center], body
+    ))  # fmt: skip
+    with api_owner.connect() as conn:
+        assert conn.execute(count, {"c": cutoff}).scalar_one() == before
