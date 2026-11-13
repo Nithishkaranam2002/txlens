@@ -18,7 +18,7 @@ from sqlalchemy import Connection, text
 from txlens_backend.clinical_codes import BIOPSY, DSA_LOCAL, LABS, REJECTION
 from txlens_backend.rejection import rejection_concept_ids
 from txlens_backend.risk.features import FEATURE_NAMES, features_at
-from txlens_backend.risk.labels import label, shortly_before_biopsy
+from txlens_backend.risk.labels import label, next_rejection, shortly_before_biopsy
 from txlens_backend.risk.record import BiopsyResult, Finding, PatientRecord
 from txlens_backend.risk.visits import scheduled_visits
 from txlens_backend.services.facts import FACTS_CTE, FACTS_PARAMS, descendant_ids
@@ -40,8 +40,9 @@ FEATURE_MARKERS = {
     "dsa_mfi": Marker(label="DSA (max MFI)", vocabulary=DSA_LOCAL[0], code=DSA_LOCAL[1],
                       unit="MFI", source_concept=True),
 }  # fmt: skip
+# pre_biopsy and next_rejection look into the future: evaluation only, never model inputs.
 META = ["key", "person_id", "tenant", "organ", "sex", "age", "transplant_year", "visit",
-        "label", "label_borderline", "rule_alert", "pre_biopsy"]  # fmt: skip
+        "label", "label_borderline", "rule_alert", "pre_biopsy", "next_rejection"]  # fmt: skip
 COLUMNS = META + list(FEATURE_NAMES)
 
 FACTS_SQL = f"""
@@ -153,14 +154,19 @@ def series_of(record: PatientRecord, config: SurveillanceConfig) -> PatientSerie
 
 
 def visit_rows(
-    record: PatientRecord, config: SurveillanceConfig, as_of: date
+    record: PatientRecord,
+    config: SurveillanceConfig,
+    as_of: date,
+    visit_days: Iterable[date] | None = None,
 ) -> list[dict[str, Any]]:
-    """One row per surveillance visit up to `as_of` (labelled or not)."""
+    """One row per surveillance visit up to `as_of` (labelled or not). `visit_days` replaces
+    the schedule rule (a sensitivity analysis picks visits by the true draw reason)."""
     if config.schedule is None:
         return []
     series = series_of(record, config)
+    days = scheduled_visits(record, config.schedule, as_of) if visit_days is None else visit_days
     rows = []
-    for visit in scheduled_visits(record, config.schedule, as_of):
+    for visit in days:
         flags = evaluate(config, series, visit)
         rows.append({
             "key": record.key, "person_id": int(record.key.split(":")[1]),
@@ -171,6 +177,7 @@ def visit_rows(
             "label_borderline": label(record, visit, borderline=True),
             "rule_alert": any(f.severity in ALERT for f in flags),
             "pre_biopsy": shortly_before_biopsy(record, visit),
+            "next_rejection": next_rejection(record, visit),
             **features_at(record, config.schedule, visit),
         })  # fmt: skip
     return rows

@@ -126,7 +126,11 @@ def reference_bins(expected: Array, bins: int = 10) -> Bins:
     ok = expected[~np.isnan(expected)]
     if len(ok) == 0:
         return Bins((), (0.0, 1.0))
-    edges = np.unique(np.quantile(ok, np.linspace(0, 1, bins + 1)))[1:-1]
+    distinct = np.unique(ok)
+    if len(distinct) <= bins:  # yes/no and other few-valued features: one bin per value
+        edges = (distinct[:-1] + distinct[1:]) / 2
+    else:
+        edges = np.unique(np.quantile(ok, np.linspace(0, 1, bins + 1)))[1:-1]
     return Bins(
         tuple(float(e) for e in edges), tuple(float(s) for s in bin_shares(edges, expected))
     )

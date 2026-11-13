@@ -29,6 +29,14 @@ def label(record: PatientRecord, visit: date, *, borderline: bool = False) -> in
     return 0
 
 
+def next_rejection(record: PatientRecord, visit: date) -> date | None:
+    """The first rejection biopsy in the window (evaluation only: groups visits by episode)."""
+    end = visit + HORIZON
+    days = [r.biopsy_day for r in record.results
+            if r.finding is Finding.REJECTION and visit < r.biopsy_day <= end]  # fmt: skip
+    return min(days, default=None)
+
+
 def shortly_before_biopsy(record: PatientRecord, visit: date) -> bool:
     """A biopsy follows within 14 days (for sensitivity analysis (a); uses the future)."""
     return any(visit <= b <= visit + PRE_BIOPSY for b in record.biopsy_days)

@@ -35,6 +35,13 @@ Details: [extraction_systems.md](extraction_systems.md), [notes_nlp.md](notes_nl
 - ABMR in year 1 vs no rejection, from a 1-year landmark: HR 17.7 (9.3-33.4).
 - 1 - KM overstates 3-year graft loss by 0.10 percentage points (main data).
 
+## Rejection-risk model ([risk_model.md](risk_model.md))
+
+- Trained on synthetic data, not clinically validated, decision support only.
+- Champion `logistic_regression`, external test (center C, 4943 visits, 78 with rejection in 90 days): AUROC 0.804 (0.756 to 0.854), AUPRC 0.235 (0.154 to 0.361) against a prevalence of 0.016.
+- At the rule engine's alert rate (7.7% of visits): model catches 0.436 (0.351 to 0.529) of rejection visits, rules 0.449 (0.371 to 0.539); difference -0.013 (-0.078 to 0.055).
+- 1.4% of kept visits were really for-cause draws; without draws shortly before a biopsy the external AUROC is 0.744.
+
 ## Research copilot ([copilot.md](copilot.md))
 
 From `make copilot-report`, which is not part of `make evals`: it asks the literature questions 3 times without the answer cache to measure run-to-run variance, so each run costs about $0.30.

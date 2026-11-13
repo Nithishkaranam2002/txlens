@@ -102,6 +102,30 @@ def survival_lines(data: dict[str, Any] | None) -> list[str]:
     ]  # fmt: skip
 
 
+def risk_model_lines(data: dict[str, Any] | None) -> list[str]:
+    """Rejection-risk model headline (risk_model.json), or a note that it has not run."""
+    if data is None:
+        return ["Not run yet (`make risk-report`)."]
+
+    def est(e: dict[str, float], digits: int = 3) -> str:
+        return f"{e['value']:.{digits}f} ({e['low']:.{digits}f} to {e['high']:.{digits}f})"
+
+    ext, burden = data["external"], data["burden"]
+    return [
+        "- Trained on synthetic data, not clinically validated, decision support only.",
+        f"- Champion `{data['champion']}`, external test (center C, {ext['n_visits']} visits, "
+        f"{ext['n_events']} with rejection in 90 days): AUROC {est(ext['auroc'])}, AUPRC "
+        f"{est(ext['auprc'])} against a prevalence of {ext['prevalence']:.3f}.",
+        f"- At the rule engine's alert rate ({burden['external_alert_rate']:.1%} of visits): "
+        f"model catches {est(burden['external_model_sensitivity'])} of rejection visits, rules "
+        f"{est(burden['external_rule_sensitivity'])}; difference "
+        f"{est(burden['external_difference'])}.",
+        f"- {data['visits']['for_cause_share']:.1%} of kept visits were really for-cause draws; "
+        "without draws shortly before a biopsy the external AUROC is "
+        f"{data['sensitivity']['no_pre_biopsy_external_auroc']:.3f}.",
+    ]  # fmt: skip
+
+
 def copilot_lines(data: dict[str, Any] | None) -> list[str]:
     """Research copilot headline (copilot.json, the full run), or a note that it has not run."""
     if data is None:
@@ -134,6 +158,7 @@ def render(folder: Path) -> str:
     mapping = load("mapping_accuracy.json", folder)
     survival = load("survival.json", folder)
     copilot = load("copilot.json", folder)
+    risk = load("risk_model.json", folder)
     rows = [
         *(biopsy_rows(biopsy) if biopsy else []),
         *(note_rows(notes, NOTES_SAMPLE, "Notes, held-out sample") if notes else []),
@@ -176,6 +201,10 @@ def render(folder: Path) -> str:
         "## Survival analysis ([survival.md](survival.md))",
         "",
         *survival_lines(survival),
+        "",
+        "## Rejection-risk model ([risk_model.md](risk_model.md))",
+        "",
+        *risk_model_lines(risk),
         "",
         "## Research copilot ([copilot.md](copilot.md))",
         "",

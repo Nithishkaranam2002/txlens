@@ -110,6 +110,8 @@ def test_psi() -> None:
     assert psi(base, rng.normal(1, 1, 20_000)) > 0.25
     with_missing = np.where(rng.random(20_000) < 0.5, np.nan, base)
     assert psi(base, with_missing) > 0.25  # missingness itself is a shift
+    flags = (rng.random(20_000) < 0.05).astype(float)
+    assert psi(flags, (rng.random(20_000) < 0.30).astype(float)) > 0.25  # yes/no feature
     stored = reference_bins(base)
     assert psi_against(Bins(stored.edges, stored.shares), base) == pytest.approx(0, abs=1e-9)
 

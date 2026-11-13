@@ -62,3 +62,19 @@ def test_copilot_headline_comes_from_copilot_json(tmp_path: Path) -> None:
     report = render(tmp_path)
     assert "- Red team: 25 of 25 attacks refused or neutralized." in report
     assert "judge `openai/judge`" in report and "execution accuracy 90.0% (85.0%-95.0%)" in report
+
+
+def test_risk_model_headline_comes_from_risk_model_json(tmp_path: Path) -> None:
+    assert "Not run yet (`make risk-report`)." in render(tmp_path)
+    (tmp_path / "risk_model.json").write_text(json.dumps({
+        "champion": "logistic_regression",
+        "external": {"n_visits": 4943, "n_events": 78, "prevalence": 0.016,
+                     "auroc": EST, "auprc": EST},
+        "burden": {"external_alert_rate": 0.077, "external_model_sensitivity": EST,
+                   "external_rule_sensitivity": EST, "external_difference": EST},
+        "visits": {"for_cause_share": 0.014},
+        "sensitivity": {"no_pre_biopsy_external_auroc": 0.744},
+    }))  # fmt: skip
+    report = render(tmp_path)
+    assert "not clinically validated" in report
+    assert "AUROC 0.900 (0.850 to 0.950)" in report and "external AUROC is 0.744" in report
