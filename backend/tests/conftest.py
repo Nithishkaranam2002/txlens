@@ -208,17 +208,24 @@ class NoWorkflowSender:
         return False
 
 
-@pytest.fixture
-def client(api_app: FastAPI, api_owner: Engine) -> Iterator[TestClient]:
-    """A fresh client (no cookies) with the CSRF header. Login attempts, rate-limit counts and
-    released counts (the differencing guard's memory) are cleared first, so tests do not
-    affect each other."""
-    with api_owner.begin() as conn:
+def clear_limits(owner: Engine) -> None:
+    """Forget login attempts, rate-limit counts and released counts (the differencing guard's
+    memory)."""
+    with owner.begin() as conn:
         conn.execute(text("DELETE FROM app.login_attempt"))
         conn.execute(text("DELETE FROM app.rate_limit"))
         conn.execute(text("DELETE FROM app.released_count"))
+
+
+@pytest.fixture
+def client(api_app: FastAPI, api_owner: Engine) -> Iterator[TestClient]:
+    """A fresh client (no cookies) with the CSRF header. Login attempts, rate-limit counts and
+    released counts are cleared before and after the test: a test that piles up failed logins
+    must not lock out a later test that logs in with its own client."""
+    clear_limits(api_owner)
     with TestClient(api_app, base_url=BASE_URL, headers={CSRF_HEADER: "test"}) as test_client:
         yield test_client
+    clear_limits(api_owner)
 
 
 @pytest.fixture(scope="session")
