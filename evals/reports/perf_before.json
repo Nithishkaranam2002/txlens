@@ -1,0 +1,122 @@
+[
+  {
+    "name": "worklist (default: high + medium)",
+    "role": "clinician",
+    "p50": 28.6,
+    "p95": 48.7,
+    "max": 302.1,
+    "status": 200
+  },
+  {
+    "name": "worklist, all severities, page 2",
+    "role": "clinician",
+    "p50": 25.7,
+    "p95": 26.8,
+    "max": 158.5,
+    "status": 200
+  },
+  {
+    "name": "worklist, low only",
+    "role": "clinician",
+    "p50": 25.6,
+    "p95": 34.0,
+    "max": 155.0,
+    "status": 200
+  },
+  {
+    "name": "worklist, de-identified",
+    "role": "data_steward",
+    "p50": 29.5,
+    "p95": 33.0,
+    "max": 160.5,
+    "status": 200
+  },
+  {
+    "name": "patient list",
+    "role": "clinician",
+    "p50": 6.0,
+    "p95": 6.3,
+    "max": 6.3,
+    "status": 200
+  },
+  {
+    "name": "patient timeline",
+    "role": "clinician",
+    "p50": 7.5,
+    "p95": 8.3,
+    "max": 8.3,
+    "status": 200
+  },
+  {
+    "name": "patient flags",
+    "role": "clinician",
+    "p50": 8.8,
+    "p95": 9.1,
+    "max": 9.2,
+    "status": 200
+  },
+  {
+    "name": "patient risk",
+    "role": "clinician",
+    "p50": 2.3,
+    "p95": 2.6,
+    "max": 3.3,
+    "status": 200
+  },
+  {
+    "name": "patient timeline, de-identified",
+    "role": "data_steward",
+    "p50": 8.1,
+    "p95": 8.6,
+    "max": 9.9,
+    "status": 200
+  },
+  {
+    "name": "patient flags, de-identified",
+    "role": "data_steward",
+    "p50": 9.9,
+    "p95": 10.4,
+    "max": 11.3,
+    "status": 200
+  },
+  {
+    "name": "review queue",
+    "role": "clinician",
+    "p50": 19.1,
+    "p95": 21.6,
+    "max": 21.9,
+    "status": 200
+  },
+  {
+    "name": "cohort preview",
+    "role": "researcher",
+    "p50": 6.7,
+    "p95": 8.0,
+    "max": 8.0,
+    "status": 200
+  },
+  {
+    "name": "survival analysis",
+    "role": "researcher",
+    "p50": 81.2,
+    "p95": 82.0,
+    "max": 82.0,
+    "status": 200
+  },
+  {
+    "name": "copilot conversations",
+    "role": "researcher",
+    "p50": 2.3,
+    "p95": 2.4,
+    "max": 2.6,
+    "status": 200
+  },
+  {
+    "name": "cohort members",
+    "role": "clinician",
+    "p50": 6.3,
+    "p95": 7.5,
+    "max": 7.7,
+    "status": 200
+  }
+]

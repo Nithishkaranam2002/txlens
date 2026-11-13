@@ -11,7 +11,7 @@ ifeq ($(shell uname -s),Darwin)
 export DYLD_FALLBACK_LIBRARY_PATH := $(CURDIR)/.venv/lib/python3.12/site-packages/sklearn/.dylibs
 endif
 
-.PHONY: help setup up up-full down demo demo-down demo-snapshot demo-restore lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run risk-train mlflow-ui prune-login-attempts notes-report evals extraction-systems mapping-report review-report rejection-report cohort-report survival-report risk-report copilot-sample copilot-report surveillance-report biopsy-report ocr-report vocab-load vocab-export-curation vocab-load-local vocab-subset vocab-check literature-download literature-index r-build r-parity generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
+.PHONY: help setup up up-full down demo demo-down demo-snapshot demo-restore perf lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run risk-train mlflow-ui prune-login-attempts notes-report evals extraction-systems mapping-report review-report rejection-report cohort-report survival-report risk-report copilot-sample copilot-report surveillance-report biopsy-report ocr-report vocab-load vocab-export-curation vocab-load-local vocab-subset vocab-check literature-download literature-index r-build r-parity generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -41,6 +41,12 @@ demo-snapshot: ## Save the loaded demo (database, MLflow, source files) to demo_
 
 demo-restore: ## Bring back demo_snapshot/ offline in minutes, then start the stack
 	infra/demo/restore.sh
+
+perf: ## API and page latency on the demo data -> evals/reports/perf.md (BASELINE=...json to compare)
+	BASE_URL=$(or $(WEB_URL),http://localhost:3000) pnpm --dir frontend perf-pages
+	uv run python -m txlens_evals.perf --api $(or $(API_URL),http://localhost:8000) \
+		--runs $(or $(RUNS),20) --label "$(or $(LABEL),current code)" \
+		$(if $(BASELINE),--baseline $(BASELINE))
 
 lint: ## Ruff, mypy, ESLint and TypeScript checks
 	uv run ruff check .

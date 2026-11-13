@@ -156,6 +156,11 @@ with 100% temporality. ² Code hidden, text mapped, compared with the code; only
 texts, so the vocabulary-only interval is wide (0–98%); none mapped wrongly, the rest go to
 review. No LLM maps conditions in TxLens.
 
+**Speed** ([evals/reports/perf.md](evals/reports/perf.md), `make perf`, full data, production
+builds on one laptop): every API endpoint answers in under 100 ms at p50. The heaviest is
+survival analysis at 83 ms; the worklist takes 20 ms (p95 22 ms, down from 49 ms after Step
+4.1). Pages show their data in 40–140 ms.
+
 What this says: on templated text, rules are as accurate as the LLM and far cheaper; the
 hybrid earns its cost by routing doubtful biopsy reports to a person (none wrong reached OMOP
 unchecked). Reading every note sentence with the LLM was worse and would cost about $20 for

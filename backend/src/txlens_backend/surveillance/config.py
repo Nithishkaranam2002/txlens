@@ -7,6 +7,7 @@ version that produced it, so a flag can always be traced back to the exact rule 
 
 from datetime import date, timedelta
 from enum import StrEnum
+from functools import cache
 from importlib import resources
 from pathlib import Path
 from typing import Annotated, Literal
@@ -230,10 +231,17 @@ def load_file(path: Path) -> SurveillanceConfig:
     return parse(path.read_text())
 
 
+@cache
+def built_in_configs() -> tuple[SurveillanceConfig, ...]:
+    """The configs shipped with the package, parsed once per process (they are package files
+    and frozen models; parsing them on every worklist request took 40% of its time)."""
+    folder = resources.files("txlens_backend.surveillance") / "configs"
+    return tuple(parse(f.read_text()) for f in folder.iterdir() if f.name.endswith(".yaml"))
+
+
 def load_configs() -> dict[str, SurveillanceConfig]:
     """Every built-in config, keyed by id. Fails at startup if any config is invalid."""
-    folder = resources.files("txlens_backend.surveillance") / "configs"
-    configs = [parse(f.read_text()) for f in folder.iterdir() if f.name.endswith(".yaml")]
+    configs = built_in_configs()
     by_id = {c.id: c for c in configs}
     if len(by_id) != len(configs):
         raise ValueError("config ids must be unique")

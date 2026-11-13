@@ -1,5 +1,6 @@
 """The FastAPI application factory (`uvicorn txlens_backend.api.app:create_app --factory`)."""
 
+import gc
 import json
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -92,6 +93,11 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None) -
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        # Startup loads ~0.5-1M long-lived objects (LiteLLM, spaCy, MLflow...). Every full
+        # garbage collection rescanned them all, a 60-150 ms pause on a request now and then
+        # (evals/reports/perf.md). Frozen objects are skipped by the collector.
+        gc.collect()
+        gc.freeze()
         yield
         engine.dispose()
 

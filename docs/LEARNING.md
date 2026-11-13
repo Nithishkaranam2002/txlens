@@ -1798,3 +1798,134 @@ experiencer flags).
 5. **Why hybrid retrieval with RRF?** Embeddings capture meaning but blur exact terms like
    "C4d" or "Banff". Full-text catches those but misses paraphrases. RRF merges the two
    rankings by rank, not by incomparable scores, so a document both rank highly wins.
+
+## Phase 4, Step 4.1 — Hardening and polish before showing the project
+
+### What was built
+- **Test isolation.** Tests now run in random order on every CI run (pytest-randomly), and a
+  hanging test fails after 300 seconds (pytest-timeout) instead of blocking the run. Random
+  order found six hidden order bugs; all are fixed.
+- **Security review** with fixes and a findings table in [SECURITY.md](SECURITY.md):
+  - security headers on every page and API response;
+  - per-user rate limits on the expensive endpoints;
+  - one missing audit row, now written, plus a test that every patient-level read and
+    every write is audited;
+  - tighter input bounds;
+  - non-root containers, and every port on 127.0.0.1;
+  - a dependency audit in CI.
+- **Worklist polish:**
+  - "Data as of <date>" shown once;
+  - "Acknowledge all (n)" per patient;
+  - High + Medium by default, with low-only patients in a collapsed section.
+- **One-command demo.** `make demo` builds the containers, loads the data, starts everything
+  and prints the URLs and users. `make demo-snapshot` / `make demo-restore` save and bring
+  back the full demo offline. LLM steps use the answer cache first and need a key only for
+  new work.
+- **Performance check** on the full data (`make perf`), with the fixes it pointed to.
+
+### The ideas in plain English
+- **Test-order bugs.** Many API tests share one database to stay fast. If one test leaves
+  something behind (a document, a changed setting, an open transaction), a later test can
+  fail, but only when it happens to run later. Random order makes these bugs show up. The
+  fix is always the same: each test cleans up what it created, the way `fresh_flag` already
+  did.
+- **The hang.** One test kept a database connection with an open read transaction. A later
+  test, on another connection, tried to empty the same tables. Postgres made it wait for the
+  first transaction to finish, which never happened. Turning on autocommit for the shared
+  connection removed the open transaction.
+- **Content-Security-Policy (CSP).** A header that tells the browser which scripts, styles
+  and frames a page may use, so injected code cannot run or the page cannot be framed.
+- **Rate limit.** Count each user's requests per time window and refuse (HTTP 429) past a
+  limit, so a stolen session or a script cannot run up the LLM bill or the CPU.
+- **Snapshot / restore.** Save the whole loaded database (and the model store and files)
+  once, then bring it back in minutes on any run of the demo, with no new LLM calls.
+
+### How the tricky parts work
+- **CSP with Partial Prerendering.** The strongest CSP uses a fresh random "nonce" per
+  request on every script tag. Next.js cannot add nonces to pages it prerendered, and the app
+  uses Partial Prerendering. So the policy allows inline scripts (`'unsafe-inline'`) but
+  blocks everything else: other origins, plugins, framing, form posts elsewhere.
+  - I tested the stricter policy: every page broke.
+  - The trade-off is written down in SECURITY.md.
+- **Next.js 16 renamed middleware to `proxy.ts`.** The headers are set there.
+- **Rate limits without Redis.** One `INSERT ... ON CONFLICT DO UPDATE SET hits = hits + 1`
+  per request on `(user, bucket, window start)` is atomic. So every API process shares the
+  same count, and the stack keeps the single database the project rules ask for.
+- **"Data as of" only for clinicians.** De-identified users see each patient's dates moved
+  by a secret shift. Showing them the real data date next to a moved one would reveal the
+  shift, so for them the date stays on each flag.
+- **Pending LLM work.** Without an API key the extractor becomes "offline": the cache is
+  still checked first, and only a cache miss raises an error.
+  - A note with an unanswered sentence is saved as rules-only, so a later run with a key
+    redoes it.
+  - A biopsy report's workflow ends "failed on purpose", so a later batch may start it again.
+- **Restore keeps owners.** `pg_restore --no-owner` would make the superuser own the
+  copilot views. Row-level security does not apply to a superuser owner, so the views would
+  show every center's data. Restoring the roles first and keeping owners avoids that.
+
+### Why these tools
+- **pytest-randomly**: shuffles test order and prints the seed, so a failure can be replayed.
+- **pytest-timeout**: turns a hang into a failure with a stack trace.
+- **pip-audit and pnpm audit**: free vulnerability checks against public advisories.
+- **Docker multi-stage builds**: the compiler stays in the build stage; the image that runs
+  has no compiler and no package manager.
+
+### Trade-offs
+- `'unsafe-inline'` scripts in the CSP (kept for Partial Prerendering) instead of nonces.
+- Some vulnerable dependencies stay:
+  - filelock 3.x is pinned by litellm;
+  - ragas and diskcache have no fix and are used only in the offline evaluations.
+  Each is explained in SECURITY.md and allow-listed by ID in CI, so any new advisory fails.
+- The demo snapshot holds the licensed vocabulary, so it is local only, and it restores
+  into the same checkout path (MLflow stores absolute paths).
+- The demo trusts `X-Forwarded-For` from the frontend container's network. That is fine on
+  127.0.0.1; a real deployment needs an ingress that appends the client address (ADR 0011).
+
+### Results
+- **Tests:** about 1,550 Python tests pass in five random orders and in file order.
+  - Order bugs found and fixed: 6, one of them a hang.
+  - Playwright: 50 browser tests pass, including the header, a11y and keyboard checks.
+- **Security:** 16 findings, listed in SECURITY.md.
+  - 8 fixed, including the one High: there were no security headers at all.
+  - 6 accepted, with a reason each.
+  - 2 left for later, before any real use: MFA, and TLS at the platform.
+- **Demo:**
+  - `make demo-snapshot`: 2 min 48 s for 0.74 GB.
+  - `make demo-restore` into a fresh stack: 2 min 47 s. Every row count matched; login, the
+    worklist and a patient worked; no secret appeared in any log.
+- **Performance** (`make perf`, full data, production builds; `evals/reports/perf.md`):
+  - Nothing was slow: every endpoint stayed under 100 ms (p50). Survival analysis is the
+    heaviest at 83 ms.
+  - **Config re-parsing.** The worklist re-parsed its YAML configs on every request. Caching
+    them took p50 from 29 to 20 ms.
+  - **Spikes.** About one request in 18 took 150–300 ms. I traced it to Python's full garbage
+    collection rescanning the roughly 1 million objects loaded at startup. `gc.freeze()` after
+    startup cut the worklist's p95 from 49 to 22 ms and its max from 302 to 22 ms.
+  - **Indexes and pagination.** No new index or pagination was needed: the slow paths were
+    already indexed, and every list endpoint already pages.
+  - **A guess that was wrong.** I expected de-identified patient lookups to be slow, because
+    they compute a pseudonym for every patient. They take 8–10 ms.
+
+### Likely interview questions
+1. **How did you find bugs that only show up in some test orders?** I ran the suite in random
+   order with several seeds (pytest-randomly prints the seed, so a failure can be replayed).
+   Then for each failure I found the state one test left for another: a document row, a
+   changed setting, an open transaction. The fix is the same each time: the test that creates
+   something cleans it up in its fixture. CI now runs in random order on every push.
+2. **Why does your CSP still allow inline scripts?** Next.js puts the page data in inline
+   scripts. The usual fix is a nonce per request, but nonces do not work with Partial
+   Prerendering, which the app uses. I tested the strict policy and every page broke. The
+   policy still blocks other origins, plugins, framing and outside form posts. Session
+   cookies are httpOnly, so even injected script could not read them.
+3. **How do you rate-limit without Redis?** One atomic upsert in Postgres per request, keyed on
+   user, bucket and time window, returning the new count. It is shared by every API process,
+   adds about a millisecond, and the user's old windows are deleted in the same transaction.
+4. **What made the worklist slow now and then, and how did you prove it?** The spikes came on
+   a fixed request count and only on the endpoint that creates many objects. A garbage
+   collector callback showed a 60 ms full collection exactly on the slow requests.
+   `gc.freeze()` after startup tells Python to skip the long-lived startup objects. Full
+   collections went to about 1 ms and the spikes disappeared.
+5. **How do you demo an AI system without paying for the AI again?** Every LLM answer is cached
+   in Postgres by a hash of what the model saw. The demo checks the cache first and needs a
+   key only for new work; without one, new items are marked pending. A snapshot keeps the
+   cache, so a restored demo shows every paid result offline.

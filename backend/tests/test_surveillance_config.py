@@ -15,6 +15,12 @@ def test_built_in_configs_validate() -> None:
     assert {c.program for c in configs.values()} == {"kidney", "heart", "oncology"}
 
 
+def test_configs_are_parsed_once_and_callers_get_their_own_dict() -> None:
+    first, second = load_configs(), load_configs()
+    assert first is not second  # a caller changing its dict changes no one else's
+    assert first["kidney_transplant"] is second["kidney_transplant"]  # frozen, parsed once
+
+
 def test_organ_thresholds_come_from_config() -> None:
     configs = load_configs()
     kidney = configs["kidney_transplant"].rule("dd_cfdna_threshold")
