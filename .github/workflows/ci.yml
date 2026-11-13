@@ -1,10 +1,30 @@
 name: CI
 
+# Docs- and image-only changes start no run (the same list for pushes and pull requests).
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "**/*.png"
+      - "**/*.gif"
+      - "**/*.jpg"
+      - "LICENSE"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "**/*.png"
+      - "**/*.gif"
+      - "**/*.jpg"
+      - "LICENSE"
   workflow_dispatch:
+
+# A newer push to the same branch or pull request cancels the run still in progress.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -66,7 +86,9 @@ jobs:
           git diff --exit-code frontend/openapi.json
 
   # The Python survival port against the R reference (r_parity/), R run in its Docker image.
+  # Slow jobs (R image build, browsers): only on main and by hand, not on pull requests.
   r-parity:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -195,6 +217,7 @@ jobs:
 
   # Browser tests against the real API on a seeded throwaway database (no Spark needed).
   frontend-e2e:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
