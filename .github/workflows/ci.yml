@@ -125,6 +125,16 @@ jobs:
       - name: Slow Spark tests
         run: uv run pytest -m slow
 
+  # The cloud demo's Azure templates and deploy scripts (no Azure login: build and lint only).
+  # The runner image ships the Azure CLI and shellcheck; the Bicep CLI downloads on first use.
+  deploy-scripts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Bicep build + lint, shellcheck
+        run: make cloud-lint
+
   # Known vulnerabilities in locked dependencies. Accepted findings (no fix released, or the
   # fix is blocked upstream) are listed with their reason in docs/SECURITY.md; anything new
   # fails the job.

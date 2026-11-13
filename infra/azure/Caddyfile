@@ -1,0 +1,34 @@
+# The only public entry of the cloud demo: HTTPS for {$TXLENS_DOMAIN} (certificate from
+# Let's Encrypt, ZeroSSL as Caddy's automatic fallback), http:// redirects to https://, and
+# everything goes to the Next.js server, which proxies /api to FastAPI.
+{
+	# No admin API: the config only changes by restarting the container.
+	admin off
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$TXLENS_DOMAIN} {
+	encode zstd gzip
+
+	# Applied after the proxy, so these replace any upstream values (no duplicates).
+	header {
+		defer
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Robots-Tag "noindex, nofollow, noarchive"
+		-Server
+		-X-Powered-By
+	}
+
+	# A demo on synthetic data: keep it out of search engines.
+	handle /robots.txt {
+		respond "User-agent: *
+Disallow: /
+" 200
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

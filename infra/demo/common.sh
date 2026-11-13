@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared helpers of the demo scripts (sourced, not run). Values from .env are only ever passed
 # to containers through `env_file`; these scripts never read or print a secret.
 
@@ -11,7 +12,11 @@ step() { printf '\n==> %s\n' "$*"; }
 warn() { printf '    warning: %s\n' "$*" >&2; }
 fail() { printf '\nmake demo: %s\n' "$*" >&2; exit 1; }
 
-compose() { docker compose -p "$PROJECT" -f infra/docker-compose.yml --env-file .env "$@"; }
+# TXLENS_COMPOSE_OVERRIDE adds a second compose file (the cloud VM uses infra/azure/compose.cloud.yml).
+compose() {
+  docker compose -p "$PROJECT" -f infra/docker-compose.yml \
+    ${TXLENS_COMPOSE_OVERRIDE:+-f "$TXLENS_COMPOSE_OVERRIDE"} --env-file .env "$@"
+}
 
 # A one-off command in the backend image (data, vocabulary subset and MLflow store mounted).
 tools() { compose --profile tools run --rm -T tools container-env "$@"; }
@@ -28,8 +33,9 @@ sql() {
 # the folder already holds what a snapshot would put there.
 fingerprint() {
   [[ -d "$1" ]] || { echo none; return; }
-  (cd "$1" && find . -type f -exec stat -f '%N %z' {} + 2>/dev/null \
-    || find . -type f -printf '%p %s\n') | LC_ALL=C sort | shasum -a 256 | cut -d' ' -f1
+  # GNU find first: on Linux, BSD-style `stat -f` means "file system" and would not fail.
+  (cd "$1" && { find . -type f -printf '%p %s\n' 2>/dev/null \
+    || find . -type f -exec stat -f '%N %z' {} +; }) | LC_ALL=C sort | shasum -a 256 | cut -d' ' -f1
 }
 
 port_free() { ! lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }

@@ -11,7 +11,7 @@ ifeq ($(shell uname -s),Darwin)
 export DYLD_FALLBACK_LIBRARY_PATH := $(CURDIR)/.venv/lib/python3.12/site-packages/sklearn/.dylibs
 endif
 
-.PHONY: help setup up up-full down demo demo-down demo-snapshot demo-restore perf lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run risk-train mlflow-ui prune-login-attempts notes-report evals extraction-systems mapping-report review-report rejection-report cohort-report survival-report risk-report copilot-sample copilot-report surveillance-report biopsy-report ocr-report vocab-load vocab-export-curation vocab-load-local vocab-subset vocab-check literature-download literature-index r-build r-parity generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
+.PHONY: help setup up up-full down demo demo-down demo-snapshot demo-restore cloud-deploy cloud-start cloud-stop cloud-status cloud-ssh cloud-tunnel cloud-passwords cloud-update cloud-smoke cloud-budget cloud-destroy cloud-lint perf lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run risk-train mlflow-ui prune-login-attempts notes-report evals extraction-systems mapping-report review-report rejection-report cohort-report survival-report risk-report copilot-sample copilot-report surveillance-report biopsy-report ocr-report vocab-load vocab-export-curation vocab-load-local vocab-subset vocab-check literature-download literature-index r-build r-parity generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -41,6 +41,47 @@ demo-snapshot: ## Save the loaded demo (database, MLflow, source files) to demo_
 
 demo-restore: ## Bring back demo_snapshot/ offline in minutes, then start the stack
 	infra/demo/restore.sh
+
+# --- Cloud demo on one Azure VM (docs/DEPLOY.md). Needs `az login` first. ---
+cloud-deploy: ## Azure: create/update the VM (Bicep), upload code + snapshot, restore, smoke test
+	infra/azure/cloud.sh deploy
+
+cloud-start: ## Azure: start the VM, open SSH to this Mac's current IP, wait for HTTPS
+	infra/azure/cloud.sh start
+
+cloud-stop: ## Azure: deallocate the VM (only the disk and IP keep costing, ~$9/month)
+	infra/azure/cloud.sh stop
+
+cloud-status: ## Azure: power state, URL, memory/disk, pending reboot
+	infra/azure/cloud.sh status
+
+cloud-ssh: ## Azure: a shell on the VM
+	infra/azure/cloud.sh ssh
+
+cloud-tunnel: ## Azure: the VM's Temporal UI on http://localhost:18233 over SSH
+	infra/azure/cloud.sh tunnel
+
+cloud-passwords: ## Azure: copy the demo passwords from the VM into the macOS Keychain
+	infra/azure/cloud.sh passwords
+
+cloud-update: ## Azure: upload the current commit, rebuild and restart (data untouched)
+	infra/azure/cloud.sh update
+
+cloud-smoke: ## Azure: HTTPS, headers, closed ports, login, a patient page, no API key
+	infra/azure/cloud.sh smoke
+
+cloud-budget: ## Azure: $20/month budget with e-mail alerts (TXLENS_AZ_BUDGET=... to change)
+	infra/azure/cloud.sh budget
+
+cloud-destroy: ## Azure: delete the whole resource group (asks you to type its name)
+	infra/azure/cloud.sh destroy
+
+cloud-lint: ## Check the Azure templates and the deploy scripts (Bicep build/lint, shellcheck)
+	az bicep build --file infra/azure/main.bicep --stdout >/dev/null
+	az bicep build --file infra/azure/budget.bicep --stdout >/dev/null
+	az bicep lint --file infra/azure/main.bicep
+	az bicep lint --file infra/azure/budget.bicep
+	shellcheck -S warning -x infra/azure/*.sh infra/azure/remote/*.sh infra/demo/*.sh
 
 perf: ## API and page latency on the demo data -> evals/reports/perf.md (BASELINE=...json to compare)
 	BASE_URL=$(or $(WEB_URL),http://localhost:3000) pnpm --dir frontend perf-pages

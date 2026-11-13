@@ -4,7 +4,8 @@
 #
 # The database is replaced (pg_restore --clean); mlruns/ and data/raw/ come from the snapshot,
 # and existing folders are moved aside (never deleted). Checksums and the schema revision are
-# checked first; a snapshot from an older schema is migrated forward after the restore.
+# checked first; a snapshot from an older schema is migrated forward after the restore. A
+# snapshot from another folder or machine works too: MLflow's absolute paths are moved here.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 source infra/demo/common.sh
@@ -26,7 +27,7 @@ for name, meta in manifest["files"].items():
     if digest.hexdigest() != meta["sha256"]:
         sys.exit(f"{name} does not match the manifest (damaged or edited snapshot)")
 if manifest["checkout"] != checkout:
-    print(f"    note: taken in {manifest['checkout']}; MLflow paths point there")
+    print(f"    note: taken in {manifest['checkout']}; MLflow paths are moved here")
 print(f"    snapshot of {manifest['created']}, schema {manifest['alembic_revision']}: files OK")
 PY
 SNAP_REVISION=$(python3 -c "import json; print(json.load(open('$SNAP/manifest.json'))['alembic_revision'])")
@@ -63,6 +64,9 @@ for pair in "mlruns:mlruns.tgz" "data/raw:data_raw.tgz"; do
   fi
   mkdir -p "$(dirname "$dir")" && tar -xzf "$SNAP/$archive"
 done
+# MLflow stores absolute paths: a snapshot from another checkout must point here instead.
+SNAP_CHECKOUT=$(python3 -c "import json; print(json.load(open('$SNAP/manifest.json'))['checkout'])")
+python3 infra/demo/relocate_mlruns.py mlruns "$SNAP_CHECKOUT/mlruns" "$PWD/mlruns"
 
 step "Schema up to date, login role password from .env"
 tools alembic -c backend/alembic.ini upgrade head

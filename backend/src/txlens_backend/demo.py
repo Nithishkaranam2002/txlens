@@ -5,15 +5,19 @@
 - `counts`: row counts of the tables a demo needs, as JSON (snapshot manifest, round-trip test).
 - `status`: what is loaded and what is still pending (no API key, no cached answer), then the
   URLs and the demo user names. Passwords stay in `.env` and are never printed.
+- `reset-sessions`: forget every login attempt and refresh token, e.g. after restoring a
+  snapshot onto a server, so no session or IP address from the machine it came from carries over.
 
 Runs as the database owner (superuser), so counts cover every tenant.
 """
 
 import argparse
 import json
+from collections import Counter
 from collections.abc import Sequence
 
-from sqlalchemy import Connection, create_engine, text
+from sqlalchemy import Connection, bindparam, create_engine, text
+from sqlalchemy.dialects.postgresql import JSONB
 
 from txlens_backend.config import InsecureSettingError, Settings, get_settings, require_secret
 from txlens_backend.documents.llm import key_missing
@@ -35,6 +39,11 @@ TABLES = {
     "vocab.concept": "vocabulary concepts",
 }
 FINAL_DOCUMENT_STATUSES = ("extracted", "approved", "rejected", "in_review", "review_expired")
+# The owner bypasses RLS, so the audit row names its center explicitly.
+RESET_AUDIT = text(
+    "INSERT INTO app.audit_log (tenant_id, action, object_type, details) "
+    "VALUES (:tenant_id, 'sessions_reset', 'deployment', :details)"
+).bindparams(bindparam("details", type_=JSONB))
 
 
 def problems(settings: Settings) -> list[str]:
@@ -68,6 +77,22 @@ def pending(conn: Connection) -> dict[str, int]:
         "biopsy reports": conn.execute(documents, final).scalar_one(),
         "notes (rules only)": conn.execute(notes).scalar_one(),
     }
+
+
+def reset_sessions(conn: Connection) -> dict[str, int]:
+    """Delete all login attempts and refresh tokens, with one audit row per center. Returns the
+    deleted counts."""
+    tokens = conn.execute(text(
+        "DELETE FROM app.refresh_token RETURNING tenant_id"
+    )).scalars().all()  # fmt: skip
+    attempts = conn.execute(text("DELETE FROM app.login_attempt")).rowcount
+    per_tenant = Counter(tokens)
+    tenants = conn.execute(text("SELECT tenant_id FROM app.tenant ORDER BY tenant_id")).scalars()
+    for tenant_id in tenants.all():
+        details = {"refresh_tokens": per_tenant[tenant_id],
+                   "login_attempts_all_centers": attempts}  # fmt: skip
+        conn.execute(RESET_AUDIT, {"tenant_id": tenant_id, "details": details})
+    return {"refresh_tokens": len(tokens), "login_attempts": attempts}
 
 
 def users(conn: Connection) -> list[tuple[str, str]]:
@@ -105,6 +130,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub.add_parser("check", help="are the demo's secrets set? (names problems, never values)")
     sub.add_parser("has-model", help="exit 0 if a risk model is registered as champion")
     sub.add_parser("counts", help="row counts of the demo tables, as JSON")
+    sub.add_parser("reset-sessions", help="delete all login attempts and refresh tokens")
     status = sub.add_parser("status", help="what is loaded and pending; URLs and users")
     status.add_argument("--web", default="http://localhost:3000")
     status.add_argument("--api", default="http://localhost:8000")
@@ -119,6 +145,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "has-model":
         return 0 if champion_version(settings.mlflow_tracking_uri) else 1
     engine = create_engine(settings.database_url.get_secret_value())
+    if args.command == "reset-sessions":
+        with engine.begin() as conn:
+            deleted = reset_sessions(conn)
+        engine.dispose()
+        print(f"    deleted {deleted['refresh_tokens']} refresh tokens and "
+              f"{deleted['login_attempts']} login attempts")  # fmt: skip
+        return 0
     with engine.connect() as conn:
         if args.command == "counts":
             print(json.dumps(counts(conn), sort_keys=True))
