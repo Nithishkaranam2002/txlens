@@ -12,3 +12,7 @@ data_scale/
 omop/athena
 omop/vocab_subset
 lake
+mlruns
+demo_snapshot
+**/test-results
+**/playwright-report

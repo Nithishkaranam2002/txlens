@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import Engine
 
 from txlens_backend.documents.budget import Budget, BudgetExceededError
-from txlens_backend.documents.llm import Extractor, Prompt
+from txlens_backend.documents.llm import Extractor, LlmOfflineError, Prompt
 from txlens_backend.documents.passes import PassOutcome, guarded_pass
 from txlens_backend.documents.phi import LONG_NUMBER, mask_dates
 from txlens_backend.notes.nlp import Mention
@@ -98,6 +98,7 @@ class FallbackRun:
     dropped_quotes: int = 0
     reasons: dict[str, int] = field(default_factory=dict)
     budget_exhausted: bool = False  # the cap was reached; later sentences stay rules-only
+    offline: int = 0  # sentences left pending: no API key and no cached answer
     paid_latency_ms: list[int] = field(default_factory=list)  # latency of each paid call
 
     def add(self, outcome: PassOutcome) -> None:
@@ -258,4 +259,7 @@ class Fallback:
             )  # fmt: skip
         except BudgetExceededError:
             self.run.budget_exhausted = True
+            return None
+        except LlmOfflineError:
+            self.run.offline += 1
             return None

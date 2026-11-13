@@ -44,7 +44,30 @@ infra/           docker-compose, Dockerfiles
 docs/            architecture, ADRs, LEARNING.md
 ```
 
-## How to run
+## Quick demo (one command)
+
+You need Docker Desktop, a filled-in `.env` (`cp .env.example .env`, then set the secrets and
+the four `DEMO_*_PASSWORD` values) and the vocabulary subset in `omop/vocab_subset/` (built
+once from the licensed Athena download: see [omop/README.md](omop/README.md)).
+
+```bash
+make demo           # builds the images, loads the demo data, starts API + worker + frontend,
+                    # then prints the URLs and the demo users (passwords stay in .env)
+make demo-down      # stop it (data is kept)
+```
+
+- **Idempotent:** a second `make demo` only starts the containers.
+- **No API key needed to look around:** LLM steps use the answer cache first. Without
+  `OPENAI_API_KEY`, anything not cached is skipped and listed as pending.
+- **Snapshot:** `make demo-snapshot` saves the loaded demo (database, MLflow store, source
+  files) to `demo_snapshot/`.
+- **Restore:** `make demo-restore` brings it back offline in minutes. The snapshot holds the
+  licensed vocabulary, so keep it local.
+- **Non-root:** the containers run as non-root users, and every port is bound to 127.0.0.1.
+  See [docs/SECURITY.md](docs/SECURITY.md) and
+  [ADR 0020](docs/adr/0020-containerized-demo.md).
+
+## How to run (development)
 
 You need: [uv](https://docs.astral.sh/uv/), [pnpm](https://pnpm.io/), Node 22 and Docker Desktop.
 **No Java needed**: Spark runs inside a Docker container. LightGBM needs the OpenMP runtime:

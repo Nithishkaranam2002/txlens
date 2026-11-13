@@ -7,8 +7,10 @@ from typing import Any
 
 import pytest
 from document_testutils import FakeCompletion, finding
+from pydantic import SecretStr
 from sqlalchemy import Engine
 
+from txlens_backend.config import Settings
 from txlens_backend.db import tenant_transaction
 from txlens_backend.documents import cache, llm
 from txlens_backend.documents.budget import Budget, BudgetExceededError
@@ -107,6 +109,23 @@ def test_an_exhausted_budget_stops_before_the_model_is_called(documents_engine: 
     with pytest.raises(BudgetExceededError):
         run(documents_engine, budget, fake, uuid.uuid4().hex * 2)
     assert fake.calls == []
+
+
+def test_without_an_api_key_cached_answers_are_used_and_the_rest_stays_pending(
+    documents_engine: Engine,
+) -> None:
+    budget, file_sha = new_budget(documents_engine, 1.0), uuid.uuid4().hex * 2
+    paid = run(documents_engine, budget, FakeCompletion(ANSWER), file_sha)  # cached now
+    settings = Settings(openai_api_key=SecretStr(""), llm_model="openai/gpt-6-luna")
+    offline = llm.make_extractor(settings, "a")
+    assert isinstance(offline, llm.OfflineExtractor)
+    reused = run_pass(documents_engine, "center_a", offline, budget, "heart", SENT, "a", file_sha)
+    assert reused.cached and reused.output == paid.output
+    with pytest.raises(llm.LlmOfflineError):
+        run_pass(documents_engine, "center_a", offline, budget, "heart", SENT, "a",
+                 uuid.uuid4().hex * 2)  # fmt: skip
+    spent, _ = budget.totals()
+    assert spent == pytest.approx(Decimal(str(paid.cost_usd)))  # the refused call cost nothing
 
 
 def test_a_failed_pass_is_recorded_and_its_cost_counted(documents_engine: Engine) -> None:

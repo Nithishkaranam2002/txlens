@@ -46,6 +46,7 @@ txlens-notes = "txlens_backend.workflows.notes_cli:main"
 txlens-risk = "txlens_backend.risk.cli:main"
 txlens-export-openapi = "txlens_backend.api.app:export_openapi"
 txlens-literature = "txlens_backend.copilot.literature:main"
+txlens-demo = "txlens_backend.demo:main"
 
 [build-system]
 requires = ["hatchling"]

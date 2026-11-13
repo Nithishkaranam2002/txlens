@@ -19,7 +19,7 @@ import pytest
 from document_testutils import KIDNEY_ANSWER, KIDNEY_OCR_LINES, MODEL, FakeCompletion
 from sqlalchemy import Engine, text
 from temporalio import activity
-from temporalio.client import WorkflowHandle
+from temporalio.client import WorkflowFailureError, WorkflowHandle
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
@@ -43,6 +43,7 @@ from txlens_backend.workflows.biopsy import (
     RegisterInput,
     ReviewInput,
     StepInput,
+    document_workflow_id,
 )
 
 DAY = 24 * 3600
@@ -55,6 +56,7 @@ class Script:
     registered_status: str = "processing"
     assessed: str = "extracted"
     budget_exceeded: bool = False
+    offline: bool = False  # no API key and no cached answer
     unavailable_times: int = 0
 
 
@@ -93,6 +95,8 @@ def fake_extract(request: PassInput) -> PassCost:
     SEEN.extract_attempts += 1
     if script.budget_exceeded:
         raise ApplicationError("budget", type="BudgetExceededError", non_retryable=True)
+    if script.offline:
+        raise ApplicationError("no key", type="LlmOfflineError", non_retryable=True)
     if script.unavailable_times > 0:
         script.unavailable_times -= 1
         raise LlmUnavailableError("rate limited")
@@ -250,6 +254,29 @@ def test_a_batch_stops_starting_documents_when_the_budget_runs_out() -> None:
         assert result.not_started == 4
 
     asyncio.run(with_worker(FAKES, body))
+
+
+def test_without_an_api_key_uncached_documents_stay_pending_and_the_batch_goes_on() -> None:
+    documents = [request("o1.pdf", Script(offline=True)), request("ok2.pdf", Script()),
+                 request("o3.pdf", Script(offline=True))]  # fmt: skip
+
+    async def body(env: WorkflowEnvironment) -> None:
+        result = await env.client.execute_workflow(
+            BiopsyBatchWorkflow.run, BatchRequest("batch-3", documents, concurrency=1),
+            id=f"batch-{uuid.uuid4()}", task_queue=TASK_QUEUE,
+        )  # fmt: skip
+        assert result.statuses == {"pending_llm": 2, "extracted": 1}
+        assert result.not_started == 0
+        # A pending document's workflow failed on purpose, so a later batch may run it again.
+        child = env.client.get_workflow_handle(
+            document_workflow_id("center_a", documents[0].sha256)
+        )
+        with pytest.raises(WorkflowFailureError):
+            await child.result()
+
+    asyncio.run(with_worker(FAKES, body))
+    assert SEEN.extract_attempts == 6  # no retries: both passes once per document
+    assert not [c for c in SEEN.calls if c.startswith("fail:")]  # nothing marked failed
 
 
 def test_a_batch_does_not_wait_for_reviews_and_skips_duplicates() -> None:

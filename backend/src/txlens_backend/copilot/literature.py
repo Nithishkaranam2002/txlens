@@ -20,6 +20,7 @@ from txlens_backend.config import get_settings
 from txlens_backend.copilot.embeddings import BATCH, Embedder, make_embedder, max_cost
 from txlens_backend.copilot.retrieval import Document, PgVectorStore
 from txlens_backend.documents.budget import Budget
+from txlens_backend.documents.llm import key_missing
 
 
 @dataclass(frozen=True)
@@ -88,6 +89,11 @@ def main(argv: list[str] | None = None) -> None:
     settings = get_settings()
     engine = create_engine(settings.database_url.get_secret_value())
     embedder = make_embedder(settings)
+    if key_missing(settings, embedder.model):
+        pending = len(stale(engine, read(args.source), embedder.model))
+        print(f"No API key for {embedder.model}: {pending} abstracts left pending (already "
+              "embedded ones stay searchable)")  # fmt: skip
+        return
     cap = min(settings.llm_budget_usd, args.max_cost)
     budget = Budget(engine, f"literature-index:{embedder.model}", cap)
     budget.open()

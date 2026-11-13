@@ -28,6 +28,7 @@ class ChunkResult:
     conditions: int = 0
     llm_cost_usd: float = 0.0
     budget_exhausted: bool = False
+    llm_pending: int = 0  # notes saved rules-only: a sentence had no key and no cached answer
 
 
 def system_name(nlp: NoteNlp, hybrid: bool) -> str:
@@ -54,8 +55,9 @@ def process_notes(
 ) -> ChunkResult:
     """Extract, then save every changed note of the chunk in one transaction.
 
-    A note counts as hybrid only if the LLM budget lasted through it; otherwise it is saved
-    under the rules system name, so a later batch with budget processes it again.
+    A note counts as hybrid only if the LLM answered every sentence it was asked (the budget
+    lasted, and each answer was cached or an API key was set); otherwise it is saved under the
+    rules system name, so a later batch processes it again.
     """
     system = system_name(nlp, fallback is not None)
     with tenant_transaction(engine, tenant_id) as conn:
@@ -65,12 +67,15 @@ def process_notes(
     found = nlp.extract_many([(n.text, n.organ) for n in todo])
     systems = [system] * len(todo)
     cost_before = fallback.run.cost_usd if fallback else 0.0
+    pending = 0
     if fallback is not None:
         for i, note in enumerate(todo):
+            offline_before = fallback.run.offline
             if not fallback.run.budget_exhausted:
                 found[i] = fallback.resolve(note.text, note.organ, found[i])
-            if fallback.run.budget_exhausted:
+            if fallback.run.budget_exhausted or fallback.run.offline > offline_before:
                 systems[i] = nlp.system
+                pending += fallback.run.offline > offline_before
     mentions = review = conditions = 0
     with tenant_transaction(engine, tenant_id) as conn:
         for note, note_mentions, used in zip(todo, found, systems, strict=True):
@@ -87,5 +92,5 @@ def process_notes(
     return ChunkResult(
         len(todo), len(done), mentions, review, conditions,
         (fallback.run.cost_usd - cost_before) if fallback else 0.0,
-        fallback.run.budget_exhausted if fallback else False,
+        fallback.run.budget_exhausted if fallback else False, pending,
     )  # fmt: skip

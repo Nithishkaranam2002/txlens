@@ -1,4 +1,5 @@
-# Local stack. Start with `make up` (core) or `make up-full` (core + Langfuse).
+# Local stack. Start with `make up` (core), `make up-full` (core + Langfuse) or `make demo`
+# (core + API, worker and frontend containers, with demo data loaded).
 # Every port is published on 127.0.0.1 only: nothing here is meant to be reachable from the
 # network.
 name: txlens
@@ -31,8 +32,8 @@ services:
       - --ui-ip=0.0.0.0
       - --db-filename=/home/temporal/temporal.db
     ports:
-      - "127.0.0.1:7233:7233"
-      - "127.0.0.1:8233:8233"
+      - "127.0.0.1:${TEMPORAL_PORT:-7233}:7233"
+      - "127.0.0.1:${TEMPORAL_UI_PORT:-8233}:8233"
     volumes:
       # Mounted on the image's home dir so the volume is owned by the non-root `temporal` user.
       - temporal-data:/home/temporal
@@ -85,6 +86,92 @@ services:
     environment:
       TXLENS_DB_HOST: postgres
       TXLENS_DB_PORT: "5432"
+
+  # --- Demo profile (`make demo`): the app itself, as non-root containers. ---
+  # Data, documents and the MLflow store come from the repo checkout (read-only where the
+  # service only reads them). MLflow records absolute host paths, so mlruns/ keeps its path.
+  api:
+    build:
+      context: ..
+      dockerfile: infra/backend.Dockerfile
+    image: txlens-backend:local
+    profiles: ["demo"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: ../.env
+    environment: &backend-env
+      TXLENS_DB_HOST: postgres
+      TEMPORAL_ADDRESS: temporal:7233
+      LANGFUSE_HOST: http://langfuse:3000
+      DOCUMENTS_ROOT: /data/raw
+      MLFLOW_TRACKING_URI: sqlite:///${PWD}/mlruns/mlflow.db
+      # The frontend container proxies /api; compose gives it a changing address on this
+      # network, so the API trusts X-Forwarded-For from the network's private ranges.
+      TRUSTED_PROXY_IPS: ${DEMO_TRUSTED_PROXY_IPS:-172.16.0.0/12}
+    volumes: &backend-volumes
+      - ../data/raw:/data/raw:ro
+      - ${PWD}/mlruns:${PWD}/mlruns
+    read_only: true
+    tmpfs: [/tmp]
+    ports:
+      - "127.0.0.1:${DEMO_API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  worker:
+    image: txlens-backend:local
+    profiles: ["demo"]
+    depends_on:
+      api:
+        condition: service_healthy
+    command: ["txlens-worker"]
+    env_file: ../.env
+    environment: *backend-env
+    volumes: *backend-volumes
+    read_only: true
+    tmpfs: [/tmp]
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/frontend.Dockerfile
+    image: txlens-web:local
+    profiles: ["demo"]
+    depends_on:
+      api:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp, /app/.next/cache]
+    ports:
+      - "127.0.0.1:${DEMO_WEB_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # One-off commands of `make demo` / `make demo-restore` (`docker compose run --rm tools ...`):
+  # the backend image with write access to the data, the vocabulary subset and MLflow store.
+  tools:
+    image: txlens-backend:local
+    profiles: ["tools"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: ../.env
+    environment:
+      <<: *backend-env
+      DOCUMENTS_ROOT: /app/data/raw
+    working_dir: /app
+    volumes:
+      - ../data:/app/data
+      - ../omop/vocab_subset:/app/omop/vocab_subset:ro
+      - ${PWD}/mlruns:${PWD}/mlruns
+      - ../demo_snapshot:/app/demo_snapshot
 
 volumes:
   postgres-data:

@@ -66,6 +66,9 @@ def main() -> None:
     result = asyncio.run(process(request))
     budget = get_settings().llm_budget_usd
     reached = " (budget reached: the rest is rules-only)" if result.budget_exhausted else ""
+    if result.llm_pending:
+        reached += (f"; {result.llm_pending:,} notes pending (no API key and no cached answer: "
+                    "rules-only until a run with OPENAI_API_KEY)")  # fmt: skip
     print(f"Batch {args.batch_id}: {result.processed:,} notes processed, {result.skipped:,} "
           f"unchanged; {result.mentions:,} mentions ({result.review:,} to review), "
           f"{result.conditions:,} conditions; LLM ${result.llm_cost_usd:.4f} of ${budget:.2f}"

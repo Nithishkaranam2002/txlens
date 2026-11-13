@@ -14,15 +14,19 @@ from datetime import date
 
 import pytest
 from document_testutils import MODEL, SNOMED_IDS, FakeCompletion
+from pydantic import SecretStr
 from sqlalchemy import Engine, text
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
 from txlens_backend.config import Settings
 from txlens_backend.db import tenant_transaction
-from txlens_backend.documents.llm import LiteLlmExtractor
+from txlens_backend.documents.budget import Budget
+from txlens_backend.documents.llm import Extractor, LiteLlmExtractor, make_extractor
+from txlens_backend.notes.fallback import PROMPT, Fallback
 from txlens_backend.notes.nlp import Mention, NoteNlp
 from txlens_backend.notes.results import save_note, unchanged
+from txlens_backend.notes.service import ChunkResult, process_notes
 from txlens_backend.notes.vocabulary import Term, build
 from txlens_backend.workflows.biopsy import TASK_QUEUE
 from txlens_backend.workflows.notes import NoteActivities, NoteNlpBatchWorkflow, NotesBatchRequest
@@ -234,6 +238,27 @@ def test_batch_workflow_processes_notes_with_the_fallback_and_skips_them_next_ti
             "SELECT count(*) FROM app.audit_log WHERE action = 'note_nlp_save' "
             "AND object_id = ANY(:s)"), {"s": notes}).scalar_one()  # fmt: skip
     assert audited == 2
+
+
+def test_without_an_api_key_notes_stay_pending_until_a_run_with_one(
+    notes: list[str], documents_engine: Engine
+) -> None:
+    vocabulary = build([Term("rejection", REJECTION, "condition", True)], [])
+    nlp = NoteNlp(vocabulary)
+    budget = Budget(documents_engine, f"test-{uuid.uuid4()}", 1.0)
+    budget.open()
+
+    def run(extractor: Extractor) -> ChunkResult:
+        fallback = Fallback(documents_engine, "center_a", extractor, budget, vocabulary)
+        return process_notes(documents_engine, "center_a", notes, nlp, fallback, 0.7, "wf")
+
+    offline = make_extractor(Settings(openai_api_key=SecretStr(""), llm_model=MODEL), "a", PROMPT)
+    pending = run(offline)
+    assert (pending.processed, pending.llm_pending, pending.llm_cost_usd) == (2, 2, 0.0)
+    fake = FakeCompletion({"findings": []})
+    paid = run(LiteLlmExtractor(MODEL, completion=fake, prompt=PROMPT))
+    assert (paid.processed, paid.skipped, paid.llm_pending) == (2, 0, 0)  # done again, with LLM
+    assert fake.calls
 
 
 def decide(owner: Engine, key: str, action: str, final: dict[str, str] | None = None) -> None:

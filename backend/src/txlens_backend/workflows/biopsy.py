@@ -35,6 +35,7 @@ with workflow.unsafe.imports_passed_through():
     from txlens_backend.documents.llm import (
         Extractor,
         LlmNotConfiguredError,
+        LlmOfflineError,
         Variant,
         make_extractor,
     )
@@ -44,13 +45,14 @@ with workflow.unsafe.imports_passed_through():
 TASK_QUEUE = "txlens-documents"
 VARIANTS: tuple[Variant, Variant] = ("a", "b")
 BUDGET_EXCEEDED = "BudgetExceededError"
+LLM_OFFLINE = "LlmOfflineError"  # no API key and no cached answer: the document stays pending
 RETRY = RetryPolicy(maximum_attempts=3, initial_interval=timedelta(seconds=5))
 LLM_RETRY = RetryPolicy(
     initial_interval=timedelta(seconds=2),
     backoff_coefficient=2.0,
     maximum_interval=timedelta(seconds=60),
     maximum_attempts=6,
-    non_retryable_error_types=[BUDGET_EXCEEDED, "LlmNotConfiguredError", "ValueError"],
+    non_retryable_error_types=[BUDGET_EXCEEDED, LLM_OFFLINE, "LlmNotConfiguredError", "ValueError"],
 )
 SHORT = timedelta(minutes=1)
 LONG = timedelta(minutes=10)
@@ -211,7 +213,7 @@ class DocumentActivities:
                 variant,
                 s.workflow_id,
             )
-        except (BudgetExceededError, LlmNotConfiguredError) as error:
+        except (BudgetExceededError, LlmNotConfiguredError, LlmOfflineError) as error:
             raise ApplicationError(
                 str(error), type=type(error).__name__, non_retryable=True
             ) from error
@@ -269,10 +271,10 @@ class DocumentActivities:
         ]
 
 
-def budget_exceeded(error: ActivityError) -> bool:
-    """True if an activity failed because the batch budget ran out."""
+def failed_with(error: ActivityError, error_type: str) -> bool:
+    """True if an activity failed with this application error type."""
     cause = error.cause
-    return isinstance(cause, ApplicationError) and cause.type == BUDGET_EXCEEDED
+    return isinstance(cause, ApplicationError) and cause.type == error_type
 
 
 @workflow.defn(name="BiopsyDocument")
@@ -349,7 +351,14 @@ class BiopsyDocumentWorkflow:
                 )
             )
         except ActivityError as error:
-            if not budget_exceeded(error):
+            if failed_with(error, LLM_OFFLINE):
+                # Reported, then failed on purpose: a later batch (with an API key) may run this
+                # document again, which a completed workflow id would not allow.
+                await self.report(request, DocumentReport(
+                    me, step.document_id, "pending_llm", 0.0, str(error.cause)))  # fmt: skip
+                raise ApplicationError("pending: no API key and no cached answer",
+                                       type=LLM_OFFLINE, non_retryable=True) from error  # fmt: skip
+            if not failed_with(error, BUDGET_EXCEEDED):
                 raise
             await self.step("document_fail", FailInput(step, "LLM budget exhausted"), str)
             return await self.report(

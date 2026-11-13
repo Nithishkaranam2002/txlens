@@ -37,6 +37,8 @@ spark-warehouse/
 metastore_db/
 derby.log
 mlruns/
+# `make demo-snapshot`: a full database dump (licensed vocabulary inside: never commit or share)
+demo_snapshot/
 
 # OS / editors
 .DS_Store

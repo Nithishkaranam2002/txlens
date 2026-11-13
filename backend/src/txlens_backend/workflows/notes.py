@@ -66,6 +66,7 @@ class NotesBatchResult:
     conditions: int = 0
     llm_cost_usd: float = 0.0
     budget_exhausted: bool = False
+    llm_pending: int = 0
 
     def plus(self, chunk: ChunkResult) -> "NotesBatchResult":
         """These totals with one more chunk."""
@@ -74,6 +75,7 @@ class NotesBatchResult:
             self.mentions + chunk.mentions, self.review + chunk.review,
             self.conditions + chunk.conditions, self.llm_cost_usd + chunk.llm_cost_usd,
             self.budget_exhausted or chunk.budget_exhausted,
+            self.llm_pending + chunk.llm_pending,
         )  # fmt: skip
 
 

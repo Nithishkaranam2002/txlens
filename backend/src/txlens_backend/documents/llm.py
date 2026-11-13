@@ -89,6 +89,10 @@ class Usage:
     latency_ms: int = 0
 
 
+class LlmOfflineError(RuntimeError):
+    """No API key for this paid model and the answer is not cached: the item stays pending."""
+
+
 class LlmUnavailableError(RuntimeError):
     """Rate limit, timeout or outage that LiteLLM's own retries did not clear (retry later)."""
 
@@ -294,15 +298,36 @@ def count(usage: Usage, response: Any) -> None:
         usage.cost_usd += float(litellm.completion_cost(completion_response=response))
 
 
-def make_extractor(
-    settings: Settings, variant: Variant, prompt: Prompt = BIOPSY
-) -> LiteLlmExtractor:
-    """The configured model for a pass (pass B may use a second model)."""
+@dataclass
+class OfflineExtractor:
+    """A paid model without an API key. Cached answers still count (the cache is checked
+    before any model call); anything else raises LlmOfflineError, so it stays pending."""
+
+    model: str
+    prompt: Prompt
+
+    def extract(
+        self, schema: type[T], document: str, variant: Variant, meta: CallMeta
+    ) -> tuple[T, Usage]:
+        """Never calls a model."""
+        raise LlmOfflineError(f"no API key for {self.model} and no cached answer")
+
+
+def key_missing(settings: Settings, model: str) -> bool:
+    """True for an OpenAI model when no API key is configured."""
+    return model.startswith("openai/") and not settings.openai_api_key.get_secret_value()
+
+
+def make_extractor(settings: Settings, variant: Variant, prompt: Prompt = BIOPSY) -> Extractor:
+    """The configured model for a pass (pass B may use a second model); offline (cache only)
+    when it needs an API key that is not set."""
     model = (
         settings.llm_model_pass_b
         if variant == "b" and settings.llm_model_pass_b
         else settings.llm_model
     )
+    if key_missing(settings, model):
+        return OfflineExtractor(model, prompt)
     if model.startswith("openai/"):
         os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key.get_secret_value())
     return LiteLlmExtractor(
