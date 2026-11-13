@@ -688,8 +688,10 @@ def build_report(
     vocab_root: str,
     postgres: bool,
     extracted: date,
+    review_csv: str = REVIEW_CSV,
 ) -> tuple[str, list[Check]]:
-    """Run every check and render the report."""
+    """Run every check and render the report; unmapped texts go to `review_csv` (tests pass a
+    temporary path so they never rewrite the committed report)."""
     patients = read_truth(spark, truth_dir, "patients")
     outcomes = read_truth(spark, truth_dir, "outcomes")
     n_active, maintenance = maintenance_gaps(lake, patients, outcomes, vocab_root, extracted)
@@ -724,7 +726,7 @@ def build_report(
         for r in lake.read("gold", "mapping_gaps").orderBy(F.desc("rows"), "source_value")
         .limit(25).collect()
     ]  # fmt: skip
-    write_review_csv(lake, vocab_root, REVIEW_CSV)
+    write_review_csv(lake, vocab_root, review_csv)
     report = render(
         checks, layer_counts(lake), reasons, coverage(lake), gaps, maintenance,
         condition_methods(lake),

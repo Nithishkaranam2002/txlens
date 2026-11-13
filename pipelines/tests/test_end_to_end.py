@@ -60,6 +60,7 @@ def test_generated_data_reconciles_and_reruns_are_idempotent(
         runtime.vocab_root,
         postgres=False,
         extracted=read_extract_date(runtime.raw_root),
+        review_csv=str(root / "condition_mapping_review.csv"),
     )
     failed = [c for c in checks if not c.passed]
     assert not failed, report
@@ -87,5 +88,6 @@ def test_ids_survive_new_patients_and_longer_files(spark: SparkSession, root: Pa
         runtime.vocab_root,
         postgres=False,
         extracted=read_extract_date(runtime.raw_root),
+        review_csv=str(root / "condition_mapping_review.csv"),
     )
     assert all(c.passed for c in checks)
