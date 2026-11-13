@@ -125,6 +125,38 @@ jobs:
       - name: Slow Spark tests
         run: uv run pytest -m slow
 
+  # Known vulnerabilities in locked dependencies. Accepted findings (no fix released, or the
+  # fix is blocked upstream) are listed with their reason in docs/SECURITY.md; anything new
+  # fails the job.
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version: "0.7.22"
+      - name: Python (pip-audit over uv.lock)
+        run: |
+          uv export --frozen --all-packages --all-extras --no-emit-workspace --no-hashes \
+            -o requirements-audit.txt
+          uvx pip-audit@2.10.0 -r requirements-audit.txt --no-deps --disable-pip \
+            --progress-spinner off \
+            --ignore-vuln PYSEC-2026-2447 --ignore-vuln PYSEC-2026-3046 \
+            --ignore-vuln CVE-2026-112907 --ignore-vuln CVE-2026-112908 \
+            --ignore-vuln CVE-2026-112909 --ignore-vuln CVE-2026-112910 \
+            --ignore-vuln CVE-2026-112911 --ignore-vuln CVE-2026-112912 \
+            --ignore-vuln CVE-2026-112913 --ignore-vuln CVE-2026-112915 \
+            --ignore-vuln CVE-2026-112935 --ignore-vuln CVE-2026-112936 \
+            --ignore-vuln CVE-2026-112938 --ignore-vuln CVE-2026-112939 \
+            --ignore-vuln CVE-2026-112940
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: frontend/package.json
+      - name: Frontend (pnpm audit, high and critical)
+        working-directory: frontend
+        run: pnpm audit --audit-level high
+
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 10

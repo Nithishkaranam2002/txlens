@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     login_max_failures_per_ip: int = 20
     login_window_minutes: int = 15
     login_attempt_retention_days: int = 30
+    # Per-user limits on expensive endpoints (429 + Retry-After beyond them).
+    rate_limit_copilot_per_hour: int = 60  # copilot questions (paid LLM calls)
+    rate_limit_analysis_per_minute: int = 30  # survival analyses/reports, on-demand risk scores
 
     # --- De-identification ---
     deid_hmac_key: SecretStr = SecretStr("")  # keys pseudonyms and date shifts

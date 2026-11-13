@@ -26,6 +26,7 @@ from txlens_backend.api.deps import (
     require_roles,
 )
 from txlens_backend.api.patients import viewer
+from txlens_backend.api.rate_limit import Bucket, rate_limited
 from txlens_backend.risk import LABEL_TEXT
 from txlens_backend.risk.registry import champion_for
 from txlens_backend.risk.serve import latest, latest_visits, score, store
@@ -116,7 +117,7 @@ def get_risk(
         409: {"description": "The patient has no surveillance visit to score"},
         503: {"description": "No risk model is registered"},
     },
-    dependencies=[Depends(require_csrf_header)],
+    dependencies=[Depends(require_csrf_header), Depends(rate_limited(Bucket.ANALYSIS))],
 )
 def score_now(
     patient_id: str, principal: Scorer, conn: TenantDb, ctx: Context, info: Info

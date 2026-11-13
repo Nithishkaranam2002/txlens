@@ -26,7 +26,8 @@ DECISIONS = {"center_a": "00000000-0000-0000-0000-0000000000ea",
              "center_b": "00000000-0000-0000-0000-0000000000eb"}  # fmt: skip
 # Shared by every tenant on purpose: an operator's LLM spending, no patient data; and the
 # review history of the AI-curated mapping rows, one vocabulary shared by every center.
-NOT_ISOLATED = {"tenant", "login_attempt", "llm_budget", "curated_mapping_history"}
+NOT_ISOLATED = {"tenant", "login_attempt", "llm_budget", "curated_mapping_history",
+                "rate_limit"}  # per-user request counts: no tenant, no patient data
 
 
 @pytest.fixture

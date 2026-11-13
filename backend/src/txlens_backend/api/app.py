@@ -31,6 +31,17 @@ from txlens_backend.config import Settings, get_settings, require_secret
 from txlens_backend.db import check_role_is_rls_bound, make_engine
 
 REQUEST_ID_HEADER = "X-Request-ID"
+# On every response: responses may hold PHI, so nothing is cached, framed or sniffed. The
+# frontend sets its own page CSP; JSON and images need no script, style or frame at all.
+SECURITY_HEADERS = {
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+}
+# The interactive API docs load Swagger UI / ReDoc scripts, so they keep the browser default.
+DOCS_PATHS = ("/docs", "/redoc")
 DESCRIPTION = """
 Clinical data API for transplant programs (synthetic data only).
 
@@ -111,10 +122,15 @@ def build_app(
     async def request_id(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        """A fresh id per request: stored for audit rows and returned to the client."""
+        """A fresh id per request (stored for audit rows, returned to the client), plus the
+        security headers."""
         request.state.request_id = str(uuid.uuid4())
         response = await call_next(request)
         response.headers[REQUEST_ID_HEADER] = request.state.request_id
+        for name, value in SECURITY_HEADERS.items():
+            response.headers.setdefault(name, value)
+        if request.url.path.startswith(DOCS_PATHS):
+            del response.headers["Content-Security-Policy"]
         return response
 
     app.include_router(system.router)

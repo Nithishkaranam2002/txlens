@@ -1,6 +1,6 @@
 # Spark runner: Python 3.12 + Java 17 + PySpark + Delta Lake, so the host needs no Java.
 # Bookworm (not trixie) because it ships Java 17, which Spark 3.5 supports.
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends openjdk-17-jre-headless procps \
@@ -18,13 +18,20 @@ COPY omop/pyproject.toml omop/
 
 # Install every workspace package's third-party dependencies (locked versions) plus pytest:
 # the pipeline tests generate small datasets and check gold against the pinned OMOP DDL.
-RUN uv export --frozen --all-packages --all-extras --no-emit-workspace \
+# g++ builds packages without a wheel for this platform (pysimstring) and is removed again.
+RUN apt-get update && apt-get install -y --no-install-recommends g++ \
+    && uv export --frozen --all-packages --all-extras --no-emit-workspace \
         --no-dev --no-hashes -o requirements.txt \
     && uv pip install --system --no-cache -r requirements.txt "pytest>=8.4" \
-    && rm -rf /build
+    && apt-get purge -y --auto-remove g++ && rm -rf /var/lib/apt/lists/* /build
 
-# Download the Delta Lake jars at build time (into ~/.ivy2), not on every run.
-COPY pipelines/src /tmp/pipelines-src
+# Runs as a non-root user. The repo is bind-mounted at /app, so on a Linux host it must be
+# writable by uid 10001 (Docker Desktop on macOS/Windows maps ownership itself).
+RUN useradd --uid 10001 --create-home spark
+USER 10001
+
+# Download the Delta Lake jars at build time (into the user's ~/.ivy2), not on every run.
+COPY --chown=10001 pipelines/src /tmp/pipelines-src
 RUN PYTHONPATH=/tmp/pipelines-src python -c \
         "from txlens_pipelines.spark import build_spark_session; build_spark_session().stop()" \
     && rm -rf /tmp/pipelines-src

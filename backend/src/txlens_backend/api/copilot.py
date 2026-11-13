@@ -24,6 +24,7 @@ from txlens_backend.api.deps import (
     require_csrf_header,
     require_roles,
 )
+from txlens_backend.api.rate_limit import Bucket, rate_limited
 from txlens_backend.copilot import service
 from txlens_backend.copilot.embeddings import make_embedder
 from txlens_backend.db import tenant_transaction
@@ -31,6 +32,7 @@ from txlens_backend.db import tenant_transaction
 router = APIRouter(prefix="/copilot", tags=["copilot"])
 Asker = Annotated[Principal, Depends(require_roles(Role.CLINICIAN, Role.RESEARCHER))]
 CSRF = [Depends(require_csrf_header)]
+RATE_LIMITED = [*CSRF, Depends(rate_limited(Bucket.COPILOT))]
 NOT_FOUND: dict[int | str, dict[str, Any]] = {404: {"description": "No such conversation of yours"}}
 
 
@@ -88,7 +90,7 @@ def sse(events: Iterator[dict[str, Any]]) -> Iterator[str]:
 @router.post(
     "/conversations/{conversation_id}/messages",
     summary="Ask a question; the answer streams as server-sent events",
-    dependencies=CSRF,
+    dependencies=RATE_LIMITED,
     response_class=StreamingResponse,
     responses=NOT_FOUND | {200: {"content": {"text/event-stream": {}}}},
 )

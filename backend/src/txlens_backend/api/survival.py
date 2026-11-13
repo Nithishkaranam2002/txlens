@@ -20,6 +20,7 @@ from txlens_backend.api.deps import (
     require_csrf_header,
     require_roles,
 )
+from txlens_backend.api.rate_limit import Bucket, rate_limited
 from txlens_backend.services import disclosure
 from txlens_backend.survival import export, release, service
 from txlens_backend.survival.analysis import Report
@@ -31,6 +32,7 @@ ERRORS: dict[int | str, dict[str, Any]] = {
     422: {"description": "Invalid request, or a landmark before the groups are known"},
 }
 CSRF = [Depends(require_csrf_header)]
+RATE_LIMITED = [*CSRF, Depends(rate_limited(Bucket.ANALYSIS))]
 
 
 @router.get("/options", summary="Groupings and Cox covariates you can choose")
@@ -65,7 +67,9 @@ def analysed(
     return report
 
 
-@router.post("/analysis", summary="Graft survival analysis", responses=ERRORS, dependencies=CSRF)
+@router.post(
+    "/analysis", summary="Graft survival analysis", responses=ERRORS, dependencies=RATE_LIMITED
+)
 def analysis(
     request: service.AnalysisRequest, principal: Analyst, conn: TenantDb, ctx: Context, info: Info
 ) -> Report:
@@ -79,7 +83,7 @@ def analysis(
     summary="The analysis as CSV",
     responses=ERRORS | {200: {"content": {"text/csv": {}}}},
     response_class=Response,
-    dependencies=CSRF,
+    dependencies=RATE_LIMITED,
 )
 def report_csv(
     request: service.AnalysisRequest, principal: Analyst, conn: TenantDb, ctx: Context, info: Info
@@ -97,7 +101,7 @@ def report_csv(
     summary="The analysis as a PDF report",
     responses=ERRORS | {200: {"content": {"application/pdf": {}}}},
     response_class=Response,
-    dependencies=CSRF,
+    dependencies=RATE_LIMITED,
 )
 def report_pdf(
     request: service.AnalysisRequest, principal: Analyst, conn: TenantDb, ctx: Context, info: Info

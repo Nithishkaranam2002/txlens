@@ -6,4 +6,8 @@ FROM rocker/r-ver:4.4.2@sha256:df26749182af64d5263bf64149d51a427b476ed28c4e04699
 RUN install2.r --error --skipinstalled cmprsk jsonlite \
     && Rscript -e 'for (p in c("survival", "cmprsk", "jsonlite")) cat(p, format(packageVersion(p)), "\n")'
 
+# Non-root by default; the parity runner also passes the caller's uid so files it writes in
+# the mounted folder belong to the caller.
+RUN useradd --uid 10001 --create-home rparity
+USER 10001
 WORKDIR /app

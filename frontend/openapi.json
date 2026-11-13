@@ -61,6 +61,7 @@
           "cohort_id": {
             "anyOf": [
               {
+                "maxLength": 64,
                 "type": "string"
               },
               {
@@ -73,6 +74,7 @@
           "compare_cohort_id": {
             "anyOf": [
               {
+                "maxLength": 64,
                 "type": "string"
               },
               {
@@ -698,12 +700,17 @@
             "additionalProperties": {
               "anyOf": [
                 {
+                  "maxLength": 2000,
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ]
+            },
+            "maxProperties": 50,
+            "propertyNames": {
+              "maxLength": 100
             },
             "title": "Changes",
             "type": "object"

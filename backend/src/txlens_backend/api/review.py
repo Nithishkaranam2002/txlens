@@ -16,7 +16,7 @@ from datetime import timedelta
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 from txlens_backend import audit, deid
 from txlens_backend.api.deps import (
@@ -61,7 +61,11 @@ class DecisionRequest(BaseModel):
     action: Action
     reason_code: ReasonCode | None = None
     note: str | None = Field(default=None, max_length=2000)
-    changes: dict[str, str | None] = Field(default_factory=dict)
+    # Field name -> new value; a form has a few dozen fields, values are short codes or text.
+    changes: dict[
+        Annotated[str, StringConstraints(max_length=100)],
+        Annotated[str, StringConstraints(max_length=2000)] | None,
+    ] = Field(default_factory=dict, max_length=50)
 
 
 class DecisionResult(BaseModel):
@@ -90,6 +94,7 @@ def list_items(
     principal: Reviewer,
     conn: TenantDb,
     ctx: Context,
+    info: Info,
     item_type: Annotated[ItemType | None, Query(alias="type")] = None,
     item_status: Annotated[Status, Query(alias="status")] = "pending",
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
@@ -97,7 +102,15 @@ def list_items(
 ) -> QueuePage:
     """Pending: rejection/high severity first, then the QC sample, then the rest."""
     viewer = viewer_of(principal, ctx)
-    return queue_page(conn, viewer.patient, item_type, item_status, limit, offset)
+    page = queue_page(conn, viewer.patient, item_type, item_status, limit, offset)
+    audit.record(
+        conn, info, principal.user_id, "phi_view" if principal.sees_identifiers else "deid_view",
+        "review_queue", None, {"patients": sorted({i.patient_id for i in page.items
+                                                   if i.patient_id is not None}),
+                               "type": item_type, "status": item_status, "limit": limit,
+                               "offset": offset},
+    )  # fmt: skip
+    return page
 
 
 @router.get(

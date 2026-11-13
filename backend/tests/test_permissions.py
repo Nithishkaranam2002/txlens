@@ -52,6 +52,21 @@ MATRIX: dict[str, dict[Role | str, int]] = {
     "GET /copilot/conversations/{conv}": {C: 200, R: 200, S: 403, A: 403, ANON: 401},
     "POST /copilot/conversations/{conv}/messages": {C: 200, R: 200, S: 403, A: 403, ANON: 401},
 }  # fmt: skip
+# Patient-level reads (PHI or de-identified views) and writes: a successful call must leave an
+# audit row with its request id. Not listed: health, /me, configs, concept search, cohort
+# metadata, previews and review metrics (aggregates only), and conversation reads (the
+# caller's own text).
+AUDITED = {
+    "GET /patients", "GET /patients/{pid}/timeline", "POST /cohorts",
+    "GET /cohorts/{cid}/members", "GET /worklist", "GET /patients/{pid}/flags",
+    "GET /patients/{pid}/risk", "POST /patients/{pid}/risk/score",
+    "POST /flags/{fid}/acknowledge", "POST /flags/{fid}/resolve",
+    "GET /documents/{did}/evidence", "GET /documents/{did}/pages/1",
+    "GET /documents/{did}/fields/banff_t/crop", "GET /review/items",
+    "GET /review/items/biopsy_document/{rid}", "POST /review/items/biopsy_document/{rid}",
+    "POST /survival/analysis", "POST /survival/report.csv", "POST /survival/report.pdf",
+    "POST /copilot/conversations/{conv}/messages",
+}  # fmt: skip
 # Asked of the copilot by the matrix: refused by the screen, so no model is ever called.
 COPILOT_QUESTION = {"question": "List the MRNs of kidney recipients"}
 CALLERS: list[Role | str] = [C, R, S, A, ANON]
@@ -175,6 +190,19 @@ def test_permission_matrix(
         body = BODY["rules"] if path.endswith("preview") else BODY
         response = client.post(path, json=body)
     assert response.status_code == MATRIX[endpoint][caller], response.text
+    if endpoint in AUDITED and response.is_success:
+        assert audited(api_owner, response.headers["X-Request-ID"]), f"no audit row: {endpoint}"
+
+
+def audited(owner: Engine, request_id: str) -> bool:
+    """True if this request left at least one audit row."""
+    with owner.connect() as conn:
+        return bool(conn.execute(text("SELECT count(*) FROM app.audit_log WHERE request_id = "
+                                      ":r"), {"r": request_id}).scalar_one())  # fmt: skip
+
+
+def test_audited_endpoints_are_in_the_matrix() -> None:
+    assert set(MATRIX) >= AUDITED
 
 
 def test_matrix_covers_every_route(api_app: FastAPI) -> None:

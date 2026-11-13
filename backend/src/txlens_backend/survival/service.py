@@ -30,14 +30,18 @@ class AnalysisRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     cohort_id: str | None = Field(
-        default=None, description="Population: a saved cohort (default: every patient)."
+        default=None,
+        max_length=64,
+        description="Population: a saved cohort (default: every patient).",
     )
     rules: cohorts.CohortRules | None = Field(
         default=None, description="Population: patients passing these rules (not saved)."
     )
     grouping: GroupingKey = "none"
     compare_cohort_id: str | None = Field(
-        default=None, description="grouping = cohort: members of this cohort vs the rest."
+        default=None,
+        max_length=64,
+        description="grouping = cohort: members of this cohort vs the rest.",
     )
     landmark_days: int | None = Field(
         default=None, ge=0, le=MAX_LANDMARK_DAYS,

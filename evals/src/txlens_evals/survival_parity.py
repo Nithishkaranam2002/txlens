@@ -88,7 +88,8 @@ def read_extract(folder: Path) -> pd.DataFrame:
 def run_r(folder: Path) -> Json:
     """Run the R reference on the folder's extract; returns its results."""
     subprocess.run(
-        ["docker", "run", "--rm", "-v", f"{folder.resolve()}:/work",
+        ["docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}",
+         "-v", f"{folder.resolve()}:/work",
          "-v", f"{R_SCRIPTS}:/scripts:ro", R_IMAGE, "Rscript", "/scripts/survival_reference.R",
          "/work/extract.csv", "/work/spec.json", "/work/r_results.json"],
         check=True, capture_output=True,
