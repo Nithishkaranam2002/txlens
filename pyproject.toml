@@ -64,9 +64,9 @@ constraint-dependencies = [
     "cachetools<=7.2.7",
     "databricks-sdk<=0.157.0",
     "google-auth<=2.62.0",
-    "opentelemetry-proto<=1.45.1",
-    "opentelemetry-sdk<=1.45.1",
-    "opentelemetry-semantic-conventions<=0.66b1",
+    "opentelemetry-proto<=1.45.2",  # 1.45.2 (2026-10-29) fixes CVE-2026-126360
+    "opentelemetry-sdk<=1.45.2",
+    "opentelemetry-semantic-conventions<=0.66b2",
     "sqlparse<=0.6.0",
     "threadpoolctl<=3.7.0",
 ]
