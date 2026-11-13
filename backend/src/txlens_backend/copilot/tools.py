@@ -13,8 +13,10 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from psycopg.errors import QueryCanceled
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine
+from sqlalchemy.exc import OperationalError
 
 from txlens_backend import audit
 from txlens_backend.audit import RequestInfo
@@ -178,7 +180,15 @@ def sql_query(ctx: ToolContext, action: actions.SqlQuery) -> ToolResult:
         return ToolResult(tool=action.tool, args=args, ok=False, sql=action.sql,
                           error=f"SQL rejected by the guard: {error}")  # fmt: skip
     with tenant_transaction(ctx.engine, ctx.tenant_id) as conn:
-        table = sql_exec.run(ctx.engine, ctx.tenant_id, checked, guard_for(conn, ctx))
+        try:
+            table = sql_exec.run(ctx.engine, ctx.tenant_id, checked, guard_for(conn, ctx))
+        except OperationalError as error:
+            if not isinstance(error.orig, QueryCanceled):
+                raise
+            record(conn, ctx, action.tool, args | {"sql": checked.sql}, error="timeout")
+            return ToolResult(tool=action.tool, args=args, ok=False, sql=checked.sql,
+                              error="the query took too long; simplify it (fewer joins) or "
+                              "use a structured tool")  # fmt: skip
         record(conn, ctx, action.tool, args | {"sql": checked.sql}, rows=len(table.rows))
     data = {"columns": table.columns, "rows": table.rows, "notices": table.notices}
     return ToolResult(tool=action.tool, args=args, ok=True, data=data, sql=checked.sql,

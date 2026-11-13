@@ -179,6 +179,10 @@ def render(folder: Path) -> str:
         "",
         "## Research copilot ([copilot.md](copilot.md))",
         "",
+        "From `make copilot-report`, which is not part of `make evals`: it asks the literature "
+        "questions 3 times without the answer cache to measure run-to-run variance, so each "
+        "run costs about $0.30.",
+        "",
         *copilot_lines(copilot),
         "",
     ])  # fmt: skip

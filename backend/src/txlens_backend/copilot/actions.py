@@ -58,7 +58,8 @@ class LiteratureSearch(Action):
     """Search open-access transplant abstracts (hybrid vector + full-text)."""
 
     tool: Literal["literature_search"]
-    query: str = Field(min_length=3, max_length=300)
+    # Generous: planners write long queries, and a rejected plan fails the whole question.
+    query: str = Field(min_length=3, max_length=1000)
 
 
 class Answer(Action):

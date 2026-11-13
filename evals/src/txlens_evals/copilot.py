@@ -309,6 +309,9 @@ def headline(data: list[DataResult], lit: list[LitResult], red: list[tuple[rt.Ca
         "structured_not_sql": est([not d.used_sql for d in structured]).as_dict(),
         "sql_used_share": est([d.used_sql for d in scored]).as_dict(),
         "literature_questions": len(answerable),
+        "answered_from_literature": [sum(any(t["tool"] == "literature_search" and t["ok"]
+                                             for t in r.asked.tools) for r in answerable),
+                                     len(answerable)],
         "faithfulness": mean_est([r.faithfulness for r in answerable
                                   if r.faithfulness is not None]).as_dict(),
         "answer_relevancy": mean_est([r.relevancy for r in answerable
@@ -368,6 +371,8 @@ def render(
         f"| Literature ({h['literature_questions']}): faithfulness (RAGAS) | "
         f"{num('faithfulness')} |",
         f"| Literature: answer relevancy (RAGAS) | {num('answer_relevancy')} |",
+        f"| Literature questions answered from the literature (not the center's data) | "
+        f"{h['answered_from_literature'][0]} of {h['answered_from_literature'][1]} |",
         f"| Citations supported by the cited abstract ({h['citations']}) | "
         f"{pct('citation_supported')} |",
         f"| Citations supported or partly supported | {pct('citation_supported_or_partly')} |",
@@ -399,6 +404,9 @@ def render(
         "abstracts it cites, checked by string matching in code; claims whose quote is not found "
         "(or that add numbers their quotes lack) are dropped and counted. The judge then rates "
         "whether the cited abstract supports the claim.",
+        '- Some literature questions can also be read as data questions ("how does dd-cfDNA '
+        "change after transplant?\"); when the copilot answered from the center's data instead, "
+        "the answer has no citations and no RAGAS score, and the row shows '-'.",
         "- Answer relevancy uses strictness 1 (one generated question per answer): the judge is "
         "cached, so more would repeat the same question.",
         "- Intervals cover sampling noise over these questions only. All data is synthetic.",
@@ -498,7 +506,10 @@ def render(
                 f"- PMID [{pmid}](https://pubmed.ncbi.nlm.nih.gov/{pmid}/): "
                 f"{c.get('title', '')} (judge: {verdict})",
                 f"  - Claim: {excerpt(sentence, 300)}",
-                f'  - Quoted from the abstract: "{excerpt(c.get("snippet", ""), 400)}"',
+                *[
+                    f'  - Quoted from the abstract: "{excerpt(q, 400)}"'
+                    for q in (c.get("quotes") or [c.get("snippet", "")])
+                ],
                 "  - [ ] supported  [ ] partly  [ ] not supported  — notes:",
             ]
     lines.append("")
