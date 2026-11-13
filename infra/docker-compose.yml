@@ -51,6 +51,20 @@ services:
     ports:
       - "3001:3000"
 
+  # MLflow UI over the local risk-model registry (`make mlflow-ui`). The registry is a SQLite
+  # file in mlruns/ whose artifact paths are absolute host paths, so mlruns/ is mounted at the
+  # same path inside the container (Make runs compose from the repo root, so PWD is that root).
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.17.2
+    profiles: ["observability"]
+    volumes:
+      - ${PWD}/mlruns:${PWD}/mlruns
+    command: >
+      mlflow server --host 0.0.0.0 --port 5000
+      --backend-store-uri sqlite:///${PWD}/mlruns/mlflow.db
+    ports:
+      - "5001:5000"
+
   # One-off Spark runner, used by `make pipeline` and `make test-pipelines`.
   spark:
     build:

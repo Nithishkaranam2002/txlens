@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     # overlapping filters, it would reveal fewer than small_cell_threshold patients.
     disclosure_window_days: int = 30
 
+    # --- Rejection-risk model (MLflow tracking + registry) ---
+    mlflow_tracking_uri: str = "sqlite:///mlruns/mlflow.db"  # relative to the repo root
+
     # --- Document extraction (LLM) ---
     ocr_engine: Literal["tesseract", "docling"] = "tesseract"  # docling: opt-in dependency group
     documents_root: Path = Path("data/raw")  # where document source paths are resolved

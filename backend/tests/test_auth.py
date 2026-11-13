@@ -206,7 +206,7 @@ def test_bad_access_tokens_are_rejected(
         token = f"{header}.{payload}.{signature}"
     if kind == "alg_none":
         payload_dict = jwt.decode(token, options={"verify_signature": False})
-        token = jwt.encode(payload_dict | {"role": "clinician"}, key=None, algorithm="none")
+        token = jwt.encode(payload_dict | {"role": "clinician"}, key="", algorithm="none")
     with TestClient(api_app, base_url=BASE_URL) as fresh:
         assert fresh.get("/me", headers={"Cookie": f"{ACCESS_COOKIE}={token}"}).status_code == 401
 

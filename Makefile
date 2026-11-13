@@ -5,8 +5,13 @@ SPARK_RUN := $(COMPOSE) --profile spark run --rm spark
 SEED ?= 42
 VOCAB_SOURCE ?= omop/athena
 N_PATIENTS ?= 2000
+# LightGBM needs the OpenMP runtime. On macOS without Homebrew's libomp, fall back to the copy
+# scikit-learn ships (a fallback path: an installed libomp still wins).
+ifeq ($(shell uname -s),Darwin)
+export DYLD_FALLBACK_LIBRARY_PATH := $(CURDIR)/.venv/lib/python3.12/site-packages/sklearn/.dylibs
+endif
 
-.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run prune-login-attempts notes-report evals extraction-systems mapping-report review-report rejection-report cohort-report survival-report copilot-sample copilot-report surveillance-report biopsy-report ocr-report vocab-load vocab-export-curation vocab-load-local vocab-subset vocab-check literature-download literature-index r-build r-parity generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
+.PHONY: help setup up up-full down lint test db-migrate db-setup seed-users api openapi frontend e2e screenshots worker surveillance-schedule surveillance-run risk-train mlflow-ui prune-login-attempts notes-report evals extraction-systems mapping-report review-report rejection-report cohort-report survival-report copilot-sample copilot-report surveillance-report biopsy-report ocr-report vocab-load vocab-export-curation vocab-load-local vocab-subset vocab-check literature-download literature-index r-build r-parity generate-data generate-data-scale pipeline pipeline-clean pipeline-report databricks-data test-pipelines spark-build
 
 help: ## List available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
@@ -76,6 +81,12 @@ AS_OF ?= $(EXTRACT_DATE)
 
 surveillance-run: ## Run surveillance for every center as of the data extract date (AS_OF=... to override)
 	uv run txlens-surveillance run $(if $(AS_OF),--as-of $(AS_OF))
+
+risk-train: ## Train, evaluate and register a new rejection-risk model version (MLflow)
+	uv run txlens-risk train --as-of $(AS_OF)
+
+mlflow-ui: ## Browse risk-model runs and registry versions (http://localhost:5001)
+	$(COMPOSE) --profile observability up -d mlflow
 
 prune-login-attempts: ## Delete login attempts older than 30 days (logins also do this)
 	uv run txlens-prune-login-attempts

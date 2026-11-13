@@ -59,6 +59,16 @@ constraint-dependencies = [
     "xlsxwriter<=3.3.0",
     # pandas-stubs (Step 3.1, added 2026-11-12): its types-pytz dependency was 12 days old
     "types-pytz<2026.6.0.20261031",
+    # Step 3.2 risk model (added 2026-11-12): newest releases at least two weeks old
+    "mlflow-skinny<=3.17.2",
+    "cachetools<=7.2.7",
+    "databricks-sdk<=0.157.0",
+    "google-auth<=2.62.0",
+    "opentelemetry-proto<=1.45.1",
+    "opentelemetry-sdk<=1.45.1",
+    "opentelemetry-semantic-conventions<=0.66b1",
+    "sqlparse<=0.6.0",
+    "threadpoolctl<=3.7.0",
 ]
 
 [dependency-groups]
@@ -121,7 +131,7 @@ explicit_package_bases = true
 # docling is an opt-in group (absent in CI); pytesseract, langfuse 2.x and medspaCy ship no
 # type information; nor do lifelines, reportlab and scipy (without scipy-stubs).
 module = ["pyspark.*", "delta.*", "pandera.*", "docling.*", "docling_core.*", "pytesseract.*",
-          "langfuse.*", "medspacy.*", "lifelines.*", "reportlab.*", "scipy.*"]
+          "langfuse.*", "medspacy.*", "lifelines.*", "reportlab.*", "scipy.*", "sklearn.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

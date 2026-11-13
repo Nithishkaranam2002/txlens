@@ -60,7 +60,7 @@ def test_unsigned_alg_none_token_is_rejected() -> None:
     now = datetime.now(UTC)
     payload = {"sub": "u1", "tenant": "center_b", "role": "clinician", "jti": "j", "typ": "access",
                "iat": now, "exp": now + timedelta(minutes=5)}  # fmt: skip
-    token = jwt.encode(payload, key=None, algorithm="none")
+    token = jwt.encode(payload, key="", algorithm="none")
     with pytest.raises(InvalidTokenError):
         decode(SECRET, token, "access")
 
