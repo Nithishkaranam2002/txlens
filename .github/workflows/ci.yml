@@ -12,7 +12,8 @@ permissions:
 jobs:
   python:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The Spark unit tests vary a lot between runners (8-12 min for the whole step).
+    timeout-minutes: 25
     services:
       # Same image as the local stack. Throwaway CI-only credentials, not a secret.
       postgres:
