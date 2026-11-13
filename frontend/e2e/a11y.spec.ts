@@ -54,6 +54,21 @@ test("the worklist can be used with the keyboard alone", async ({ page }) => {
   await expect(acknowledge).toBeFocused(); // focus returns to the button that opened it
 });
 
+test("worklist with the low-priority section open and the acknowledge-all dialog open", async ({ page }) => {
+  await login(page, "clinician");
+  await page.goto("/worklist");
+  await page.locator("details summary").filter({ hasText: "Low priority" }).click();
+  await expect(page.locator("details[open]").getByRole("table")).toBeVisible();
+  await expectAccessible(page);
+  await page.goto("/worklist?severity=all");
+  await page.getByRole("button", { name: /^Acknowledge all/ }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Acknowledge all new flags" });
+  await expect(dialog).toBeVisible();
+  // Check contrast once the fade-in has finished, not on half-transparent text.
+  await dialog.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+  await expectAccessible(page);
+});
+
 test("survival results (charts, risk table, forest plot, methods)", async ({ page }) => {
   await login(page, "clinician");
   await page.goto("/survival");

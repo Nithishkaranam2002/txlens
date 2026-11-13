@@ -7,6 +7,7 @@ export type Role = "clinician" | "researcher" | "data_steward" | "admin";
 export type Seed = {
   passwords: Record<Role, string>;
   singleFlagPatient: { id: number; name: string };
+  multiFlagPatient: { id: number; name: string; flags: number };
   otherCenterPatient: { id: number; pseudonym: string };
   noteConditionPatient: { id: number; pseudonym: string; givenName: string; condition: string };
   review: {

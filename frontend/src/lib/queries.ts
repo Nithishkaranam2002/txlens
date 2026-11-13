@@ -8,7 +8,8 @@ import { isApiError } from "@/lib/api/errors";
 import { cleanRequest } from "@/lib/survival";
 import type { CohortRules, Flag, FlagStatus, Organ, Severity, SurvivalRequest, WorklistPage } from "@/lib/types";
 
-export type WorklistFilters = { organ?: Organ; severity?: Severity; status?: FlagStatus };
+/** `severity`: rows whose highest open severity is one of these. */
+export type WorklistFilters = { organ?: Organ; severity?: Severity[]; status?: FlagStatus };
 
 export const keys = {
   worklist: ["worklist"] as const,
@@ -41,6 +42,7 @@ export function useWorklist(filters: WorklistFilters, offset: number) {
 
 export type ReviewAction = "acknowledge" | "resolve";
 type ReviewInput = { flagId: string; action: ReviewAction; note?: string };
+type AcknowledgeAllInput = { patientId: string; note?: string };
 
 /** The worklist page after a review: acknowledged flags change status, resolved ones leave. */
 export function applyReview(page: WorklistPage, { flagId, action, note }: ReviewInput): WorklistPage {
@@ -55,10 +57,55 @@ export function applyReview(page: WorklistPage, { flagId, action, note }: Review
   return { ...page, items, total: page.total - (page.items.length - items.length) };
 }
 
+/** The worklist page after "acknowledge all": every new flag of that patient is acknowledged. */
+export function applyAcknowledgeAll(page: WorklistPage, { patientId, note }: AcknowledgeAllInput): WorklistPage {
+  const items = page.items.map((row) =>
+    String(row.patient.patient_id) !== patientId
+      ? row
+      : {
+          ...row,
+          flags: row.flags.map((flag): Flag =>
+            flag.status === "new" ? { ...flag, status: "acknowledged", note: note ?? flag.note } : flag,
+          ),
+        },
+  );
+  return { ...page, items };
+}
+
 /**
- * Acknowledge or resolve a flag. The worklist updates at once (optimistic); on failure it
- * rolls back and a toast shows the reason and request id.
+ * Worklist mutations update every cached worklist page at once (optimistic); on failure they
+ * roll back and a toast shows the reason and request id.
  */
+function optimisticWorklist<T>(
+  client: ReturnType<typeof useQueryClient>,
+  apply: (page: WorklistPage, input: T) => WorklistPage,
+  success: (input: T) => string,
+) {
+  return {
+    onMutate: async (input: T) => {
+      await client.cancelQueries({ queryKey: keys.worklist });
+      const snapshot = client.getQueriesData<WorklistPage>({ queryKey: keys.worklist });
+      client.setQueriesData<WorklistPage>({ queryKey: keys.worklist }, (page) => (page ? apply(page, input) : page));
+      return { snapshot };
+    },
+    onError: (error: Error, _input: T, context: { snapshot: [QueryKey, unknown][] } | undefined) => {
+      context?.snapshot.forEach(([key, data]) => client.setQueryData(key, data));
+      const requestId = isApiError(error) ? error.requestId : null;
+      toast.error(isApiError(error) ? error.message : "The review could not be saved.", {
+        description: requestId ? `Request id: ${requestId}` : undefined,
+      });
+    },
+    onSuccess: (_result: unknown, input: T) => {
+      toast.success(success(input));
+    },
+    onSettled: () => {
+      client.invalidateQueries({ queryKey: keys.worklist });
+      client.invalidateQueries({ queryKey: ["patient"] });
+    },
+  };
+}
+
+/** Acknowledge or resolve one flag. */
 export function useReviewFlag() {
   const client = useQueryClient();
   return useMutation({
@@ -68,28 +115,24 @@ export function useReviewFlag() {
         ? unwrap(await api.POST("/flags/{flag_id}/acknowledge", options))
         : unwrap(await api.POST("/flags/{flag_id}/resolve", options));
     },
-    onMutate: async (input) => {
-      await client.cancelQueries({ queryKey: keys.worklist });
-      const snapshot = client.getQueriesData<WorklistPage>({ queryKey: keys.worklist });
-      client.setQueriesData<WorklistPage>({ queryKey: keys.worklist }, (page) =>
-        page ? applyReview(page, input) : page,
-      );
-      return { snapshot };
-    },
-    onError: (error, _input, context) => {
-      context?.snapshot.forEach(([key, data]: [QueryKey, unknown]) => client.setQueryData(key, data));
-      const requestId = isApiError(error) ? error.requestId : null;
-      toast.error(isApiError(error) ? error.message : "The review could not be saved.", {
-        description: requestId ? `Request id: ${requestId}` : undefined,
-      });
-    },
-    onSuccess: (_flag, { action }) => {
-      toast.success(action === "acknowledge" ? "Flag acknowledged" : "Flag resolved");
-    },
-    onSettled: () => {
-      client.invalidateQueries({ queryKey: keys.worklist });
-      client.invalidateQueries({ queryKey: ["patient"] });
-    },
+    ...optimisticWorklist<ReviewInput>(client, applyReview, ({ action }) =>
+      action === "acknowledge" ? "Flag acknowledged" : "Flag resolved",
+    ),
+  });
+}
+
+/** Acknowledge every new flag of one patient. */
+export function useAcknowledgeAll() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ patientId, note }: AcknowledgeAllInput) =>
+      unwrap(
+        await api.POST("/patients/{patient_id}/flags/acknowledge", {
+          params: { path: { patient_id: patientId } },
+          body: { note: note || null },
+        }),
+      ),
+    ...optimisticWorklist<AcknowledgeAllInput>(client, applyAcknowledgeAll, () => "All new flags acknowledged"),
   });
 }
 

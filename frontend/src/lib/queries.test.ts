@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { applyReview } from "./queries";
+import { applyAcknowledgeAll, applyReview } from "./queries";
 import type { Flag, WorklistPage } from "./types";
 
 function flag(id: string, status: Flag["status"] = "new"): Flag {
@@ -19,7 +19,7 @@ function page(): WorklistPage {
       { patient, score: 14, flags: [flag("a"), flag("b")] },
       { patient: { ...patient, patient_id: "R-2" }, score: 4, flags: [flag("c")] },
     ],
-    total: 2, limit: 50, offset: 0,
+    total: 2, limit: 50, offset: 0, data_as_of: null,
   };
 }
 
@@ -34,5 +34,18 @@ describe("applyReview (optimistic worklist update)", () => {
     const next = applyReview(page(), { flagId: "c", action: "resolve" });
     expect(next.items.map((r) => r.patient.patient_id)).toEqual(["R-1"]);
     expect(next.total).toBe(1);
+  });
+});
+
+describe("applyAcknowledgeAll (optimistic worklist update)", () => {
+  it("acknowledges every new flag of that patient only", () => {
+    const start = page();
+    start.items[0].flags[1] = flag("b", "acknowledged");
+    const next = applyAcknowledgeAll(start, { patientId: "R-1", note: "seen" });
+    expect(next.items[0].flags.map((f) => [f.status, f.note])).toEqual([
+      ["acknowledged", "seen"],
+      ["acknowledged", null],
+    ]);
+    expect(next.items[1].flags[0].status).toBe("new");
   });
 });

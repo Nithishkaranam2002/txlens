@@ -4366,6 +4366,18 @@
       "WorklistPage": {
         "description": "One page of the ranked worklist.",
         "properties": {
+          "data_as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data As Of"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/WorklistRow"
@@ -4390,7 +4402,8 @@
           "items",
           "total",
           "limit",
-          "offset"
+          "offset",
+          "data_as_of"
         ],
         "title": "WorklistPage",
         "type": "object"
@@ -5705,6 +5718,87 @@
         ]
       }
     },
+    "/patients/{patient_id}/flags/acknowledge": {
+      "post": {
+        "description": "new -> acknowledged for each of the patient's open flags, one audit row per flag, all in\none transaction. Flags already acknowledged or resolved are left as they are.",
+        "operationId": "acknowledge_all_patients__patient_id__flags_acknowledge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+            "in": "header",
+            "name": "X-Requested-With",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Any non-empty value; requests without it get 403 (CSRF defence).",
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Review"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Review"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientFlags"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such patient in your center"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Acknowledge every new flag of one patient",
+        "tags": [
+          "surveillance"
+        ]
+      }
+    },
     "/patients/{patient_id}/risk": {
       "get": {
         "description": "`patient_id` is the person id for clinicians and the pseudonym (`R-...`) for others.",
@@ -6389,20 +6483,24 @@
             }
           },
           {
-            "description": "Rows with an open flag of this severity",
+            "description": "Rows whose highest open severity is one of these",
             "in": "query",
             "name": "severity",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/Severity"
+                  "items": {
+                    "$ref": "#/components/schemas/Severity"
+                  },
+                  "maxItems": 3,
+                  "type": "array"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Rows with an open flag of this severity",
+              "description": "Rows whose highest open severity is one of these",
               "title": "Severity"
             }
           },

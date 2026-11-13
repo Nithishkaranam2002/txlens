@@ -55,4 +55,21 @@ describe("WorklistTable", () => {
     await userEvent.click(screen.getByRole("button", { name: /Score/ }));
     expect(order()).toEqual([...first].reverse());
   });
+
+  it("shows a flag's date only when it differs from the page's data date", () => {
+    const older = { ...flag, flag_id: "f3", as_of: "2025-05-31", reason: "older result" };
+    const rows = [{ ...identified[0], flags: [flag, older] }];
+    renderWithQuery(<WorklistTable rows={rows} offset={0} canReview={false} dataAsOf="2025-06-30" />);
+    expect(screen.queryByText("30 Jun 2025")).toBeNull();
+    expect(screen.getByText("31 May 2025").closest("span")).toHaveTextContent("(older data, as of 31 May 2025)");
+  });
+
+  it("offers acknowledge-all for a patient with more than one new flag", () => {
+    const two = [{ ...identified[0], flags: [flag, { ...flag, flag_id: "f9" }] }, identified[1]];
+    renderWithQuery(<WorklistTable rows={two} offset={0} canReview />);
+    expect(screen.getByRole("button", { name: "Acknowledge all 2 new flags for Vale, Ada" })).toHaveTextContent(
+      "Acknowledge all (2)",
+    );
+    expect(screen.getAllByRole("button", { name: /Acknowledge all/ })).toHaveLength(1); // not for one flag
+  });
 });

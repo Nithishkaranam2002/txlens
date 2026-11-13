@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useReviewFlag, type ReviewAction } from "@/lib/queries";
+import { useAcknowledgeAll, useReviewFlag, type ReviewAction } from "@/lib/queries";
 import type { Flag } from "@/lib/types";
 
 const TEXT: Record<ReviewAction, { button: string; title: string; description: string }> = {
@@ -31,15 +31,25 @@ const TEXT: Record<ReviewAction, { button: string; title: string; description: s
   },
 };
 
+type NoteDialogProps = {
+  button: string;
+  ariaLabel: string;
+  title: string;
+  description: string;
+  confirm: string;
+  variant: "outline" | "secondary";
+  children: ReactNode; // what is being reviewed
+  onSubmit: (note: string | undefined) => void;
+};
+
 /** A review button that opens a dialog with an optional note (the dialog traps focus). */
-export function ReviewDialog({ flag, action, subject }: { flag: Flag; action: ReviewAction; subject: string }) {
+function NoteDialog({ button, ariaLabel, title, description, confirm, variant, children, onSubmit }: NoteDialogProps) {
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
-  const review = useReviewFlag();
-  const text = TEXT[action];
+  const noteId = useId();
 
   const submit = () => {
-    review.mutate({ flagId: flag.flag_id, action, note: note.trim() || undefined });
+    onSubmit(note.trim() || undefined);
     setOpen(false);
     setNote("");
   };
@@ -47,20 +57,20 @@ export function ReviewDialog({ flag, action, subject }: { flag: Flag; action: Re
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" variant={action === "resolve" ? "outline" : "secondary"} aria-label={`${text.button}: ${subject}`}>
-          {text.button}
+        <Button size="sm" variant={variant} aria-label={ariaLabel}>
+          {button}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{text.title}</DialogTitle>
-          <DialogDescription>{text.description}</DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        <p className="rounded-md bg-muted p-3 text-sm">{flag.reason}</p>
+        {children}
         <div className="space-y-2">
-          <Label htmlFor={`note-${flag.flag_id}`}>Note (optional)</Label>
+          <Label htmlFor={noteId}>Note (optional)</Label>
           <Textarea
-            id={`note-${flag.flag_id}`}
+            id={noteId}
             value={note}
             maxLength={2000}
             onChange={(e) => setNote(e.target.value)}
@@ -71,9 +81,50 @@ export function ReviewDialog({ flag, action, subject }: { flag: Flag; action: Re
           <DialogClose asChild>
             <Button variant="outline">Cancel</Button>
           </DialogClose>
-          <Button onClick={submit}>{text.button}</Button>
+          <Button onClick={submit}>{confirm}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Acknowledge or resolve one flag. */
+export function ReviewDialog({ flag, action, subject }: { flag: Flag; action: ReviewAction; subject: string }) {
+  const review = useReviewFlag();
+  const text = TEXT[action];
+  return (
+    <NoteDialog
+      button={text.button}
+      ariaLabel={`${text.button}: ${subject}`}
+      title={text.title}
+      description={text.description}
+      confirm={text.button}
+      variant={action === "resolve" ? "outline" : "secondary"}
+      onSubmit={(note) => review.mutate({ flagId: flag.flag_id, action, note })}
+    >
+      <p className="rounded-md bg-muted p-3 text-sm">{flag.reason}</p>
+    </NoteDialog>
+  );
+}
+
+/** Acknowledge every new flag of one patient, with one note for all of them. */
+export function AcknowledgeAllDialog({ patientId, flags, subject }: { patientId: string; flags: Flag[]; subject: string }) {
+  const acknowledge = useAcknowledgeAll();
+  return (
+    <NoteDialog
+      button={`Acknowledge all (${flags.length})`}
+      ariaLabel={`Acknowledge all ${flags.length} new flags for ${subject}`}
+      title="Acknowledge all new flags"
+      description={`You have seen these ${flags.length} flags for ${subject} and are looking into them.`}
+      confirm="Acknowledge all"
+      variant="secondary"
+      onSubmit={(note) => acknowledge.mutate({ patientId, note })}
+    >
+      <ul className="space-y-1 rounded-md bg-muted p-3 text-sm">
+        {flags.map((flag) => (
+          <li key={flag.flag_id}>{flag.reason}</li>
+        ))}
+      </ul>
+    </NoteDialog>
   );
 }

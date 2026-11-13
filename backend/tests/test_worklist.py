@@ -126,13 +126,15 @@ def test_resolving_every_high_flag_leaves_the_shared_worklist_unchanged(
     ("params", "keep"),
     [
         ({"organ": "heart"}, lambda row: row["patient"]["organ"] == "heart"),
-        ({"severity": "high"}, lambda row: any(f["severity"] == "high" for f in row["flags"])),
+        ({"severity": "high"}, lambda row: top_severity(row) == "high"),
+        ({"severity": ["high", "medium"]}, lambda row: top_severity(row) != "low"),
+        ({"severity": "low"}, lambda row: all(f["severity"] == "low" for f in row["flags"])),
         ({"status": "new"}, lambda row: any(f["status"] == "new" for f in row["flags"])),
     ],
-    ids=["organ", "severity", "status"],
+    ids=["organ", "severity", "high-and-medium", "low-only", "status"],
 )
 def test_worklist_filters(
-    client: TestClient, api_flags: date, params: dict[str, str], keep: Any
+    client: TestClient, api_flags: date, params: dict[str, Any], keep: Any
 ) -> None:
     login(client, Role.CLINICIAN, "center_a")
     everyone = worklist(client)
@@ -140,6 +142,53 @@ def test_worklist_filters(
     expected = [row["patient"]["patient_id"] for row in everyone if keep(row)]
     assert expected and [r["patient"]["patient_id"] for r in filtered["items"]] == expected
     assert filtered["total"] == len(expected)
+
+
+def top_severity(row: dict[str, Any]) -> str:
+    """The row's highest open severity (flags are listed highest first)."""
+    severity: str = row["flags"][0]["severity"]
+    return severity
+
+
+def test_data_as_of_is_shown_once_and_only_to_clinicians(
+    client: TestClient, api_flags: date
+) -> None:
+    login(client, Role.CLINICIAN, "center_a")
+    assert client.get("/worklist").json()["data_as_of"] == api_flags.isoformat()
+    login(client, Role.DATA_STEWARD, "center_a")  # beside shifted dates it would reveal shifts
+    assert client.get("/worklist").json()["data_as_of"] is None
+
+
+def test_acknowledge_all_flags_of_a_patient(
+    client: TestClient, api_owner: Engine, api_settings: Settings,
+    fresh_flag: Callable[..., str],
+) -> None:  # fmt: skip
+    with api_owner.connect() as conn:
+        person, flags = conn.execute(text(
+            "SELECT person_id, array_agg(flag_id::text) FROM app.surveillance_flag "
+            "WHERE tenant_id = 'center_a' AND status = 'new' AND cleared_at IS NULL "
+            "GROUP BY person_id HAVING count(*) >= 2 ORDER BY person_id LIMIT 1"),
+        ).one()  # fmt: skip
+    for flag_id in flags:
+        fresh_flag(flag_id=flag_id)  # put back unreviewed afterwards
+    login(client, Role.DATA_STEWARD, "center_a")
+    alias = pseudonym(api_settings.deid_hmac_key.get_secret_value(), "center_a", person)
+    assert client.post(f"/patients/{alias}/flags/acknowledge").status_code == 403
+    login(client, Role.CLINICIAN, "center_b")
+    assert client.post(f"/patients/{person}/flags/acknowledge").status_code == 404  # RLS
+    login(client, Role.CLINICIAN, "center_a")
+    response = client.post(f"/patients/{person}/flags/acknowledge", json={"note": "seen all"})
+    assert response.status_code == 200
+    shown = {f["flag_id"]: f for f in response.json()["flags"]}
+    assert all(shown[f]["status"] == "acknowledged" and shown[f]["note"] == "seen all"
+               for f in flags)  # fmt: skip
+    with api_owner.connect() as conn:
+        audited = set(conn.execute(text(
+            "SELECT object_id FROM app.audit_log WHERE action = 'flag_acknowledge' "
+            "AND object_id = ANY(:f)"), {"f": flags}).scalars())  # fmt: skip
+    assert audited == set(flags)  # one audit row per flag
+    again = client.post(f"/patients/{person}/flags/acknowledge")  # nothing new left: no-op
+    assert again.status_code == 200 and again.json() == response.json()
 
 
 def test_patient_flags_carry_review_history(

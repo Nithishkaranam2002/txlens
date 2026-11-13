@@ -147,6 +147,13 @@ def facts(
             "GROUP BY f.person_id, i.given_name, i.family_name "
             "HAVING count(*) = 1 AND bool_and(f.status = 'new') ORDER BY f.person_id LIMIT 1"
         )).one()  # fmt: skip
+        several = conn.execute(text(
+            "SELECT f.person_id, i.given_name, i.family_name, count(*) AS flags "
+            "FROM app.surveillance_flag f JOIN app.patient_identity i USING (tenant_id, person_id) "
+            "WHERE f.tenant_id = 'center_a' AND f.status = 'new' AND f.cleared_at IS NULL "
+            "AND f.person_id <> :single GROUP BY f.person_id, i.given_name, i.family_name "
+            "HAVING count(*) >= 2 ORDER BY f.person_id LIMIT 1"), {"single": single.person_id},
+        ).one()  # fmt: skip
         other = conn.execute(text(
             "SELECT min(person_id) FROM cdm.person WHERE tenant_id = 'center_b'"
         )).scalar_one()  # fmt: skip
@@ -157,6 +164,10 @@ def facts(
         "passwords": {role.value: password for role, password in PASSWORDS.items()},
         "singleFlagPatient": {
             "id": single.person_id, "name": f"{single.family_name}, {single.given_name}",
+        },
+        "multiFlagPatient": {
+            "id": several.person_id, "name": f"{several.family_name}, {several.given_name}",
+            "flags": several.flags,
         },
         "otherCenterPatient": {
             "id": other, "pseudonym": pseudonym(deid_key, "center_b", other),

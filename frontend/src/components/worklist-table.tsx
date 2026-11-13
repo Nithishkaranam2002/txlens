@@ -13,7 +13,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
 
-import { ReviewDialog } from "@/components/review-dialog";
+import { AcknowledgeAllDialog, ReviewDialog } from "@/components/review-dialog";
 import { SeverityBadge, StatusBadge } from "@/components/severity-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDate, ORGAN_LABEL, patientDetail, patientName } from "@/lib/format";
@@ -42,26 +42,44 @@ function PatientCell({ row }: { row: Row }) {
   );
 }
 
-function FlagsCell({ row, canReview }: { row: Row; canReview: boolean }) {
+/** A flag's own data date, shown only when it differs from the page's "Data as of" date (or
+ * when there is none: de-identified views see each patient's shifted dates instead). */
+function FlagDate({ asOf, dataAsOf }: { asOf: string; dataAsOf: string | null }) {
+  if (asOf === dataAsOf) return null;
   return (
-    <ul className="space-y-2">
-      {row.flags.map((flag) => (
-        <li key={flag.flag_id} className="flex flex-wrap items-start gap-2">
-          <SeverityBadge severity={flag.severity} />
-          <StatusBadge status={flag.status} />
-          <span className="min-w-60 flex-1 text-sm">
-            {flag.reason}
-            <span className="ml-1 text-xs text-muted-foreground">(as of {formatDate(flag.as_of)})</span>
-          </span>
-          {canReview && (
-            <span className="flex gap-1.5">
-              {flag.status === "new" && <ReviewDialog flag={flag} action="acknowledge" subject={patientName(row.patient)} />}
-              <ReviewDialog flag={flag} action="resolve" subject={patientName(row.patient)} />
+    <span className="ml-1 text-xs text-muted-foreground">
+      ({dataAsOf ? "older data, " : ""}as of <time dateTime={asOf}>{formatDate(asOf)}</time>)
+    </span>
+  );
+}
+
+function FlagsCell({ row, canReview, dataAsOf }: { row: Row; canReview: boolean; dataAsOf: string | null }) {
+  const subject = patientName(row.patient);
+  const fresh = row.flags.filter((flag) => flag.status === "new");
+  return (
+    <div className="space-y-2">
+      {canReview && fresh.length > 1 && (
+        <AcknowledgeAllDialog patientId={String(row.patient.patient_id)} flags={fresh} subject={subject} />
+      )}
+      <ul className="space-y-2">
+        {row.flags.map((flag) => (
+          <li key={flag.flag_id} className="flex flex-wrap items-start gap-2">
+            <SeverityBadge severity={flag.severity} />
+            <StatusBadge status={flag.status} />
+            <span className="min-w-60 flex-1 text-sm">
+              {flag.reason}
+              <FlagDate asOf={flag.as_of} dataAsOf={dataAsOf} />
             </span>
-          )}
-        </li>
-      ))}
-    </ul>
+            {canReview && (
+              <span className="flex gap-1.5">
+                {flag.status === "new" && <ReviewDialog flag={flag} action="acknowledge" subject={subject} />}
+                <ReviewDialog flag={flag} action="resolve" subject={subject} />
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -82,7 +100,9 @@ function columns(canReview: boolean) {
     helper.display({
       id: "flags",
       header: "Why this patient is flagged",
-      cell: ({ row }) => <FlagsCell row={row.original} canReview={canReview} />,
+      cell: ({ row, table }) => (
+        <FlagsCell row={row.original} canReview={canReview} dataAsOf={(table.options.meta as Meta).dataAsOf} />
+      ),
     }),
   ]);
 }
@@ -91,20 +111,36 @@ function columns(canReview: boolean) {
 const REVIEW_COLUMNS = columns(true);
 const READ_COLUMNS = columns(false);
 
+type Meta = { dataAsOf: string | null };
+
 /** The ranked worklist. Clinicians can acknowledge/resolve; data stewards read only. */
-export function WorklistTable({ rows, offset, canReview }: { rows: WorklistRow[]; offset: number; canReview: boolean }) {
+export function WorklistTable({
+  rows,
+  offset,
+  canReview,
+  dataAsOf = null,
+  caption = "Patients with open surveillance flags, highest priority first",
+}: {
+  rows: WorklistRow[];
+  offset: number;
+  canReview: boolean;
+  dataAsOf?: string | null;
+  caption?: string;
+}) {
   const data = useMemo(() => rows.map((row, i) => ({ ...row, rank: offset + i + 1 })), [rows, offset]);
+  const meta = useMemo<Meta>(() => ({ dataAsOf }), [dataAsOf]);
   const table = useTable({
     features,
     columns: canReview ? REVIEW_COLUMNS : READ_COLUMNS,
     data,
+    meta,
     getRowId: (row) => String(row.patient.patient_id),
   });
 
   return (
     <div className="rounded-lg border bg-card">
       <Table>
-        <caption className="sr-only">Patients with open surveillance flags, highest priority first</caption>
+        <caption className="sr-only">{caption}</caption>
         <TableHeader>
           {table.getHeaderGroups().map((group) => (
             <TableRow key={group.id}>

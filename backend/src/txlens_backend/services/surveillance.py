@@ -130,21 +130,37 @@ SEVERITY_ORDER = {Severity.HIGH: 0, Severity.MEDIUM: 1, Severity.LOW: 2}
 
 @dataclass(frozen=True)
 class WorklistFilters:
-    """Keep rows of this organ that have at least one open flag of this severity and status."""
+    """Keep rows of this organ whose highest open severity is one of `severities` and that
+    have at least one open flag in this status."""
 
     organ: pts.Organ | None = None
-    severity: Severity | None = None
+    severities: frozenset[Severity] | None = None
     status: Status | None = None
 
     def keep(self, row: WorklistRow) -> bool:
         """True if the row passes every filter that is set."""
         if self.organ is not None and row.patient.organ != self.organ:
             return False
-        return any(
-            (self.severity is None or flag.severity is self.severity)
-            and (self.status is None or flag.status is self.status)
-            for flag in row.flags
-        )
+        top = min((flag.severity for flag in row.flags), key=SEVERITY_ORDER.__getitem__)
+        if self.severities is not None and top not in self.severities:
+            return False
+        return self.status is None or any(flag.status is self.status for flag in row.flags)
+
+
+def data_as_of(conn: Connection) -> date | None:
+    """The data date of the center's latest surveillance run (None before the first run)."""
+    latest: date | None = conn.execute(
+        text("SELECT max(as_of) FROM app.surveillance_run")
+    ).scalar_one()
+    return latest
+
+
+def new_flag_ids(conn: Connection, person_id: int) -> list[str]:
+    """The patient's open flags nobody has acknowledged yet."""
+    return list(conn.execute(text(
+        "SELECT flag_id::text FROM app.surveillance_flag WHERE person_id = :p "
+        "AND status = 'new' AND cleared_at IS NULL ORDER BY created_at, rule_id"),
+        {"p": person_id}).scalars())  # fmt: skip
 
 
 def worklist(

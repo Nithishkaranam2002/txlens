@@ -414,6 +414,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/patients/{patient_id}/flags/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acknowledge every new flag of one patient
+         * @description new -> acknowledged for each of the patient's open flags, one audit row per flag, all in
+         *     one transaction. Flags already acknowledged or resolved are left as they are.
+         */
+        post: operations["acknowledge_all_patients__patient_id__flags_acknowledge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/patients/{patient_id}/risk": {
         parameters: {
             query?: never;
@@ -2206,6 +2227,8 @@ export interface components {
          * @description One page of the ranked worklist.
          */
         WorklistPage: {
+            /** Data As Of */
+            data_as_of: string | null;
             /** Items */
             items: components["schemas"]["WorklistRow"][];
             /** Limit */
@@ -3048,6 +3071,51 @@ export interface operations {
             };
         };
     };
+    acknowledge_all_patients__patient_id__flags_acknowledge_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Any non-empty value; requests without it get 403 (CSRF defence). */
+                "X-Requested-With"?: string | null;
+            };
+            path: {
+                patient_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["Review"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatientFlags"];
+                };
+            };
+            /** @description No such patient in your center */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_risk_patients__patient_id__risk_get: {
         parameters: {
             query?: never;
@@ -3515,8 +3583,8 @@ export interface operations {
         parameters: {
             query?: {
                 organ?: ("kidney" | "heart") | null;
-                /** @description Rows with an open flag of this severity */
-                severity?: components["schemas"]["Severity"] | null;
+                /** @description Rows whose highest open severity is one of these */
+                severity?: components["schemas"]["Severity"][] | null;
                 /** @description Rows with an open flag in this status */
                 status?: components["schemas"]["Status"] | null;
                 limit?: number;

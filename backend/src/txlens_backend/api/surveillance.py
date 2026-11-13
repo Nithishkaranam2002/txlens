@@ -10,6 +10,7 @@ Every view is audited (`phi_view` / `deid_view`) and every status change is audi
 """
 
 import uuid
+from datetime import date
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -50,6 +51,10 @@ class WorklistPage(BaseModel):
     total: int
     limit: int
     offset: int
+    # The data date of the latest surveillance run; clinicians only. De-identified viewers see
+    # each flag's own shifted date instead: the real date next to a shifted one would reveal
+    # the patient's date shift.
+    data_as_of: date | None
 
 
 class Review(BaseModel):
@@ -66,7 +71,8 @@ def get_worklist(
     info: Info,
     organ: patients.Organ | None = None,
     severity: Annotated[
-        Severity | None, Query(description="Rows with an open flag of this severity")
+        list[Severity] | None,
+        Query(description="Rows whose highest open severity is one of these", max_length=3),
     ] = None,
     status_: Annotated[
         Status | None, Query(alias="status", description="Rows with an open flag in this status")
@@ -76,7 +82,8 @@ def get_worklist(
 ) -> WorklistPage:
     """Open flags (not resolved, still firing) grouped by patient and ranked by priority score."""
     view = viewer(principal, ctx)
-    filters = svc.WorklistFilters(organ=organ, severity=severity, status=status_)
+    severities = frozenset(severity) if severity else None
+    filters = svc.WorklistFilters(organ=organ, severities=severities, status=status_)
     rows = svc.worklist(conn, view, principal.tenant_id, filters)
     page = rows[offset : offset + limit]
     audit.record(
@@ -85,7 +92,8 @@ def get_worklist(
                            "organ": organ, "severity": severity, "status": status_,
                            "limit": limit, "offset": offset},
     )  # fmt: skip
-    return WorklistPage(items=page, total=len(rows), limit=limit, offset=offset)
+    as_of = svc.data_as_of(conn) if view.identified else None
+    return WorklistPage(items=page, total=len(rows), limit=limit, offset=offset, data_as_of=as_of)
 
 
 @router.get(
@@ -132,6 +140,15 @@ def change_status(
         uuid.UUID(flag_id)
     except ValueError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Flag not found") from None
+    record_status(flag_id, new, note, principal, conn, info)
+    return svc.one_flag(conn, viewer(principal, ctx), principal.tenant_id, flag_id)
+
+
+def record_status(
+    flag_id: str, new: Status, note: str | None, principal: Principal, conn: TenantDb,
+    info: Info,
+) -> None:  # fmt: skip
+    """Move one flag to `new` and audit the change (404 / 409 if it cannot)."""
     try:
         change = set_status(conn, flag_id, new, principal.user_id, note)
     except InvalidTransitionError as error:
@@ -144,7 +161,6 @@ def change_status(
         {"person_id": change.person_id, "from": change.old.value, "to": change.new.value,
          "note": note},
     )  # fmt: skip
-    return svc.one_flag(conn, viewer(principal, ctx), principal.tenant_id, flag_id)
 
 
 @router.post(
@@ -183,3 +199,32 @@ def resolve(
     """new or acknowledged -> resolved. A resolved flag is never reopened."""
     note = review.note if review else None
     return change_status(flag_id, Status.RESOLVED, note, principal, conn, ctx, info)
+
+
+@router.post(
+    "/patients/{patient_id}/flags/acknowledge",
+    summary="Acknowledge every new flag of one patient",
+    responses={404: {"description": "No such patient in your center"}},
+    dependencies=[Depends(require_csrf_header)],
+)
+def acknowledge_all(
+    patient_id: str,
+    principal: Reviewer,
+    conn: TenantDb,
+    ctx: Context,
+    info: Info,
+    review: Review | None = None,
+) -> svc.PatientFlags:
+    """new -> acknowledged for each of the patient's open flags, one audit row per flag, all in
+    one transaction. Flags already acknowledged or resolved are left as they are."""
+    view = viewer(principal, ctx)
+    person_id = patients.find_person(conn, view, patient_id)
+    if person_id is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Patient not found")
+    note = review.note if review else None
+    for flag_id in svc.new_flag_ids(conn, person_id):
+        record_status(flag_id, Status.ACKNOWLEDGED, note, principal, conn, info)
+    result = svc.patient_flags(conn, view, principal.tenant_id, person_id)
+    audit.record(conn, info, principal.user_id, "phi_view", "patient_flags", str(person_id),
+                 {"requested_as": patient_id})  # fmt: skip
+    return result

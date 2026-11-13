@@ -36,6 +36,7 @@ MATRIX: dict[str, dict[Role | str, int]] = {
     "POST /patients/{pid}/risk/score": {C: 200, R: 403, S: 403, A: 403, ANON: 401},
     "POST /flags/{fid}/acknowledge": {C: 200, R: 403, S: 403, A: 403, ANON: 401},
     "POST /flags/{fid}/resolve":   {C: 200, R: 403, S: 403, A: 403, ANON: 401},
+    "POST /patients/{pid}/flags/acknowledge": {C: 200, R: 403, S: 403, A: 403, ANON: 401},
     "GET /documents/{did}/evidence": {C: 200, R: 403, S: 200, A: 403, ANON: 401},
     "GET /documents/{did}/pages/1": {C: 200, R: 403, S: 403, A: 403, ANON: 401},
     "GET /documents/{did}/fields/banff_t/crop": {C: 200, R: 403, S: 200, A: 403, ANON: 401},
@@ -61,6 +62,7 @@ AUDITED = {
     "GET /cohorts/{cid}/members", "GET /worklist", "GET /patients/{pid}/flags",
     "GET /patients/{pid}/risk", "POST /patients/{pid}/risk/score",
     "POST /flags/{fid}/acknowledge", "POST /flags/{fid}/resolve",
+    "POST /patients/{pid}/flags/acknowledge",
     "GET /documents/{did}/evidence", "GET /documents/{did}/pages/1",
     "GET /documents/{did}/fields/banff_t/crop", "GET /review/items",
     "GET /review/items/biopsy_document/{rid}", "POST /review/items/biopsy_document/{rid}",
@@ -143,6 +145,15 @@ def patient_id(caller: Role | str, data: Dataset, settings: Settings) -> str:
     return pseudonym(settings.deid_hmac_key.get_secret_value(), tenant, person_id)
 
 
+def new_flags_of(owner: Engine, data: Dataset) -> list[str]:
+    """The new flags of the center A patient the matrix asks about."""
+    _, person_id = next(v for v in data.persons.values() if v[0] == "center_a")
+    with owner.connect() as conn:
+        return list(conn.execute(text(
+            "SELECT flag_id::text FROM app.surveillance_flag WHERE tenant_id = 'center_a' "
+            "AND person_id = :p AND status = 'new'"), {"p": person_id}).scalars())  # fmt: skip
+
+
 def own_conversation(client: TestClient, caller: Role | str) -> str:
     """A conversation of the caller (conversations are private), or a random id for callers
     who may not use the copilot (they are refused before any lookup)."""
@@ -179,6 +190,10 @@ def test_permission_matrix(
     elif path.startswith("/review/"):
         response = client.post(path, json={"action": "approve"})
     elif path.startswith("/flags/"):
+        response = client.post(path, json={"note": "permission matrix"})
+    elif path.endswith("/flags/acknowledge"):
+        for flag_id in new_flags_of(api_owner, api_data):
+            fresh_flag(flag_id=flag_id)  # put back unreviewed after the test
         response = client.post(path, json={"note": "permission matrix"})
     elif path.startswith("/survival/"):
         response = client.post(path, json={"grouping": "donor_type"})
