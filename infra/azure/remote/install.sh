@@ -69,7 +69,12 @@ if new_snapshot; then
     compose restart api worker
   fi
   cp demo_snapshot/manifest.json .restored-manifest.json
-  rm -rf mlruns.before-restore-* data/raw.before-restore-*
+  # The old copies restore.sh moved aside; on Linux mlruns belongs to the containers' uid.
+  if [[ "$(uname -s)" == Linux ]]; then
+    sudo rm -rf mlruns.before-restore-* data/raw.before-restore-*
+  else
+    rm -rf mlruns.before-restore-* data/raw.before-restore-*
+  fi
   echo "    snapshot restored; kept in demo_snapshot/ for make cloud-reset"
   python3 infra/azure/remote/gen_env.py "$PWD" "$DOMAIN"  # now with the data cut-off
 else

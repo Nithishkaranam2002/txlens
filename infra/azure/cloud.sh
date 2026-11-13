@@ -93,7 +93,8 @@ push_code() {
     # First matching rule wins; excluded paths (secrets, data) are also kept by --delete.
     rsync -a --delete --include=/.env.example --exclude='/.env*' --exclude=/.release \
       --exclude=/data/ --exclude='/mlruns*' --exclude=/demo_snapshot/ \
-      --exclude=/.restored-manifest.json $REMOTE/.release/ $REMOTE/
+      --exclude=/.restored-manifest.json --exclude=/.snapshot-audit-max --exclude=/.reset/ \
+      $REMOTE/.release/ $REMOTE/
     rm -rf $REMOTE/.release"
 }
 
