@@ -12,6 +12,7 @@
     "gen:api": "openapi-typescript openapi.json -o src/lib/api/schema.d.ts",
     "e2e": "playwright test",
     "screenshots": "tsx scripts/screenshots.ts",
+    "demo-gif": "tsx scripts/demo-gif.ts",
     "perf-pages": "tsx scripts/perf-pages.ts"
   },
   "dependencies": {

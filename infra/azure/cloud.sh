@@ -11,6 +11,7 @@
 #   passwords  copy the demo passwords from the VM into the macOS Keychain
 #   update     upload the current commit, rebuild and restart (data untouched)
 #   smoke      the smoke test (infra/azure/smoke.sh)
+#   screenshots  README screenshots from the live demo (MODE=pages or copilot)
 #   budget     monthly budget with e-mail alerts ($20 unless TXLENS_AZ_BUDGET is set)
 #   destroy    delete the resource group, the budget, the pinned host key and Keychain items
 # Settings: TXLENS_AZ_RG, TXLENS_AZ_LOCATION, TXLENS_AZ_VM_SIZE, TXLENS_AZ_SSH_KEY.
@@ -188,6 +189,17 @@ update() {
   bash infra/azure/smoke.sh
 }
 
+# Passwords go from the Keychain into the script's environment only, never to the terminal.
+screenshots() {
+  resolve_host
+  env BASE_URL="https://$VM_HOST" \
+    DEMO_CLINICIAN_PASSWORD="$(keychain_password clinician)" \
+    DEMO_RESEARCHER_PASSWORD="$(keychain_password researcher)" \
+    DEMO_DATA_STEWARD_PASSWORD="$(keychain_password data_steward)" \
+    DEMO_ADMIN_PASSWORD="$(keychain_password admin)" \
+    pnpm --dir frontend screenshots "${1:-pages}"
+}
+
 budget() {
   need_az
   local amount email
@@ -224,5 +236,6 @@ case "${1:-}" in
   deploy | start | stop | status | tunnel | passwords | update | budget | destroy) "$1" ;;
   ssh) ssh_vm ;;
   smoke) bash infra/azure/smoke.sh ;;
-  *) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  screenshots) screenshots "${2:-pages}" ;;
+  *) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

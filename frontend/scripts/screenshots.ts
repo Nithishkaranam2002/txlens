@@ -1,16 +1,22 @@
 /**
- * README screenshots of the main pages, taken with Playwright against a running stack
- * (`make api` + `make frontend`). Usage: `pnpm screenshots` (BASE_URL defaults to :3000).
- * Demo passwords come from the environment or the DEMO_*_PASSWORD lines of ../.env;
- * they are never printed.
+ * README screenshots, taken with Playwright against a running stack: the cloud demo
+ * (`make cloud-screenshots`) or a local one (`pnpm screenshots`, BASE_URL defaults to :3000).
+ * Usage: `pnpm screenshots [pages|copilot]` (default: pages).
+ *
+ * Demo passwords come from the environment (DEMO_<ROLE>_PASSWORD) or ../.env; they are never
+ * printed. PATIENT_ID picks the patient page, REVIEW_DOCUMENT the biopsy report in review.
+ * Screenshots are 1440 px wide, light theme, without browser chrome, and must stay < 500 KB.
  */
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { chromium, type Page } from "@playwright/test";
+import { chromium, type Browser, type Page } from "@playwright/test";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
+const PATIENT_ID = process.env.PATIENT_ID ?? "100000399";
+const REVIEW_DOCUMENT = process.env.REVIEW_DOCUMENT ?? "0f2a838c-cf72-4bd0-99b6-93f1b0d12a86";
 const OUT = join(__dirname, "..", "..", "docs", "images");
+const MAX_BYTES = 500_000;
 const HIDE_DEV_UI = "nextjs-portal { display: none !important; }";
 
 function demoPassword(role: string): string {
@@ -24,6 +30,15 @@ function demoPassword(role: string): string {
   return line.slice(key.length + 1).trim().replace(/^["']|["']$/g, "");
 }
 
+async function newPage(browser: Browser): Promise<Page> {
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    deviceScaleFactor: 1,
+    colorScheme: "light",
+  });
+  return context.newPage();
+}
+
 async function login(page: Page, role: string) {
   await page.goto(`${BASE_URL}/login`);
   await page.getByLabel("User name").fill(`${role}.center_a`);
@@ -32,66 +47,103 @@ async function login(page: Page, role: string) {
   await page.waitForURL((url) => !["/", "/login"].includes(url.pathname));
 }
 
+/** A screenshot of the top `height` pixels of the page, checked against the size limit. */
 async function shot(page: Page, name: string, height = 900) {
   await page.addStyleTag({ content: HIDE_DEV_UI });
   await page.waitForLoadState("networkidle");
   await page.waitForTimeout(800); // let charts finish drawing
-  await page.screenshot({ path: join(OUT, `app-${name}.png`), fullPage: true, clip: { x: 0, y: 0, width: 1440, height } });
-  console.log(`docs/images/app-${name}.png`);
+  await page.mouse.move(0, 0); // no hover tooltips
+  const path = join(OUT, `${name}.png`);
+  await page.screenshot({ path, fullPage: true, clip: { x: 0, y: 0, width: 1440, height } });
+  const size = statSync(path).size;
+  if (size > MAX_BYTES) throw new Error(`${name}.png is ${Math.round(size / 1000)} KB (limit 500 KB)`);
+  console.log(`docs/images/${name}.png (${Math.round(size / 1000)} KB)`);
+}
+
+async function pages(browser: Browser) {
+  const anonymous = await newPage(browser);
+  await anonymous.goto(`${BASE_URL}/login`);
+  await shot(anonymous, "login");
+
+  const clinician = await newPage(browser);
+  await login(clinician, "clinician");
+  await clinician.getByRole("table").waitFor();
+  await shot(clinician, "clinician-worklist");
+
+  await clinician.goto(`${BASE_URL}/patients/${PATIENT_ID}`);
+  await clinician.getByRole("heading", { name: "Results" }).waitFor();
+  await shot(clinician, "clinician-patient", 2200);
+  const risk = clinician
+    .locator('[data-slot="card"]')
+    .filter({ has: clinician.getByRole("heading", { name: "Rejection-risk model" }) });
+  await risk.scrollIntoViewIfNeeded();
+  await risk.screenshot({ path: join(OUT, "risk-card.png") });
+  console.log("docs/images/risk-card.png");
+
+  await clinician.goto(`${BASE_URL}/review/biopsy_document/${REVIEW_DOCUMENT}`);
+  await clinician.getByRole("img", { name: "Page 1 of the pathology report" }).waitFor();
+  await shot(clinician, "review-biopsy-evidence", 1100);
+
+  await clinician.goto(`${BASE_URL}/review/metrics`);
+  await clinician.getByRole("heading", { name: "Review metrics" }).waitFor();
+  await shot(clinician, "review-metrics", 1100);
+
+  const steward = await newPage(browser);
+  await login(steward, "data_steward");
+  await steward.goto(`${BASE_URL}/review/biopsy_document/${REVIEW_DOCUMENT}`);
+  await steward.getByText("De-identified view: the lines each value was read from").waitFor();
+  await shot(steward, "steward-review-redacted", 1100);
+
+  const researcher = await newPage(browser);
+  await login(researcher, "researcher");
+  await researcher.goto(`${BASE_URL}/cohorts`);
+  await researcher.getByLabel("Organ").click();
+  await researcher.getByRole("option", { name: "Kidney" }).click();
+  await researcher.getByLabel("Donor type").click();
+  await researcher.getByRole("option", { name: "Living" }).click();
+  await researcher.getByLabel("Transplant year from").fill("2025");
+  await researcher.getByRole("button", { name: "Add lab rule" }).click();
+  await researcher.getByLabel("Value").fill("1.5");
+  await researcher.getByRole("button", { name: "Preview cohort" }).click();
+  await researcher.getByText(/Cohort size:/).waitFor();
+  // A suppressed step ("<11") is part of the story: wait for it in the attrition table.
+  await researcher.getByRole("cell", { name: /^<11/ }).first().waitFor({ timeout: 10_000 });
+  await shot(researcher, "researcher-cohort", 1100);
+
+  await researcher.goto(`${BASE_URL}/survival`);
+  await researcher.getByRole("button", { name: "Run analysis" }).click();
+  await researcher.getByRole("heading", { name: "Methods" }).waitFor();
+  await shot(researcher, "researcher-survival", 2600);
+
+  const admin = await newPage(browser);
+  await login(admin, "admin");
+  await admin.getByText("You have no access to patient data").waitFor();
+  await shot(admin, "admin");
+}
+
+/** Copilot answers come from the LLM cache on a server without an API key (Task 4). */
+async function copilot(browser: Browser) {
+  const page = await newPage(browser);
+  await login(page, "researcher");
+  for (const [question, name, height] of [
+    ["How many kidney recipients in my center had a dd-cfDNA result of 1% or more?", "copilot-answer", 1300],
+    ["List the MRNs of the patients with ABMR.", "copilot-refusal", 900],
+  ] as const) {
+    await page.goto(`${BASE_URL}/copilot`); // a new conversation for each screenshot
+    await page.getByLabel("Your question").fill(question);
+    await page.getByRole("button", { name: "Ask" }).click();
+    await page.getByText(/\d+\.\d s · \$/).waitFor({ timeout: 120_000 }); // the answer is done
+    await shot(page, name, height);
+  }
 }
 
 async function main() {
   mkdirSync(OUT, { recursive: true });
   const browser = await chromium.launch();
-  const context = () => browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
-
-  const anonymous = await (await context()).newPage();
-  await anonymous.goto(`${BASE_URL}/login`);
-  await shot(anonymous, "login");
-
-  const clinician = await (await context()).newPage();
-  await login(clinician, "clinician");
-  await clinician.getByRole("table").waitFor();
-  await shot(clinician, "worklist");
-  await clinician.getByRole("table").getByRole("link").first().click();
-  await clinician.getByRole("heading", { name: "Results" }).waitFor();
-  await shot(clinician, "patient", 1500);
-  const risk = clinician
-    .locator('[data-slot="card"]')
-    .filter({ has: clinician.getByRole("heading", { name: "Rejection-risk model" }) });
-  await risk.scrollIntoViewIfNeeded();
-  await risk.screenshot({ path: join(OUT, "app-risk.png") });
-  console.log("docs/images/app-risk.png");
-
-  const researcher = await (await context()).newPage();
-  await login(researcher, "researcher");
-  await researcher.getByLabel("Organ").click();
-  await researcher.getByRole("option", { name: "Kidney" }).click();
-  await researcher.getByRole("button", { name: "Add lab rule" }).click();
-  await researcher.getByRole("button", { name: "Preview cohort" }).click();
-  await researcher.getByText(/Cohort size:/).waitFor();
-  await shot(researcher, "cohort", 1000);
-
-  await researcher.goto(`${BASE_URL}/survival`);
-  await researcher.getByRole("button", { name: "Run analysis" }).click();
-  await researcher.getByRole("heading", { name: "Methods" }).waitFor();
-  await researcher.mouse.move(0, 0);
-  await shot(researcher, "survival", 2600);
-
-  // The copilot calls the configured model (a few tenths of a cent per question).
-  const copilot = await (await context()).newPage();
-  await login(copilot, "researcher");
-  for (const [question, name, height] of [
-    ["What is graft survival by donor type for kidney recipients?", "copilot", 1300],
-    ["What does the literature say about dd-cfDNA thresholds for antibody-mediated rejection?", "copilot-literature", 1300],
-  ] as const) {
-    await copilot.goto(`${BASE_URL}/copilot`); // a new conversation for each screenshot
-    await copilot.getByLabel("Your question").fill(question);
-    await copilot.getByRole("button", { name: "Ask" }).click();
-    await copilot.getByText(/\d+\.\d s · \$/).waitFor({ timeout: 120_000 }); // the answer is done
-    await shot(copilot, name, height);
-  }
-
+  const mode = process.argv[2] ?? "pages";
+  if (mode === "pages") await pages(browser);
+  else if (mode === "copilot") await copilot(browser);
+  else throw new Error(`unknown mode ${mode} (pages or copilot)`);
   await browser.close();
 }
 

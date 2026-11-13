@@ -1,22 +1,159 @@
 # TxLens
 
-TxLens is a multi-tenant clinical data and AI platform for organ transplant programs.
-**Personal portfolio project, synthetic data, not affiliated with any company.**
+**A clinical data and AI platform for organ transplant programs: it turns scattered lab feeds,
+clinic notes and scanned biopsy reports into one standard database, watches every recipient
+for early signs of rejection, and gives researchers privacy-safe analytics and a cited AI
+copilot.**
 
-- Turns messy transplant data (clinical notes, lab feeds, scanned biopsy PDFs) into
-  standardized **OMOP CDM v5.4** data.
-- Monitors patients on a post-transplant **dd-cfDNA surveillance** schedule and builds a
-  clinician worklist.
-- Gives researchers a **cohort and survival-analysis** workbench on de-identified data.
-- Offers an **AI copilot**: guarded text-to-SQL over patient data and cited answers over
-  transplant literature. The AI extracts and summarizes; it never makes clinical decisions.
+*Personal portfolio project, synthetic data, not affiliated with any company.*
 
-> **All data is synthetic**, created by `data_generator/`. No real patient data is used.
+**Live demo:** <https://txlens-b53dc1.northcentralus.cloudapp.azure.com> (guest access: see
+the demo guide on the login page; credentials on request) · **Video walkthrough:** coming soon
 
-**Status:** Phases 1 and 2 are done: synthetic data, OMOP database, medallion pipeline, API,
-surveillance worklist, frontend, biopsy-report extraction, clinic-note NLP, the review queue
-and their evaluation. Phase 3 adds survival analysis with R parity checks (Step 3.1), a
-rejection-risk model (Step 3.2) and the research copilot (Step 3.3).
+![TxLens in 18 seconds: the worklist ranks a patient, the patient page shows rising dd-cfDNA, the AI-read biopsy waits for review, a clinician checks the evidence and approves](docs/images/demo.gif)
+
+## The problem
+
+A transplant program's data is scattered: lab results arrive in feeds, the story sits in
+free-text clinic notes, and biopsy results come back as scanned PDFs. Rejection has to be
+caught early, so someone must keep checking every recipient against a surveillance
+schedule. And research needs the same data standardized and de-identified, which is slow and
+risky to do by hand.
+
+## What it does and who it helps
+
+### Transplant clinician
+
+![Clinician worklist: patients ranked by surveillance flags, each with a plain-English reason](docs/images/clinician-worklist.png)
+
+- **A prioritized worklist** each day: dd-cfDNA, creatinine, eGFR, tacrolimus and DSA are
+  checked against a configurable schedule and thresholds.
+- **Explainable flags**: every flag says in plain English which result triggered it and why.
+- **The full patient picture** on one page: lab charts with the thresholds drawn in, biopsy
+  results, conditions found in notes, medications and a rejection-risk score
+  ([patient page](docs/images/clinician-patient.png)).
+
+### Data steward and reviewer
+
+![Review queue item: the scanned biopsy page with evidence boxes next to the extracted values](docs/images/review-biopsy-evidence.png)
+
+- **AI extraction with evidence**: the AI reads scanned biopsy reports and clinic notes, and
+  every value points to the exact line on the page it came from.
+- **A person approves**: low-confidence results (and a random 10% quality sample) wait in a
+  review queue; a data steward sees only redacted line crops
+  ([steward view](docs/images/steward-review-redacted.png)).
+- **Nothing unverified reaches the database**: on the evaluation set, no wrong biopsy report
+  was loaded without review.
+
+### Researcher
+
+![Survival analysis: Kaplan-Meier curves with risk table, competing risks and a Cox forest plot](docs/images/researcher-survival.png)
+
+- **De-identified cohorts**: pseudonyms and shifted dates only; counts from 1 to 10 show as
+  "<11" ([cohort builder](docs/images/researcher-cohort.png)).
+- **Survival analysis with statistical safeguards**: landmark analysis against immortal-time
+  bias, competing risks, a Cox model with proportional-hazards checks, all checked against R.
+- **A copilot that cites its sources**: questions over the data become read-only SQL that
+  you can inspect, and literature answers quote abstracts with their PubMed IDs.
+
+### Data and IT team
+
+![Databricks run of the same medallion pipeline: bronze, silver, gold and data-quality checks](docs/images/databricks-report.png)
+
+- **OMOP CDM v5.4**: the standard model and vocabularies (SNOMED CT, RxNorm, LOINC).
+- **Runs locally and on Databricks**: the same PySpark bronze/silver/gold pipeline.
+- **Isolated and audited**: each hospital is a tenant isolated by Postgres Row-Level Security,
+  and every write and every view of patient data is recorded in an audit log.
+
+## Key results
+
+Measured by scripts in [evals/](evals/) that anyone can re-run. **Synthetic,
+template-generated data**: these are upper bounds, not estimates for real clinical documents.
+
+| Result | Number | Report |
+|---|---|---|
+| Pipeline reconciliation with the ground truth | **15 of 15** checks pass | [data_quality.md](evals/reports/data_quality.md) |
+| Conditions mapped to a standard concept | **49.6% → 100%** (codes only → with text matching) | [data_quality.md](evals/reports/data_quality.md) |
+| Wrong biopsy reports loaded without human review | **0** (rules alone: 12) | [summary.md](evals/reports/summary.md) |
+| Survival analysis, Python vs R reference | largest difference **5.9e-15** | [survival.md](evals/reports/survival.md) |
+| Copilot red-team attacks refused or neutralized | **25 of 25** | [copilot.md](evals/reports/copilot.md) |
+| Rejection-risk model vs the rule engine, same alert rate, external center | catches **43.6% vs 44.9%** of rejection visits: it matches the rules, it does not beat them | [risk_model.md](evals/reports/risk_model.md) |
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Sources["Synthetic sources"]
+        L[Lab feeds]
+        N[Clinic notes]
+        P[Scanned biopsy PDFs]
+    end
+    subgraph Lake["PySpark + Delta Lake (local or Databricks)"]
+        B[Bronze] --> S[Silver] --> G[Gold: OMOP CDM v5.4]
+    end
+    L --> B
+    N --> B
+    G --> DB[(Postgres + pgvector<br/>Row-Level Security per hospital)]
+    P --> X[OCR + LLM extraction<br/>Temporal workflows]
+    N --> NLP[Clinical NLP<br/>rules first, LLM for the rest]
+    X --> RQ[Review queue<br/>a person approves]
+    NLP --> RQ
+    RQ --> DB
+    DB --> SV[Surveillance rules<br/>+ rejection-risk model]
+    SV --> DB
+    DB --> API[FastAPI<br/>roles, de-identification, audit log]
+    API --> UI[Next.js app]
+    API --> CP[Copilot: LangGraph<br/>guarded SQL + cited literature]
+    CP --> DB
+```
+
+## Design decisions
+
+- **Row-Level Security with a non-superuser app role**: hospital isolation is enforced by the
+  database, not only by the API ([ADR 0004](docs/adr/0004-multi-tenancy-rls.md)).
+- **Identifiers kept apart and de-identified for research**: names and MRNs live in a separate
+  table; researchers get pseudonyms and shifted dates
+  ([ADR 0008](docs/adr/0008-phi-separation-deidentification.md)).
+- **LLM extraction must show its evidence**: every value cites the line it was read from, and
+  doubtful reports go to a person ([ADR 0013](docs/adr/0013-biopsy-document-extraction.md)).
+- **Deterministic first, LLM second for notes**: rules and medspaCy handle what they can; the
+  LLM only gets the leftovers ([ADR 0014](docs/adr/0014-clinical-note-nlp.md)).
+- **Immortal-time bias prevented by construction**: groups known only after transplant start
+  at a landmark ([ADR 0017](docs/adr/0017-survival-analysis-and-r-parity.md)).
+- **A differencing guard**: a researcher cannot subtract two cohort, survival or copilot
+  counts to reveal fewer than 11 patients ([ADR 0018](docs/adr/0018-research-copilot-safety.md)).
+- **An honest model comparison**: the risk model is judged against the rule engine at the
+  same alert burden, with a decision rule fixed in advance
+  ([ADR 0019](docs/adr/0019-rejection-risk-model.md)).
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Login with the synthetic-data banner](docs/images/login.png) | ![Clinician worklist](docs/images/clinician-worklist.png) |
+| ![Patient page: dd-cfDNA with thresholds, creatinine/eGFR, tacrolimus band, timeline, risk card](docs/images/clinician-patient.png) | ![Review queue: scanned biopsy page with evidence boxes](docs/images/review-biopsy-evidence.png) |
+| ![Data steward: the same item, redacted line crops only](docs/images/steward-review-redacted.png) | ![Researcher cohort builder: attrition funnel with a "<11" step](docs/images/researcher-cohort.png) |
+| ![Survival: Kaplan-Meier, risk table, competing risks, forest plot](docs/images/researcher-survival.png) | ![Review metrics](docs/images/review-metrics.png) |
+| ![Copilot answer with tool trace](docs/images/app-copilot.png) | ![Copilot literature answer with citations](docs/images/app-copilot-literature.png) |
+| ![Admin: no access to patient data](docs/images/admin.png) | ![Databricks pipeline run](docs/images/databricks-run.png) |
+
+## Quick start
+
+```bash
+make demo            # everything in Docker: build, load the demo data, start; prints URLs and users
+make demo-restore    # or bring back a saved demo snapshot offline in minutes
+make cloud-deploy    # or deploy the demo to one small Azure VM (docs/DEPLOY.md)
+```
+
+Details: [Quick demo](#quick-demo-one-command), [How to run (development)](#how-to-run-development),
+[docs/DEPLOY.md](docs/DEPLOY.md).
+
+**Status:** all phases are done (data and OMOP pipeline, surveillance, AI extraction with
+review, survival analysis, risk model, copilot, hardening), and the demo is live on Azure.
+
+---
+
+*Everything below is the detailed documentation.*
 
 ## Tech stack
 
@@ -438,7 +575,7 @@ From [evals/reports/survival.md](evals/reports/survival.md), produced by
 - **Privacy:** small-cell suppression applies to every role and to exports. Counts of 1–10
   show as "<11", and curve steps are pooled to at least 11 graft losses.
 
-![Survival page: Kaplan-Meier with bands and risk table, cumulative incidence vs 1 − KM, forest plot, methods](docs/images/app-survival.png)
+![Survival page: Kaplan-Meier with bands and risk table, cumulative incidence vs 1 − KM, forest plot, methods](docs/images/researcher-survival.png)
 
 Design: [ADR 0017](docs/adr/0017-survival-analysis-and-r-parity.md).
 
@@ -477,7 +614,7 @@ only.**
 - **Privacy:** clinicians and data stewards (de-identified) see a patient's score; researchers
   never see individual scores.
 
-![Risk card on the patient page: score, band, top contributing features, model version](docs/images/app-risk.png)
+![Risk card on the patient page: score, band, top contributing features, model version](docs/images/risk-card.png)
 
 Design: [ADR 0019](docs/adr/0019-rejection-risk-model.md).
 
@@ -550,8 +687,8 @@ API's OpenAPI schema. An expired session refreshes itself once, then sends the u
 
 | | |
 |---|---|
-| ![Worklist: ranked patients with severity badges and plain-English reasons](docs/images/app-worklist.png) | ![Patient detail: dd-cfDNA with threshold lines and flagged results, creatinine/eGFR, tacrolimus target band, DSA](docs/images/app-patient.png) |
-| ![Cohort builder: rules, attrition funnel and save](docs/images/app-cohort.png) | ![Login with the synthetic-data banner](docs/images/app-login.png) |
+| ![Worklist: ranked patients with severity badges and plain-English reasons](docs/images/clinician-worklist.png) | ![Patient detail: dd-cfDNA with threshold lines and flagged results, creatinine/eGFR, tacrolimus target band, DSA](docs/images/clinician-patient.png) |
+| ![Cohort builder: rules, attrition funnel and save](docs/images/researcher-cohort.png) | ![Login with the synthetic-data banner](docs/images/login.png) |
 
 - **Worklist:** ranked by priority score. Filters (organ, severity, status) are kept in the
   URL. Acknowledge or resolve with an optional note: the list updates at once and rolls back
