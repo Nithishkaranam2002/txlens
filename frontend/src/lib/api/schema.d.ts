@@ -180,7 +180,7 @@ export interface paths {
         };
         /**
          * Your conversations, newest first
-         * @description Only the caller's own.
+         * @description Only the caller's own; a guest account sees only those of its current login session.
          */
         get: operations["list_conversations_copilot_conversations_get"];
         put?: never;

@@ -5004,7 +5004,7 @@
     },
     "/copilot/conversations": {
       "get": {
-        "description": "Only the caller's own.",
+        "description": "Only the caller's own; a guest account sees only those of its current login session.",
         "operationId": "list_conversations_copilot_conversations_get",
         "responses": {
           "200": {
