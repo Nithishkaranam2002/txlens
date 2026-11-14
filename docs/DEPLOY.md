@@ -145,8 +145,12 @@ checksum, so it is uploaded and restored again.
   - Guests can acknowledge, resolve and approve, which changes the demo data.
   - `make cloud-reset` brings the data back and keeps the users and the audit trail. The
     snapshot stays on the VM for this, about 0.7 GB.
-- **Shared history:** all visitors share the two guest accounts, so they also share the
-  guest's copilot conversations and saved cohorts.
+- **Per-session copilot history:** all visitors share the two guest accounts, so a guest sees
+  only the copilot conversations started in its own browser session (each guest login gets
+  its own session id in the token; other accounts keep their full history).
+  - Saved cohorts are still shared between guests.
+  - `make cloud-reset` deletes the guests' conversations and saved cohorts
+    (`txlens-demo clear-guest-work`; audit rows stay).
 - **Demo guide:** the login page shows which guest account opens which view, when guest access
   ends, and three things to try. It appears only when `DEMO_GUIDE=1` (set on the VM).
 - **Copilot without a key:** the six suggested questions (`backend/src/txlens_backend/copilot/suggested.py`)

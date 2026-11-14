@@ -3,6 +3,8 @@
 Access tokens are short-lived and carry who the user is: id, tenant, role. Refresh tokens
 are long-lived, carry only id and tenant, and are also recorded in `app.refresh_token` so
 they can be rotated and revoked. Both travel in httpOnly cookies, never in JavaScript.
+A guest account's tokens also carry a guest session id (`gsid`), made at login and kept
+through refreshes: guests share one account, so their copilot history is per session.
 """
 
 import uuid
@@ -35,6 +37,7 @@ class TokenClaims:
     jti: str
     token_type: TokenType
     expires_at: datetime
+    guest_session: str | None = None
 
 
 def hash_password(password: str) -> str:
@@ -51,11 +54,17 @@ def verify_password(password_hash: str | None, password: str) -> bool:
 
 
 def issue_token(
-    token_type: TokenType, user_id: str, tenant_id: str, role: str, ttl: timedelta
+    token_type: TokenType,
+    user_id: str,
+    tenant_id: str,
+    role: str,
+    ttl: timedelta,
+    guest_session: str | None = None,
 ) -> TokenClaims:
     """New claims with a fresh id (jti) and expiry; sign them with `encode`."""
     expires = datetime.now(UTC).replace(microsecond=0) + ttl
-    return TokenClaims(user_id, tenant_id, role, str(uuid.uuid4()), token_type, expires)
+    return TokenClaims(user_id, tenant_id, role, str(uuid.uuid4()), token_type, expires,
+                       guest_session)  # fmt: skip
 
 
 def encode(secret: str, claims: TokenClaims) -> str:
@@ -69,6 +78,8 @@ def encode(secret: str, claims: TokenClaims) -> str:
         "iat": datetime.now(UTC),
         "exp": claims.expires_at,
     }
+    if claims.guest_session:
+        payload["gsid"] = claims.guest_session
     return jwt.encode(payload, secret, algorithm=ALGORITHM)
 
 
@@ -94,4 +105,5 @@ def decode(secret: str, token: str | None, expected: TokenType) -> TokenClaims:
         str(payload["jti"]),
         expected,
         datetime.fromtimestamp(int(payload["exp"]), UTC),
+        str(payload["gsid"]) if payload.get("gsid") else None,
     )

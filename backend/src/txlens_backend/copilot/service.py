@@ -77,40 +77,49 @@ class Conversation(BaseModel):
     messages: list[Message] = []
 
 
+# A guest (shared account) sees only the conversations of its own login session.
+SESSION_FILTER = "(CAST(:g AS uuid) IS NULL OR guest_session = CAST(:g AS uuid))"
+
+
 class ConversationSummary(BaseModel):
     conversation_id: str
     title: str
     created_at: datetime
 
 
-def create_conversation(conn: Connection, user_id: str, title: str) -> ConversationSummary:
-    """A new, empty conversation of this user."""
+def create_conversation(
+    conn: Connection, user_id: str, title: str, guest_session: str | None = None
+) -> ConversationSummary:
+    """A new, empty conversation of this user (of this guest session, for a guest)."""
     row = conn.execute(
-        text("INSERT INTO app.copilot_conversation (user_id, title) VALUES (:u, :t) "
-             "RETURNING conversation_id::text, title, created_at"),
-        {"u": user_id, "t": title[:200]},
+        text("INSERT INTO app.copilot_conversation (user_id, title, guest_session) "
+             "VALUES (:u, :t, :g) RETURNING conversation_id::text, title, created_at"),
+        {"u": user_id, "t": title[:200], "g": guest_session},
     ).one()  # fmt: skip
     return ConversationSummary(**row._mapping)
 
 
 def list_conversations(
-    conn: Connection, user_id: str, limit: int = 50
+    conn: Connection, user_id: str, guest_session: str | None = None, limit: int = 50
 ) -> list[ConversationSummary]:
-    """This user's conversations, newest first."""
+    """This user's conversations, newest first (a guest: only this session's)."""
     rows = conn.execute(
         text("SELECT conversation_id::text, title, created_at FROM app.copilot_conversation "
-             "WHERE user_id = :u ORDER BY created_at DESC LIMIT :l"),
-        {"u": user_id, "l": limit},
+             f"WHERE user_id = :u AND {SESSION_FILTER} ORDER BY created_at DESC LIMIT :l"),
+        {"u": user_id, "g": guest_session, "l": limit},
     ).all()  # fmt: skip
     return [ConversationSummary(**r._mapping) for r in rows]
 
 
-def get_conversation(conn: Connection, user_id: str, conversation_id: str) -> Conversation | None:
-    """One of this user's conversations with its messages (None if not theirs or unknown)."""
+def get_conversation(
+    conn: Connection, user_id: str, conversation_id: str, guest_session: str | None = None
+) -> Conversation | None:
+    """One of this user's conversations with its messages (None if not theirs or unknown; for
+    a guest, also None if another session started it)."""
     head = conn.execute(
         text("SELECT conversation_id::text, title, created_at FROM app.copilot_conversation "
-             "WHERE conversation_id::text = :c AND user_id = :u"),
-        {"c": conversation_id.lower(), "u": user_id},
+             f"WHERE conversation_id::text = :c AND user_id = :u AND {SESSION_FILTER}"),
+        {"c": conversation_id.lower(), "u": user_id, "g": guest_session},
     ).one_or_none()  # fmt: skip
     if head is None:
         return None

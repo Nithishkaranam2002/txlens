@@ -50,6 +50,8 @@ class Principal:
     user_id: str
     tenant_id: str
     role: Role
+    # Guest accounts only: the login session, so a guest sees only this session's copilot work.
+    guest_session: str | None = None
 
     @property
     def sees_identifiers(self) -> bool:
@@ -77,7 +79,7 @@ def current_principal(request: Request, ctx: Context) -> Principal:
     """The caller from the access-token cookie; 401 if missing, expired or invalid."""
     try:
         claims = decode(ctx.jwt_secret, request.cookies.get(ACCESS_COOKIE), "access")
-        return Principal(claims.user_id, claims.tenant_id, Role(claims.role))
+        return Principal(claims.user_id, claims.tenant_id, Role(claims.role), claims.guest_session)
     except (InvalidTokenError, ValueError) as error:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated") from error
 

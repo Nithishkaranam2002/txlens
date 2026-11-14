@@ -3,8 +3,9 @@
 # acknowledged, resolved or approved things), keeping the users and the audit trail.
 #   bash /opt/txlens/infra/azure/remote/reset.sh <domain>
 # Saves the audit rows written on this server and the guest accounts, then makes install.sh
-# restore the snapshot again; install.sh puts the saved rows back with their ids. Demo and
-# guest passwords stay as they are in .env. Never prints a secret.
+# restore the snapshot again; install.sh puts the saved rows back with their ids. The guests'
+# copilot conversations and saved cohorts are not kept: the next visitors start clean. Demo
+# and guest passwords stay as they are in .env. Never prints a secret.
 set -euo pipefail
 DOMAIN="$1"
 cd "$(dirname "$0")/../../.."
@@ -37,3 +38,6 @@ step "Stopping the app for the restore"
 compose stop caddy web worker api
 rm -f .restored-manifest.json  # makes install.sh restore the snapshot again
 bash infra/azure/remote/install.sh "$DOMAIN"
+
+step "Clearing the guests' copilot conversations and saved cohorts"
+tools txlens-demo clear-guest-work

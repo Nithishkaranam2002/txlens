@@ -1,7 +1,8 @@
 """`txlens-demo`: secret checks name problems without values; the status never shows a
-password and reports pending AI work; a session reset forgets every login and is audited."""
+password and reports pending AI work; a session reset forgets every login and is audited;
+clearing guest work deletes only the guests' conversations and cohorts."""
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from api_testutils import PASSWORDS
@@ -13,6 +14,7 @@ from txlens_backend.config import Settings
 from txlens_backend.demo import (
     TABLES,
     ReviewedFlagsError,
+    clear_guest_work,
     counts,
     drop_surveillance_after,
     pending,
@@ -20,6 +22,7 @@ from txlens_backend.demo import (
     reset_sessions,
     status_lines,
 )
+from txlens_backend.seed_users import seed_guests
 
 pytestmark = pytest.mark.db
 
@@ -132,3 +135,36 @@ def test_drop_surveillance_after_never_deletes_reviewed_flags(
         with pytest.raises(ReviewedFlagsError, match="were reviewed"):
             drop_surveillance_after(conn, api_flags - timedelta(days=3650))
         outer.rollback()
+
+
+def test_clear_guest_work_deletes_only_guest_conversations_and_cohorts(
+    api_app_engine: Engine, api_owner: Engine
+) -> None:
+    seed_guests(api_app_engine, "guest-demo-password-1", datetime.now(UTC) - timedelta(days=1))
+    with api_owner.connect() as conn, conn.begin() as outer:
+        ids: dict[str, object] = dict(conn.execute(text(
+            "SELECT username, user_id FROM app.app_user "
+            "WHERE username IN ('guest.researcher', 'researcher.center_a')"
+        )).tuples().all())  # fmt: skip
+        for username, user_id in ids.items():
+            conn.execute(text(
+                "INSERT INTO app.copilot_conversation (tenant_id, user_id, title) "
+                "VALUES ('center_a', :u, :t)"
+            ), {"u": user_id, "t": username})  # fmt: skip
+            conn.execute(text(
+                "INSERT INTO app.cohort (tenant_id, name, rules, created_by, member_count) "
+                "VALUES ('center_a', :t, '{}', :u, 0)"
+            ), {"u": user_id, "t": username})  # fmt: skip
+        cleared = clear_guest_work(conn)
+        left = conn.execute(text(
+            "SELECT (SELECT array_agg(title) FROM app.copilot_conversation WHERE title IN "
+            "('guest.researcher', 'researcher.center_a')), (SELECT array_agg(name) FROM "
+            "app.cohort WHERE name IN ('guest.researcher', 'researcher.center_a'))"
+        )).one()  # fmt: skip
+        audited = conn.execute(text(
+            "SELECT details FROM app.audit_log WHERE action = 'guest_work_cleared'"
+        )).scalars().all()  # fmt: skip
+        outer.rollback()
+    assert cleared["conversations"] >= 1 and cleared["cohorts"] >= 1
+    assert tuple(left) == (["researcher.center_a"], ["researcher.center_a"])
+    assert audited and audited[0]["conversations"] >= 1

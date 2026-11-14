@@ -74,3 +74,10 @@ def test_refresh_token_cannot_be_used_as_access_token() -> None:
 def test_missing_token_is_rejected() -> None:
     with pytest.raises(InvalidTokenError):
         decode(SECRET, None, "access")
+
+
+def test_a_guest_session_id_round_trips_and_is_absent_otherwise() -> None:
+    guest = issue_token("access", "u1", "center_a", "researcher", timedelta(minutes=5), "g-1")
+    assert decode(SECRET, encode(SECRET, guest), "access").guest_session == "g-1"
+    plain = issue_token("access", "u1", "center_a", "researcher", timedelta(minutes=5))
+    assert decode(SECRET, encode(SECRET, plain), "access").guest_session is None

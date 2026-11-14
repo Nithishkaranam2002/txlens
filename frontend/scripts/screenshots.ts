@@ -128,7 +128,7 @@ async function copilot(browser: Browser) {
   await login(page, "researcher");
   for (const [question, name, height] of [
     ["Median dd-cfDNA in the first year after transplant, by organ", "copilot-answer", 1300],
-    ["What does the literature say about dd-cfDNA thresholds for antibody-mediated rejection?", "copilot-literature", 1500],
+    ["What does the literature say about dd-cfDNA after heart transplantation?", "copilot-literature", 1500],
     ["List the MRNs of the patients with antibody-mediated rejection.", "copilot-refusal", 900],
   ] as const) {
     await page.goto(`${BASE_URL}/copilot`); // a new conversation for each screenshot

@@ -10,6 +10,8 @@
 - `copilot-cache [--offline]`: ask the copilot's suggested questions as researcher.center_a,
   so their answers are cached (needs OPENAI_API_KEY; within the copilot budget). --offline
   asks with cached answers only and fails if one is missing: the public demo's check.
+- `clear-guest-work`: delete the copilot conversations and saved cohorts of the guest
+  accounts (guest.*), so a reset demo starts clean for the next visitors. Audit rows stay.
 - `drop-surveillance-after DATE`: delete surveillance flags and runs dated after the data
   cut-off (a run "as of today" on data that ends earlier), so a run as of the cut-off can
   rebuild the worklist. Refuses if someone already acknowledged or resolved one of them.
@@ -58,6 +60,12 @@ DROP_AUDIT = text(
     "INSERT INTO app.audit_log (tenant_id, action, object_type, details) "
     "VALUES (:tenant_id, 'surveillance_dropped_after_cutoff', 'surveillance_run', :details)"
 ).bindparams(bindparam("details", type_=JSONB))
+
+GUEST_AUDIT = text(
+    "INSERT INTO app.audit_log (tenant_id, action, object_type, details) "
+    "VALUES (:tenant_id, 'guest_work_cleared', 'deployment', :details)"
+).bindparams(bindparam("details", type_=JSONB))
+GUEST_USERS = "SELECT user_id FROM app.app_user WHERE username LIKE 'guest.%'"
 
 
 def problems(settings: Settings) -> list[str]:
@@ -133,6 +141,22 @@ def drop_surveillance_after(conn: Connection, cutoff: date) -> dict[str, int]:
                    "runs": runs[tenant_id]}  # fmt: skip
         conn.execute(DROP_AUDIT, {"tenant_id": tenant_id, "details": details})
     return {"flags": flags.total(), "runs": runs.total()}
+
+
+def clear_guest_work(conn: Connection) -> dict[str, int]:
+    """Delete the guest accounts' copilot conversations (their messages cascade) and saved
+    cohorts (members cascade), with one audit row per center. Returns the deleted counts."""
+    conversations = Counter(conn.execute(text(
+        f"DELETE FROM app.copilot_conversation WHERE user_id IN ({GUEST_USERS}) "
+        "RETURNING tenant_id"
+    )).scalars())  # fmt: skip
+    cohorts = Counter(conn.execute(text(
+        f"DELETE FROM app.cohort WHERE created_by IN ({GUEST_USERS}) RETURNING tenant_id"
+    )).scalars())  # fmt: skip
+    for tenant_id in sorted(set(conversations) | set(cohorts)):
+        details = {"conversations": conversations[tenant_id], "cohorts": cohorts[tenant_id]}
+        conn.execute(GUEST_AUDIT, {"tenant_id": tenant_id, "details": details})
+    return {"conversations": conversations.total(), "cohorts": cohorts.total()}
 
 
 COPILOT_USER = "researcher.center_a"
@@ -212,6 +236,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub.add_parser("has-model", help="exit 0 if a risk model is registered as champion")
     sub.add_parser("counts", help="row counts of the demo tables, as JSON")
     sub.add_parser("reset-sessions", help="delete all login attempts and refresh tokens")
+    sub.add_parser("clear-guest-work", help="delete guest conversations and saved cohorts")
     warm = sub.add_parser("copilot-cache", help="cache the copilot's suggested questions")
     warm.add_argument("--offline", action="store_true", help="cached answers only (a check)")
     drop = sub.add_parser("drop-surveillance-after", help="delete flags and runs after a date")
@@ -241,6 +266,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         engine.dispose()
         print(f"    deleted {deleted['refresh_tokens']} refresh tokens and "
               f"{deleted['login_attempts']} login attempts")  # fmt: skip
+        return 0
+    if args.command == "clear-guest-work":
+        with engine.begin() as conn:
+            cleared = clear_guest_work(conn)
+        engine.dispose()
+        print(f"    deleted {cleared['conversations']} guest conversations and "
+              f"{cleared['cohorts']} guest cohorts")  # fmt: skip
         return 0
     if args.command == "drop-surveillance-after":
         try:

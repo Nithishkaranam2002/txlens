@@ -71,13 +71,13 @@ def suggestions(principal: Asker) -> list[str]:
              summary="Start a conversation")  # fmt: skip
 def create(body: NewConversation, principal: Asker, conn: TenantDb) -> service.ConversationSummary:
     """An empty conversation of the caller."""
-    return service.create_conversation(conn, principal.user_id, body.title)
+    return service.create_conversation(conn, principal.user_id, body.title, principal.guest_session)
 
 
 @router.get("/conversations", summary="Your conversations, newest first")
 def list_conversations(principal: Asker, conn: TenantDb) -> list[service.ConversationSummary]:
-    """Only the caller's own."""
-    return service.list_conversations(conn, principal.user_id)
+    """Only the caller's own; a guest account sees only those of its current login session."""
+    return service.list_conversations(conn, principal.user_id, principal.guest_session)
 
 
 @router.get("/conversations/{conversation_id}", summary="One of your conversations",
@@ -86,7 +86,8 @@ def get_conversation(
     conversation_id: str, principal: Asker, conn: TenantDb
 ) -> service.Conversation:
     """404 for unknown ids and for other users' conversations alike."""
-    found = service.get_conversation(conn, principal.user_id, conversation_id)
+    found = service.get_conversation(conn, principal.user_id, conversation_id,
+                                     principal.guest_session)  # fmt: skip
     if found is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found")
     return found
@@ -109,7 +110,8 @@ def ask(conversation_id: str, body: Question, principal: Asker, ctx: Context, in
         deps: Deps) -> StreamingResponse:  # fmt: skip
     """The conversation is checked first (404); then the answer streams."""
     with tenant_transaction(ctx.engine, principal.tenant_id) as conn:
-        conversation = service.get_conversation(conn, principal.user_id, conversation_id)
+        conversation = service.get_conversation(conn, principal.user_id, conversation_id,
+                                                principal.guest_session)  # fmt: skip
     if conversation is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found")
     events = service.ask(deps, principal.user_id, principal.tenant_id, info, conversation,

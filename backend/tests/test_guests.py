@@ -1,13 +1,15 @@
 """Guest demo accounts: guest.clinician and guest.researcher log in with one shared password
 until their expiry; after it, login and refresh are refused, and a guest with the right
 password is told that guest access has ended (other accounts keep the generic message).
-A new password ends existing guest sessions. The public demo endpoint never shows a secret."""
+A new password ends existing guest sessions. Each guest login sees only its own copilot
+conversations. The public demo endpoint never shows a secret."""
 
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from api_testutils import BASE_URL, PASSWORDS, login
+from copilot_testutils import new_conversation
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
@@ -128,3 +130,33 @@ def test_the_demo_endpoint_shows_the_guide_and_end_date_only_when_enabled(
 
 def test_demo_users_are_unaffected_by_guest_seeding(client: TestClient, guests: None) -> None:
     assert login(client, Role.CLINICIAN).status_code == 200
+
+
+def conversation_ids(client: TestClient) -> set[str]:
+    return {c["conversation_id"] for c in client.get("/copilot/conversations").json()}
+
+
+def test_a_guest_sees_only_the_conversations_of_its_own_login_session(
+    api_app: FastAPI, client: TestClient, guests: None
+) -> None:
+    assert guest_login(client, "guest.researcher")[0] == 200
+    mine = new_conversation(client)
+    with TestClient(api_app, base_url=BASE_URL, headers={CSRF_HEADER: "t"}) as other:
+        assert guest_login(other, "guest.researcher")[0] == 200
+        theirs = new_conversation(other)
+        assert conversation_ids(other) == {theirs}
+        assert other.get(f"/copilot/conversations/{mine}").status_code == 404
+        asked = other.post(f"/copilot/conversations/{mine}/messages", json={"question": "hi?"})
+        assert asked.status_code == 404
+    assert client.post("/auth/refresh").status_code == 200  # the session survives a refresh
+    assert conversation_ids(client) == {mine}
+    assert client.get(f"/copilot/conversations/{mine}").status_code == 200
+
+
+def test_other_accounts_keep_their_history_across_logins(api_app: FastAPI,
+                                                         client: TestClient) -> None:  # fmt: skip
+    login(client, Role.RESEARCHER)
+    first = new_conversation(client)
+    with TestClient(api_app, base_url=BASE_URL, headers={CSRF_HEADER: "t"}) as again:
+        login(again, Role.RESEARCHER)
+        assert first in conversation_ids(again)

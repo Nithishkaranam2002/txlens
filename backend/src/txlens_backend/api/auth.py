@@ -10,6 +10,7 @@ limit holds across API replicas. A wrong user name and a wrong password give the
 in the same time, so the API does not reveal which user names exist.
 """
 
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -126,14 +127,20 @@ def find_login(conn: Connection, username: str) -> LoginRow | None:
 
 
 def start_session(
-    conn: Connection, ctx: AppContext, response: Response, user_id: str, tenant: str, role: str
+    conn: Connection,
+    ctx: AppContext,
+    response: Response,
+    user_id: str,
+    tenant: str,
+    role: str,
+    guest_session: str | None = None,
 ) -> tuple[Session, str]:
     """Issue access + refresh tokens, record the refresh token and set both cookies.
 
     Returns the session and the new refresh token's id.
     """
     refresh_ttl = timedelta(days=ctx.settings.refresh_token_days)
-    refresh = issue_token("refresh", user_id, tenant, role, refresh_ttl)
+    refresh = issue_token("refresh", user_id, tenant, role, refresh_ttl, guest_session)
     conn.execute(
         text("INSERT INTO app.refresh_token (jti, user_id, expires_at) VALUES (:j, :u, :e)"),
         {"j": refresh.jti, "u": user_id, "e": refresh.expires_at},
@@ -145,7 +152,8 @@ def send_tokens(ctx: AppContext, response: Response, refresh: TokenClaims) -> Se
     """Set a fresh access cookie and the cookie for this (already recorded) refresh token."""
     settings = ctx.settings
     access_ttl = timedelta(minutes=settings.access_token_minutes)
-    access = issue_token("access", refresh.user_id, refresh.tenant_id, refresh.role, access_ttl)
+    access = issue_token("access", refresh.user_id, refresh.tenant_id, refresh.role, access_ttl,
+                         refresh.guest_session)  # fmt: skip
     refresh_ttl = refresh.expires_at - datetime.now(UTC)
     set_cookie(response, settings, ACCESS_COOKIE, encode(ctx.jwt_secret, access), access_ttl, "/")
     set_cookie(
@@ -216,7 +224,10 @@ def login(body: LoginRequest, response: Response, ctx: Context, info: Info) -> S
         action = "login" if ok else "login_expired" if user.expired else "login_failed"
         audit.record(conn, info, user.user_id, action, "session", details={"username": username})
         if ok:
-            session, _ = start_session(conn, ctx, response, user.user_id, user.tenant_id, user.role)
+            # Guests share an account: each login gets its own session for copilot history.
+            guest = str(uuid.uuid4()) if username.startswith(GUEST_PREFIX) else None
+            session, _ = start_session(conn, ctx, response, user.user_id, user.tenant_id,
+                                       user.role, guest)  # fmt: skip
             return session
     told = (user.expired and username.startswith(GUEST_PREFIX)
             and verify_password(user.password_hash, body.password))  # fmt: skip
@@ -274,7 +285,7 @@ def rotate(
         audit.record(conn, info, claims.user_id, "refresh_grace", "session", claims.jti)
         replacement = TokenClaims(
             claims.user_id, claims.tenant_id, token.role, token.replacement, "refresh",
-            token.replacement_expires,
+            token.replacement_expires, claims.guest_session,
         )  # fmt: skip
         return send_tokens(ctx, response, replacement)
     if token.revoked_at is not None:
@@ -289,7 +300,7 @@ def rotate(
         return None
     # The role is read again, so a changed role takes effect at the next refresh.
     session, new_jti = start_session(
-        conn, ctx, response, claims.user_id, claims.tenant_id, token.role
+        conn, ctx, response, claims.user_id, claims.tenant_id, token.role, claims.guest_session
     )
     conn.execute(
         text("UPDATE app.refresh_token SET revoked_at = now(), replaced_by = :n WHERE jti = :j"),
