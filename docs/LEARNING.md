@@ -1929,3 +1929,123 @@ experiencer flags).
    in Postgres by a hash of what the model saw. The demo checks the cache first and needs a
    key only for new work; without one, new items are marked pending. A snapshot keeps the
    cache, so a restored demo shows every paid result offline.
+
+## Phase 4, Step 4.2 — The public demo on Azure
+
+### What was built
+- **One small Azure VM** (Ubuntu 24.04, 2 vCPU, 4 GB, North Central US) runs the same
+  Docker Compose demo as the laptop, restored from the demo snapshot. Everything is described
+  in Bicep (`infra/azure/main.bicep`) and driven by `make cloud-*` commands
+  (`infra/azure/cloud.sh`). The steps are in [DEPLOY.md](DEPLOY.md), the reasons in
+  [ADR 0021](adr/0021-azure-vm-demo-deploy.md).
+- **HTTPS and lock-down.**
+  - Caddy is the only public door (ports 80/443), with a free Let's Encrypt certificate on
+    the Azure DNS name, HSTS, `noindex` and a disallow-all `robots.txt`.
+  - SSH needs a key and is open only to the owner's IP.
+  - Every other service listens on the VM's 127.0.0.1.
+  - The VM has a firewall (ufw), automatic security updates and a pinned SSH host key.
+- **No money for strangers to spend.** There is no OpenAI key on the server. The copilot
+  answers six suggested questions from the LLM cache and politely refuses anything new.
+- **Guest access for recruiters.** `guest.clinician` and `guest.researcher` share a password
+  that is made on the server and never printed. The accounts expire on a date, and the login
+  page shows a short guide.
+  - Each guest login sees only its own copilot conversations.
+  - `make cloud-reset` restores the data, keeps the audit trail and the accounts, and deletes
+    the guests' conversations and saved cohorts.
+- **Cost control.** A nightly shutdown, `cloud-stop` (deallocate), a $20/month budget alert,
+  `cloud-share-on DAYS=21` (shutdown off while a link is out, with the cost printed) and
+  `cloud-destroy`.
+- **A smoke test** (`make cloud-smoke`, 35 checks) runs after every deploy. It covers:
+  - HTTPS, headers and closed ports;
+  - no API key and no Langfuse database;
+  - surveillance pinned to the data cut-off;
+  - logins with Secure cookies, a patient page and both guest accounts;
+  - all six suggested questions answered offline.
+- **Surveillance pinned to the data cut-off.** The synthetic data ends on 30 Sep 2026, so a
+  run "as of today" invented missed tests. Runs after `DATA_CUTOFF` are now refused by the
+  CLI and by the worker.
+
+### The ideas in plain English
+- **Infrastructure as code.** The network, firewall rules, IP address, VM and shutdown
+  schedule are written in a file, not clicked together. Running it again changes nothing, and
+  `cloud-destroy` removes all of it in one step.
+- **Reverse proxy.** Caddy receives every request from the Internet, handles the certificate,
+  and passes the request to the web app inside the VM. Nothing else is reachable.
+- **Deallocate vs stop.** A stopped Azure VM still pays for its CPU; a deallocated one does
+  not. Only the disk and the IP address keep costing money (about $8.50 a month).
+- **Cache-only AI.** Every LLM answer was saved in Postgres the first time it was paid for.
+  Without a key, the server can only replay saved answers. A stranger cannot cause a new paid
+  call.
+- **Guest session.** Many visitors use the same guest account. Each login gets its own
+  session id inside the signed login token, and the copilot shows only the conversations
+  started with that id. So one visitor doesn't see another's questions.
+
+### How the tricky parts work
+- **Secrets never leave the server in plain sight.** `gen_env.py` writes a mode-600 `.env`
+  on the VM. `make cloud-passwords` reads the passwords over SSH and pipes them into the
+  macOS Keychain through stdin, so they never appear on screen, in shell history or in a
+  file.
+- **No trust-on-first-use for SSH.** The VM's host key is read through the Azure API
+  (`az vm run-command`) and pinned before the first connection, so a fake server would be
+  refused.
+- **Code without GitHub credentials.** `git archive HEAD` streams the committed code over
+  SSH. The VM never holds a deploy key.
+- **Moving a snapshot to another folder.** MLflow stores absolute paths, so
+  `relocate_mlruns.py` rewrites them to the VM's folder during restore.
+- **Keeping rows across a reset.** `cloud-reset` saves the audit rows written on the server
+  and the guest accounts to CSV. After the restore it puts them back through a temporary
+  table with `ON CONFLICT DO NOTHING`. A reset that stops half-way reuses the saved files,
+  and the app is stopped first so Postgres has the memory to itself.
+- **The data cut-off guard.** A workflow activity raises a non-retryable error for any date
+  after `DATA_CUTOFF`, so Temporal doesn't retry it forever.
+
+### Why these tools
+- **One VM instead of Container Apps:** the stack (Postgres with pgvector and RLS, Temporal,
+  worker) runs unchanged. A managed database alone would cost more than the whole VM.
+- **Bicep:** Azure's own declarative language. It's simpler than Terraform for one resource
+  group, and it needs no state file to keep safe.
+- **Caddy:** automatic HTTPS in a few lines of config, with renewals handled for you.
+- **macOS Keychain:** a password store that's already on the laptop and encrypted.
+
+### Trade-offs
+- **Patching.** We patch the OS ourselves. Security updates install on their own, but the VM
+  never reboots by itself during a demo; `cloud-status` shows when a reboot is pending.
+- **The static IP.** It costs about $3.65 a month even when the VM is off. It was kept for a
+  stable address.
+- **4 GB of memory.** It fits with a 4 GB swap file. Spark and Langfuse don't run in the
+  cloud.
+- **Cache-only copilot.** Visitors can't try their own questions; they get the six suggested
+  ones.
+- **Saved cohorts are shared.** Guests still share each other's saved cohorts until the next
+  reset. Only copilot conversations are per session.
+- **One lesson from a reset.** An `rsync --delete` once removed the saved reset files, and
+  about 300 setup audit rows were lost. The excludes are fixed now.
+
+### Results
+- **Live:** `https://txlens-b53dc1.northcentralus.cloudapp.azure.com`, synthetic data only.
+- **Smoke test:** 35 of 35 checks pass after the latest `make cloud-update`.
+- **Cost (list prices):**
+  - about $36 a month if always on;
+  - about $9.50 a month if it runs only around interviews;
+  - about $25 for a 21-day sharing window.
+- **Copilot without a key:** six of six suggested questions are answered from the cache at
+  $0.
+
+### Likely interview questions
+1. **Why a VM and not Kubernetes or Container Apps?** The goal was a cheap, always-the-same
+   demo. One VM runs the exact compose stack I test locally. I can deallocate it to near-zero
+   cost, and it stays inside a $100 student credit. Container Apps would need a managed
+   Postgres with pgvector and a hosted Temporal first.
+2. **How do you stop strangers from running up your OpenAI bill?** There is no key on the
+   server; the smoke test checks the `.env` and every container. The copilot replays cached
+   answers to the suggested questions and refuses anything else with a fixed message.
+3. **How are secrets handled?** They're generated on the server and are different from the
+   laptop's. They're never printed or committed. Passwords go straight from the VM into the
+   Keychain over SSH. GitHub secret scanning and push protection are on as a backstop.
+4. **What stops one guest from seeing another guest's questions?** Each guest login gets a
+   session id inside the signed token, kept through token refreshes. The API lists and opens
+   only that session's conversations. Another session gets a 404, the same answer as for a
+   conversation that doesn't exist.
+5. **What happens if you forget to turn it off?** It shuts down every night at 23:00 Central.
+   A $20 budget sends alerts at 50, 80 and 100% and on forecast. A student subscription is
+   disabled when the credit runs out; it never charges a card.

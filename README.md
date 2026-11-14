@@ -134,8 +134,9 @@ flowchart TB
 | ![Patient page: dd-cfDNA with thresholds, creatinine/eGFR, tacrolimus band, timeline, risk card](docs/images/clinician-patient.png) | ![Review queue: scanned biopsy page with evidence boxes](docs/images/review-biopsy-evidence.png) |
 | ![Data steward: the same item, redacted line crops only](docs/images/steward-review-redacted.png) | ![Researcher cohort builder: attrition funnel with a "<11" step](docs/images/researcher-cohort.png) |
 | ![Survival: Kaplan-Meier, risk table, competing risks, forest plot](docs/images/researcher-survival.png) | ![Review metrics](docs/images/review-metrics.png) |
-| ![Copilot answer with tool trace](docs/images/app-copilot.png) | ![Copilot literature answer with citations](docs/images/app-copilot-literature.png) |
-| ![Admin: no access to patient data](docs/images/admin.png) | ![Databricks pipeline run](docs/images/databricks-run.png) |
+| ![Copilot: checked SQL and its aggregate result](docs/images/copilot-answer.png) | ![Copilot: literature answer with verified citations](docs/images/copilot-literature.png) |
+| ![Copilot: a request for patient identifiers is refused](docs/images/copilot-refusal.png) | ![Admin: no access to patient data](docs/images/admin.png) |
+| ![Databricks pipeline run](docs/images/databricks-run.png) | |
 
 ## Quick start
 
@@ -665,8 +666,9 @@ From [evals/reports/copilot.md](evals/reports/copilot.md), produced by `make cop
   - Every question and tool call is audited.
 - **Cost:** about $0.0019 per question; median latency 8.6 s.
 
-![Copilot: survival question with the tool trace and Kaplan-Meier chart](docs/images/app-copilot.png)
-![Copilot: literature answer with numbered citations and sources](docs/images/app-copilot-literature.png)
+![Copilot: median dd-cfDNA by organ, with the checked read-only SQL and its result](docs/images/copilot-answer.png)
+![Copilot: literature answer with numbered citations, each quote verified in its abstract](docs/images/copilot-literature.png)
+![Copilot: a request for patient MRNs is refused](docs/images/copilot-refusal.png)
 
 Design: [ADR 0018](docs/adr/0018-research-copilot-safety.md).
 

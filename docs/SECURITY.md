@@ -107,7 +107,7 @@ service beyond per-user limits (that belongs to the platform in front of the app
 
 ## Findings of the Step 4.1 review
 
-Severity is for this app if it held real data. Status: **fixed** in Step 4.1, **accepted** with
+Severity is for this app if it held real data. Status: **fixed** in Step 4.1 or 4.2, **accepted** with
 a reason, or **future** (worth doing before real use, not needed for a demo).
 
 | # | Severity | Finding | Status |
@@ -127,7 +127,9 @@ a reason, or **future** (worth doing before real use, not needed for a demo).
 | 13 | Low | minimatch (moderate, ReDoS) via ESLint, deepmerge (low) via the shadcn CLI | **Accepted**: build-time tools only, with our own inputs; the minimatch fix is a new major that typescript-eslint does not accept yet, the deepmerge fix is not released |
 | 14 | Info | Login rate limiting counts by client address, which behind a proxy is the forwarded address | **Accepted**: only listed proxies (`TRUSTED_PROXY_IPS`, never `*`) may set it |
 | 15 | Info | No multi-factor authentication, no account lockout notification, no password rotation | **Future**: use the organization's identity provider (OIDC) before real use |
-| 16 | Info | The demo runs over plain HTTP on localhost | **Future**: terminate TLS at the platform (Azure Container Apps) and set `TXLENS_HSTS=1` |
+| 16 | Info | The demo ran over plain HTTP on localhost | **Fixed for the cloud demo** (Step 4.2, ADR 0021): Caddy terminates TLS with a Let's Encrypt certificate and redirects HTTP to HTTPS; `TXLENS_HSTS=1`, Secure cookies and `X-Robots-Tag: noindex`; `make cloud-smoke` checks each one. The local demo stays on HTTP, on 127.0.0.1 only |
+| 17 | Info | The public demo has two guest accounts whose password is shared with visitors | **Accepted**: center A only, normal role permissions and rate limits, every action audited; the accounts expire (`expires_at`, refresh refused too), the password is made on the server and never stored in the repo, and `make cloud-guest-rotate` changes it and ends their sessions. Each guest login sees only its own copilot conversations, and `make cloud-reset` deletes guest conversations and saved cohorts |
+| 18 | Info | A public copilot could let strangers spend money on LLM calls | **Fixed for the cloud demo**: no API key on the server (forced empty in every container, checked by the smoke test); answers come only from the LLM cache, and other questions get a fixed "live AI is disabled" message |
 
 ## Reporting a problem
 
