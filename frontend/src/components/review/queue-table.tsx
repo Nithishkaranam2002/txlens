@@ -3,10 +3,11 @@
 import { createColumnHelper, tableFeatures, useTable } from "@tanstack/react-table";
 import Link from "next/link";
 
+import { CodeTooltip, HelpTooltip } from "@/components/tooltips";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDate } from "@/lib/format";
-import { ACTION_LABEL, itemHref, TYPE_LABEL, type ReviewItem } from "@/lib/review";
+import { itemHref, STATUS_HELP, STATUS_LABEL, TYPE_LABEL, type ReviewItem } from "@/lib/review";
 
 const features = tableFeatures({});
 const helper = createColumnHelper<typeof features, ReviewItem>();
@@ -27,12 +28,14 @@ const COLUMNS = helper.columns([
     header: "Item",
     cell: ({ row }) => (
       <div className="min-w-60">
-        <Link
-          href={itemHref(row.original.item_type, row.original.item_key)}
-          className="font-medium text-primary underline-offset-4 hover:underline"
-        >
-          {row.original.title}
-        </Link>
+        <CodeTooltip code={row.original.code}>
+          <Link
+            href={itemHref(row.original.item_type, row.original.item_key)}
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            {row.original.title}
+          </Link>
+        </CodeTooltip>
         <div className="text-xs text-muted-foreground">
           {[TYPE_LABEL[row.original.item_type], row.original.detail].filter(Boolean).join(" · ")}
         </div>
@@ -43,16 +46,22 @@ const COLUMNS = helper.columns([
   helper.accessor("queued_at", { header: "Queued", cell: ({ getValue }) => formatDate(getValue()) }),
   helper.display({
     id: "status",
-    header: "Status",
-    cell: ({ row }) =>
-      row.original.status === "pending" ? (
-        "Waiting"
-      ) : (
-        <span>
-          {ACTION_LABEL[row.original.status]}
-          <span className="ml-1 text-xs text-muted-foreground">{formatDate(row.original.decided_at)}</span>
-        </span>
-      ),
+    header: () => (
+      <span className="inline-flex items-center">
+        Status
+        <HelpTooltip label="What the statuses mean">
+          <ul className="space-y-0.5">
+            {STATUS_HELP.map(({ label, text }) => <li key={label}><strong>{label}</strong>: {text}</li>)}
+          </ul>
+        </HelpTooltip>
+      </span>
+    ),
+    cell: ({ row }) => (
+      <span>
+        {STATUS_LABEL[row.original.status]}
+        {row.original.decided_at && <span className="ml-1 text-xs text-muted-foreground">{formatDate(row.original.decided_at)}</span>}
+      </span>
+    ),
   }),
 ]);
 

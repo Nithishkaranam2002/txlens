@@ -10,7 +10,8 @@ import { DecisionForm } from "@/components/review/decision-form";
 import { DocumentEvidence, MappingEvidence, SentenceEvidence } from "@/components/review/evidence";
 import { PriorityBadge } from "@/components/review/queue-table";
 import { ErrorState, NotFound, PageSkeleton } from "@/components/states";
-import { formatDate } from "@/lib/format";
+import { CodeTooltip } from "@/components/tooltips";
+import { formatDateTime } from "@/lib/format";
 import {
   ITEM_TYPES,
   itemHref,
@@ -66,11 +67,11 @@ function Item({ type, itemKey }: { type: ItemType; itemKey: string }) {
           <ArrowLeft aria-hidden className="size-4" /> Review queue
         </Link>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">{item.title}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight"><CodeTooltip code={item.code}>{item.title}</CodeTooltip></h1>
           <PriorityBadge item={item} />
         </div>
         <p className="text-sm text-muted-foreground">
-          {[TYPE_LABEL[type], item.detail, `queued ${formatDate(item.queued_at)}`].filter(Boolean).join(" · ")}
+          {[TYPE_LABEL[type], item.detail, `queued ${formatDateTime(item.queued_at)}`].filter(Boolean).join(" · ")}
           {item.patient_id && (
             <>
               {" · "}

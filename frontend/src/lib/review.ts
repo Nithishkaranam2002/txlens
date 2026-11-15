@@ -50,6 +50,38 @@ export const ACTION_LABEL: Record<DecisionAction, string> = {
   revert: "Revert",
 };
 
+/** An item's status in the queue: waiting, or what the last decision did. */
+export const STATUS_LABEL: Record<ReviewItem["status"], string> = {
+  pending: "Waiting",
+  approve: "Approved",
+  edit: "Corrected",
+  reject: "Rejected",
+  revert: "Reverted",
+};
+export const STATUS_HELP: { label: string; text: string }[] = [
+  { label: "Waiting", text: "not checked by a person yet" },
+  { label: "Approved", text: "a person confirmed the value" },
+  { label: "Corrected", text: "a person fixed the value" },
+  { label: "Rejected", text: "a person found it wrong and removed it" },
+  { label: "Reverted", text: "an earlier decision was undone" },
+];
+
+export const HISTORY_ACTION_LABEL: Record<Schemas["HistoryEntry"]["action"], string> = {
+  approve: "Approved",
+  correct: "Corrected",
+  revert: "Reverted",
+};
+
+/** "center_a" as "Center A". */
+export function centerLabel(tenantId: string): string {
+  return tenantId.split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}
+
+/** A reason code as its label (an unknown code as readable text). */
+export function reasonLabel(code: string): string {
+  return (REASON_LABEL as Record<string, string>)[code] ?? code.replaceAll("_", " ");
+}
+
 export const PAGE_SIZE = 50;
 
 export const reviewKeys = {

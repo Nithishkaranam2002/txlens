@@ -1423,12 +1423,16 @@ export interface components {
             original_concept: components["schemas"]["ConceptRef"] | null;
             /** Reason */
             reason: string | null;
+            /** Reason Code */
+            reason_code: string | null;
             /** Rows */
             rows: number | null;
             /** Source Value */
             source_value: string;
             /** Source Vocabulary Id */
             source_vocabulary_id: string | null;
+            /** Source Vocabulary Label */
+            source_vocabulary_label: string | null;
             /** Suggestion Score */
             suggestion_score: number | null;
         };
@@ -1891,8 +1895,11 @@ export interface components {
         /**
          * ReviewItem
          * @description One queue entry. Titles carry no identifiers; `patient_id` is shaped for the viewer.
+         *     Titles and details are plain English; `code` is the internal code behind them, if any.
          */
         ReviewItem: {
+            /** Code */
+            code?: string | null;
             /** Decided At */
             decided_at?: string | null;
             /** Detail */

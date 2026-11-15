@@ -1,13 +1,44 @@
 import { isIdentified, type Patient } from "@/lib/types";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+// No timeZone option: the viewer's (browser's) time zone.
+const localDate = (date: Date) =>
+  date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+const localTime = (date: Date) =>
+  date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short" });
 
-/** "2025-03-01" (or an ISO datetime) as "1 Mar 2025", without time-zone shifts. */
+function instant(value: string): Date | null {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/**
+ * A date as "1 Mar 2025". A calendar date ("2025-03-01": transplant, lab, note dates) is shown
+ * as it is, never shifted. A timestamp ("2026-11-15T01:30:00Z": created, queued, decided) is
+ * shown as the date in the viewer's time zone.
+ */
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
-  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
-  if (!year || !month || !day) return value;
-  return `${day} ${MONTHS[month - 1]} ${year}`;
+  const calendar = CALENDAR_DATE.exec(value);
+  if (calendar) return `${Number(calendar[3])} ${MONTHS[Number(calendar[2]) - 1]} ${calendar[1]}`;
+  const date = instant(value);
+  return date ? localDate(date) : value;
+}
+
+/** A timestamp as "14 Nov 2026, 7:30 PM CST" in the viewer's time zone (a calendar date: no time). */
+export function formatDateTime(value: string | null | undefined): string {
+  if (!value || CALENDAR_DATE.test(value)) return formatDate(value);
+  const date = instant(value);
+  return date ? `${localDate(date)}, ${localTime(date)}` : value;
+}
+
+/** "Updated just now", "Updated 4 min ago", "Updated 2 h ago" (times in milliseconds). */
+export function formatUpdated(updatedAt: number, now: number): string {
+  const minutes = Math.floor(Math.max(0, now - updatedAt) / 60_000);
+  if (minutes < 1) return "Updated just now";
+  if (minutes < 60) return `Updated ${minutes} min ago`;
+  return `Updated ${Math.floor(minutes / 60)} h ago`;
 }
 
 /** A display name: "Family, Given" for clinicians; the pseudonym for everyone else. */

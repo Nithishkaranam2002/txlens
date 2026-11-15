@@ -5,7 +5,7 @@ import { Compass } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, unwrap } from "@/lib/api/client";
-import { formatDate } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 
 /** The public demo's guide under the sign-in form: which guest account shows what, until
  * when, and what to try first. Shown only when the API says this is the public demo; it
@@ -35,7 +35,7 @@ export function DemoGuide() {
         </ul>
         <p className="text-muted-foreground">
           Password: shared by the author on request.
-          {until && <> Guest access is open until <time dateTime={until}>{formatDate(until)}</time>.</>}
+          {until && <> Guest access is open until <time dateTime={until}>{formatDateTime(until)}</time>.</>}
         </p>
         <div>
           <p className="font-medium">Three things to try</p>

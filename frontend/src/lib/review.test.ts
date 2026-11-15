@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  centerLabel,
   changedFields,
   decisionProblem,
   itemHref,
   keyFromSegments,
   neighbour,
+  reasonLabel,
   scaleBox,
+  STATUS_HELP,
+  STATUS_LABEL,
   type ReviewField,
   type ReviewItem,
 } from "./review";
@@ -45,5 +49,15 @@ describe("review helpers", () => {
     expect(neighbour(items, "b", 1)?.item_key).toBe("c");
     expect(neighbour(items, "a", -1)).toBeNull();
     expect(neighbour(items, "x", 1)).toBeNull();
+  });
+});
+
+describe("labels", () => {
+  it("names statuses, centers and reason codes in plain English", () => {
+    expect(STATUS_LABEL).toEqual({ pending: "Waiting", approve: "Approved", edit: "Corrected", reject: "Rejected", revert: "Reverted" });
+    expect(STATUS_HELP.map((h) => h.label)).toEqual(["Waiting", "Approved", "Corrected", "Rejected", "Reverted"]);
+    expect(centerLabel("center_a")).toBe("Center A");
+    expect(reasonLabel("wrong_concept")).toBe("Wrong concept");
+    expect(reasonLabel("a_new_code")).toBe("a new code");
   });
 });

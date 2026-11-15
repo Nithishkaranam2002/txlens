@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -68,6 +68,20 @@ describe("WorklistView", () => {
     await userEvent.click(low);
     expect(details).toHaveAttribute("open");
     expect(within(details).getByText("low flag of 2")).toBeVisible();
+  });
+
+  it("refreshes with the same filters and says when it was updated", async () => {
+    search = "organ=heart&status=new&severity=all";
+    const requests = stubApi();
+    renderWithQuery(<WorklistView />, "clinician");
+    expect(await screen.findByText("high flag of 1")).toBeVisible();
+    expect(screen.getByText("Updated just now")).toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(requests).toHaveLength(2));
+    expect(requests[1].search).toBe(requests[0].search);
+    expect(requests[1].searchParams.get("organ")).toBe("heart");
+    expect(requests[1].searchParams.get("status")).toBe("new");
   });
 
   it("has no low section when another severity is chosen", async () => {

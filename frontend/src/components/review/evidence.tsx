@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { CodeTooltip } from "@/components/tooltips";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { formatDate } from "@/lib/format";
-import { scaleBox, type DocumentPane, type MappingPane, type SentencePane } from "@/lib/review";
+import { formatDate, formatDateTime } from "@/lib/format";
+import { centerLabel, HISTORY_ACTION_LABEL, reasonLabel, scaleBox, type DocumentPane, type MappingPane, type SentencePane } from "@/lib/review";
 
 const API = "/api";
 
@@ -148,7 +149,7 @@ export function MappingEvidence({ pane }: { pane: MappingPane }) {
         {pane.source_vocabulary_id && (
           <>
             <dt className="text-muted-foreground">Vocabulary</dt>
-            <dd>{pane.source_vocabulary_id}</dd>
+            <dd><CodeTooltip code={pane.source_vocabulary_id}>{pane.source_vocabulary_label ?? pane.source_vocabulary_id}</CodeTooltip></dd>
           </>
         )}
         {pane.description && (
@@ -176,8 +177,8 @@ export function MappingEvidence({ pane }: { pane: MappingPane }) {
           <>
             <dt className="text-muted-foreground">Why in review</dt>
             <dd>
-              {pane.reason}
-              {pane.rows != null && ` (${pane.rows} rows)`}
+              <CodeTooltip code={pane.reason_code}>{pane.reason}</CodeTooltip>
+              {pane.rows != null && ` (${pane.rows} row${pane.rows === 1 ? "" : "s"})`}
             </dd>
           </>
         )}
@@ -197,13 +198,13 @@ export function MappingEvidence({ pane }: { pane: MappingPane }) {
           <tbody>
             {pane.history.map((h, i) => (
               <tr key={i} className="border-t">
-                <td className="py-1 pr-3">{formatDate(h.decided_at)}</td>
-                <td className="py-1 pr-3">{h.action}</td>
+                <td className="py-1 pr-3">{formatDateTime(h.decided_at)}</td>
+                <td className="py-1 pr-3">{HISTORY_ACTION_LABEL[h.action]}</td>
                 <td className="py-1 pr-3">
                   {h.old_concept.concept_id} → {h.new_concept.concept_id}
                 </td>
-                <td className="py-1 pr-3">{h.reviewer_center}</td>
-                <td className="py-1">{h.reason_code ?? "—"}</td>
+                <td className="py-1 pr-3">{centerLabel(h.reviewer_center)}</td>
+                <td className="py-1">{h.reason_code ? reasonLabel(h.reason_code) : "—"}</td>
               </tr>
             ))}
           </tbody>

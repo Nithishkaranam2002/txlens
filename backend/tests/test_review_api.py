@@ -203,6 +203,11 @@ def test_steward_sees_redacted_evidence_crops_and_the_deidentified_sentence(
     assert seeded.note.given_name not in mention["evidence"]["sentence"]
     curated = client.get(f"/review/items/curated_mapping/{':'.join(CURATED)}").json()
     assert curated["actions"] == []  # stewards may look, not decide
+    # plain-English title and vocabulary; the internal code only for the tooltip
+    assert curated["item"]["title"].startswith("Note abbreviation: “test-abbrev” → ")
+    assert curated["item"]["code"] == ":".join(CURATED)
+    assert curated["evidence"]["source_vocabulary_label"] == "Note abbreviation"
+    assert "TXLENS" not in curated["item"]["title"] + (curated["item"]["detail"] or "")
 
 
 def test_edit_needs_a_reason_and_is_signalled_recorded_and_audited(

@@ -1,7 +1,7 @@
 import { ReviewDialog } from "@/components/review-dialog";
 import { SeverityBadge, StatusBadge } from "@/components/severity-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatDate } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 import type { FlagEvent, PatientFlag } from "@/lib/types";
 
 const EVENT_TEXT: Record<FlagEvent["event"], string> = {
@@ -43,7 +43,7 @@ export function FlagList({ flags, canReview, subject }: { flags: PatientFlag[]; 
                   <ol className="ml-1 space-y-0.5 border-l pl-3 text-xs text-muted-foreground" aria-label="Status history">
                     {flag.history.map((event, i) => (
                       <li key={i}>
-                        <time dateTime={event.at}>{formatDate(event.at)}</time> — {EVENT_TEXT[event.event]}
+                        <time dateTime={event.at}>{formatDateTime(event.at)}</time> — {EVENT_TEXT[event.event]}
                         {event.by && ` by ${event.by}`}
                         {event.note && <span className="text-foreground">: “{event.note}”</span>}
                       </li>

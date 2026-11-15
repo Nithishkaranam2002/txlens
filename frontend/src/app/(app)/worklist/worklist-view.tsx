@@ -1,16 +1,18 @@
 "use client";
 
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import type { Route } from "next";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { FilterSelect } from "@/components/filter-select";
+import { RefreshButton } from "@/components/refresh-button";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { WorklistTable } from "@/components/worklist-table";
 import { useRole } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
-import { PAGE_SIZE, useWorklist, type WorklistFilters } from "@/lib/queries";
+import { keys, PAGE_SIZE, useWorklist, type WorklistFilters } from "@/lib/queries";
 import { can, seesIdentifiers } from "@/lib/roles";
 import type { FlagStatus, Organ, Severity } from "@/lib/types";
 
@@ -95,6 +97,8 @@ export function WorklistView() {
   };
   const offset = Math.max(0, Number(params.get("offset")) || 0);
   const worklist = useWorklist(filters, offset);
+  const client = useQueryClient();
+  const fetching = useIsFetching({ queryKey: keys.worklist }) > 0;
   const canReview = can(role, "review");
 
   const update = (changes: Record<string, string | undefined>) => {
@@ -125,17 +129,25 @@ export function WorklistView() {
             </p>
           )}
         </div>
-        <div className="flex flex-wrap gap-3" role="group" aria-label="Filters">
-          <FilterSelect id="filter-organ" label="Organ" value={filters.organ} options={ORGANS} onChange={(v) => update({ organ: v })} />
-          <FilterSelect
-            id="filter-severity"
-            label="Highest severity"
-            value={priority}
-            options={PRIORITIES}
-            allowAll={false}
-            onChange={(v) => update({ severity: v === DEFAULT_PRIORITY ? undefined : v })}
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-wrap gap-3" role="group" aria-label="Filters">
+            <FilterSelect id="filter-organ" label="Organ" value={filters.organ} options={ORGANS} onChange={(v) => update({ organ: v })} />
+            <FilterSelect
+              id="filter-severity"
+              label="Highest severity"
+              value={priority}
+              options={PRIORITIES}
+              allowAll={false}
+              onChange={(v) => update({ severity: v === DEFAULT_PRIORITY ? undefined : v })}
+            />
+            <FilterSelect id="filter-status" label="Status" value={filters.status} options={STATUSES} onChange={(v) => update({ status: v })} />
+          </div>
+          {/* Every worklist page in view (the main list and the low-priority one), filters kept. */}
+          <RefreshButton
+            onRefresh={() => void client.invalidateQueries({ queryKey: keys.worklist })}
+            fetching={fetching}
+            updatedAt={worklist.dataUpdatedAt}
           />
-          <FilterSelect id="filter-status" label="Status" value={filters.status} options={STATUSES} onChange={(v) => update({ status: v })} />
         </div>
       </div>
 

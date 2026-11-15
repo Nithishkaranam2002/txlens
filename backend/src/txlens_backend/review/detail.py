@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import Connection, text
 
 from txlens_backend.notes.store import phi_spans
-from txlens_backend.review import crop, curated
+from txlens_backend.review import crop, curated, labels
 from txlens_backend.review.queue import (
     PatientRef,
     ReviewItem,
@@ -85,11 +85,13 @@ class MappingPane(BaseModel):
     kind: Literal["mapping"] = "mapping"
     source_value: str
     source_vocabulary_id: str | None
+    source_vocabulary_label: str | None  # "Note abbreviation" for TXLENS_NOTE_ABBREV
     description: str | None
     concept: ConceptRef | None
     original_concept: ConceptRef | None  # curated rows: the AI assistant's concept
     suggestion_score: float | None
-    reason: str | None
+    reason: str | None  # plain English
+    reason_code: str | None  # the internal code behind `reason`
     rows: int | None
     label: str | None  # curated rows: "AI-curated, pending" or "clinician-reviewed"
     history: list[HistoryEntry]
@@ -275,10 +277,12 @@ def gap_detail(conn: Connection, key: str, viewer: Viewer) -> tuple[list[ReviewF
     value = str(row.suggested_concept_id) if row.suggested_concept_id else None
     fields = [ReviewField(name="concept_id", label="concept", model_value=value, value=value,
                           confidence=row.suggestion_score, concept=True)]  # fmt: skip
+    why = row.review_reason or row.reason
     return fields, MappingPane(
-        source_value=row.source_value, source_vocabulary_id=None, description=None,
-        concept=suggested, original_concept=None, suggestion_score=row.suggestion_score,
-        reason=row.review_reason or row.reason, rows=row.rows, label=None, history=[],
+        source_value=row.source_value, source_vocabulary_id=None, source_vocabulary_label=None,
+        description=None, concept=suggested, original_concept=None,
+        suggestion_score=row.suggestion_score, reason=labels.gap_reason(why), reason_code=why,
+        rows=row.rows, label=None, history=[],
     )  # fmt: skip
 
 
@@ -336,7 +340,8 @@ def curated_detail(
                           concept=True)]  # fmt: skip
     return fields, MappingPane(
         source_value=row.source_code, source_vocabulary_id=row.source_vocabulary_id,
+        source_vocabulary_label=labels.vocabulary(row.source_vocabulary_id),
         description=row.source_code_description, concept=concept(conn, now.concept_id),
         original_concept=concept(conn, row.target_concept_id), suggestion_score=None,
-        reason=None, rows=None, label=now.label, history=entries,
+        reason=None, reason_code=None, rows=None, label=now.label, history=entries,
     )  # fmt: skip

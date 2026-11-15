@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import type { ReactElement } from "react";
 
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { meKey } from "@/lib/auth";
 import type { Me, Role } from "@/lib/roles";
 
@@ -20,7 +21,14 @@ export function testMe(role: Role): Me {
 export function renderWithQuery(ui: ReactElement, role?: Role) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   if (role) client.setQueryData(meKey, testMe(role));
-  return { client, ...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>) };
+  return {
+    client,
+    ...render(
+      <QueryClientProvider client={client}>
+        <TooltipProvider>{ui}</TooltipProvider>
+      </QueryClientProvider>,
+    ),
+  };
 }
 
 /** A JSON Response like FastAPI's, with a request id. */

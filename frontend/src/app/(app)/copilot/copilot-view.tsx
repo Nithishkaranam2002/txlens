@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { api, unwrap } from "@/lib/api/client";
 import { isApiError } from "@/lib/api/errors";
 import { applyEvent, askCopilot, newTurn, STAGE_LABEL, turnsOf, type Turn } from "@/lib/copilot";
-import { formatDate } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 import { keys, useConversation, useConversations, useCreateConversation } from "@/lib/queries";
 
 
@@ -114,7 +114,7 @@ export function CopilotView() {
                     className="block rounded-md px-2 py-1 hover:bg-muted aria-[current=page]:bg-muted aria-[current=page]:font-medium"
                   >
                     <span className="line-clamp-2">{c.title}</span>
-                    <span className="text-xs text-muted-foreground">{formatDate(c.created_at)}</span>
+                    <span className="text-xs text-muted-foreground">{formatDateTime(c.created_at)}</span>
                   </Link>
                 </li>
               ))}

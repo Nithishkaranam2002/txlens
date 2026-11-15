@@ -2002,6 +2002,17 @@
             ],
             "title": "Reason"
           },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
           "rows": {
             "anyOf": [
               {
@@ -2028,6 +2039,17 @@
             ],
             "title": "Source Vocabulary Id"
           },
+          "source_vocabulary_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Vocabulary Label"
+          },
           "suggestion_score": {
             "anyOf": [
               {
@@ -2043,11 +2065,13 @@
         "required": [
           "source_value",
           "source_vocabulary_id",
+          "source_vocabulary_label",
           "description",
           "concept",
           "original_concept",
           "suggestion_score",
           "reason",
+          "reason_code",
           "rows",
           "label",
           "history"
@@ -3276,8 +3300,19 @@
         "type": "object"
       },
       "ReviewItem": {
-        "description": "One queue entry. Titles carry no identifiers; `patient_id` is shaped for the viewer.",
+        "description": "One queue entry. Titles carry no identifiers; `patient_id` is shaped for the viewer.\nTitles and details are plain English; `code` is the internal code behind them, if any.",
         "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
           "decided_at": {
             "anyOf": [
               {

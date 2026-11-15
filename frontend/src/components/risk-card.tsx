@@ -2,7 +2,7 @@ import { ArrowDown, ArrowUp, FlaskConical, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 import type { RiskContribution, RiskScore } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -125,7 +125,7 @@ export function RiskCard({
             </div>
             <p className="text-xs text-muted-foreground">
               Model {risk.model_name} v{risk.model_version} · {risk.source ? SOURCE_TEXT[risk.source] : ""}{" "}
-              <time dateTime={risk.scored_at ?? undefined}>{formatDate(risk.scored_at)}</time>. Intended use, data
+              <time dateTime={risk.scored_at ?? undefined}>{formatDateTime(risk.scored_at)}</time>. Intended use, data
               and limits: the model card (docs/model_card_risk.md).
             </p>
           </>

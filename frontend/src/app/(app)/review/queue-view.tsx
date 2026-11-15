@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { FilterSelect } from "@/components/filter-select";
+import { RefreshButton } from "@/components/refresh-button";
 import { QueueTable } from "@/components/review/queue-table";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { Button } from "@/components/ui/button";
@@ -58,16 +59,19 @@ export function QueueView() {
             </Link>
           </p>
         </div>
-        <div className="flex flex-wrap gap-3" role="group" aria-label="Filters">
-          <FilterSelect id="filter-type" label="Type" value={type} options={ITEM_TYPES} width="w-48" onChange={(v) => update({ type: v })} />
-          <FilterSelect
-            id="filter-status"
-            label="Status"
-            value={status}
-            options={STATUSES}
-            allowAll={false}
-            onChange={(v) => update({ status: v === "pending" ? undefined : v })}
-          />
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-wrap gap-3" role="group" aria-label="Filters">
+            <FilterSelect id="filter-type" label="Type" value={type} options={ITEM_TYPES} width="w-48" onChange={(v) => update({ type: v })} />
+            <FilterSelect
+              id="filter-status"
+              label="Status"
+              value={status}
+              options={STATUSES}
+              allowAll={false}
+              onChange={(v) => update({ status: v === "pending" ? undefined : v })}
+            />
+          </div>
+          <RefreshButton onRefresh={() => void queue.refetch()} fetching={queue.isFetching} updatedAt={queue.dataUpdatedAt} />
         </div>
       </div>
 

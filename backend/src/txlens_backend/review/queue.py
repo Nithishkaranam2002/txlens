@@ -20,6 +20,7 @@ from sqlalchemy import Connection, text
 
 from txlens_backend.documents.service import QC_REASON
 from txlens_backend.rejection import rejection_concept_ids
+from txlens_backend.review import labels
 from txlens_backend.review.curated import histories, state
 from txlens_backend.review.priority import TIER_LABELS, Signals, biopsy_signals, sort_key, tier
 from txlens_backend.review.reasons import ITEM_TYPES, ItemType
@@ -83,12 +84,14 @@ DECIDED_SQL = text(
 
 
 class ReviewItem(BaseModel):
-    """One queue entry. Titles carry no identifiers; `patient_id` is shaped for the viewer."""
+    """One queue entry. Titles carry no identifiers; `patient_id` is shaped for the viewer.
+    Titles and details are plain English; `code` is the internal code behind them, if any."""
 
     item_type: ItemType
     item_key: str
     title: str
     detail: str | None
+    code: str | None = None
     patient_id: str | None
     queued_at: datetime
     tier: int
@@ -118,12 +121,13 @@ class Pending:
     detail: str | None
     person_id: int | None
     signals: Signals
+    code: str | None = None
 
 
 def item_of(p: Pending, patient: PatientRef) -> ReviewItem:
     level = tier(p.signals)
     return ReviewItem(
-        item_type=p.item_type, item_key=p.key, title=p.title, detail=p.detail,
+        item_type=p.item_type, item_key=p.key, title=p.title, detail=p.detail, code=p.code,
         patient_id=patient(p.person_id), queued_at=p.signals.queued_at, tier=level,
         tier_label=TIER_LABELS[level], rejection_related=p.signals.rejection_related,
         high_severity=p.signals.high_severity, qc_sample=p.signals.qc_sample, status="pending",
@@ -146,16 +150,17 @@ def mentions(conn: Connection, rejection: frozenset[int]) -> Iterable[Pending]:
         related = (r.concept_id in rejection or r.source_concept_id in rejection
                    or r.review_reason is not None)  # fmt: skip
         why = r.review_reason or ("no concept" if r.concept_id == r.source_concept_id == 0
-                                  else f"{r.method} result, low confidence")  # fmt: skip
+                                  else f"{labels.method(r.method)}, low confidence")  # fmt: skip
         yield Pending("note_mention", r.key, f"“{r.lexical_variant}” in a clinic note", why,
                       r.person_id, Signals(r.queued_at, rejection_related=related))  # fmt: skip
 
 
 def gaps(conn: Connection) -> Iterable[Pending]:
     for r in conn.execute(GAP_SQL):
-        detail = f"{r.reason}, {r.rows:,} row(s)"
+        why = r.review_reason or r.reason
+        detail = f"{labels.gap_reason(why)}, {r.rows:,} row{'' if r.rows == 1 else 's'}"
         yield Pending("condition_mapping", r.key, f"Condition text “{r.key}”", detail, None,
-                      Signals(r.queued_at))  # fmt: skip
+                      Signals(r.queued_at), code=why)  # fmt: skip
 
 
 def curated_rows(conn: Connection):  # type: ignore[no-untyped-def]
@@ -169,9 +174,10 @@ def curated_all(conn: Connection, rejection: frozenset[int]) -> Iterable[tuple[P
     reviewed = histories(conn)
     for r in curated_rows(conn):
         now = state(r.target_concept_id, reviewed.get((r.source_vocabulary_id, r.source_code), []))
-        title = f"{r.source_vocabulary_id} “{r.source_code}” → {r.concept_name or 'no concept'}"
+        title = f"{labels.curated_code(r.key)} → {r.concept_name or 'no concept'}"
         signals = Signals(r.queued_at, rejection_related=r.target_concept_id in rejection)
-        yield Pending("curated_mapping", r.key, title, now.label, None, signals), now.reviewed
+        yield Pending("curated_mapping", r.key, title, now.label, None, signals,
+                      code=r.key), now.reviewed  # fmt: skip
 
 
 def curated(conn: Connection, rejection: frozenset[int]) -> Iterable[Pending]:
@@ -204,6 +210,19 @@ def pending(conn: Connection, types: Iterable[ItemType]) -> list[Pending]:
     return sorted(found, key=lambda p: (*sort_key(p.signals), p.key))
 
 
+# Decided items whose key is an internal code (shown on hover): document ids, curated rows.
+RAW_KEYS = frozenset({"biopsy_document", "curated_mapping"})
+
+
+def decided_title(item_type: ItemType, key: str) -> str:
+    """A decided item's title from its key alone (mention keys name a note: not shown)."""
+    if item_type == "curated_mapping":
+        return labels.curated_code(key)
+    if item_type == "condition_mapping":
+        return f"Condition text “{key}”"
+    return "Biopsy report" if item_type == "biopsy_document" else "Note mention"
+
+
 def decided(conn: Connection, types: Iterable[ItemType]) -> list[ReviewItem]:
     """The latest decision per item, newest first."""
     items = []
@@ -212,8 +231,9 @@ def decided(conn: Connection, types: Iterable[ItemType]) -> list[ReviewItem]:
         level = tier(signals)
         items.append(
             ReviewItem(item_type=r.item_type, item_key=r.item_key,
-                       title=r.item_key if r.item_type != "note_mention" else "Note mention",
-                       detail=None, patient_id=None, queued_at=r.queued_at, tier=level,
+                       title=decided_title(r.item_type, r.item_key), detail=None,
+                       code=r.item_key if r.item_type in RAW_KEYS else None,
+                       patient_id=None, queued_at=r.queued_at, tier=level,
                        tier_label=TIER_LABELS[level], rejection_related=False,
                        high_severity=False, qc_sample=r.qc_sample, status=r.action,
                        decided_at=r.decided_at)

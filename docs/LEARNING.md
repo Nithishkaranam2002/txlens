@@ -2074,3 +2074,23 @@ experiencer flags).
   question that only looks similar would be wrong, so a near miss gets the note instead.
 - **Interview question.** *Why match questions in code instead of letting the model decide?*
   There is no model in the demo, and matching in code is free, testable and predictable.
+
+### Polish: refresh, local dates and plain-English review labels
+- **Refresh button** on the review queue and the worklist. It reloads the list with the same
+  filters (they live in the URL and in the query key), spins while loading, and says
+  "Updated just now / 4 min ago". On the worklist it reloads the low-priority list too.
+- **Local dates.** `formatDate` used to cut the first ten characters of a value, which for a
+  timestamp is the date in UTC: a conversation started on the evening of 14 Nov in US
+  Central showed "15 Nov". The shared helpers in `lib/format.ts` now tell two kinds apart:
+  - a calendar date ("2025-03-01": transplant, lab, note dates) is shown as it is and never
+    shifted, since moving it by a time zone would change a clinical fact;
+  - a timestamp (created, queued, decided) is shown in the viewer's time zone, with the time
+    where it matters (`formatDateTime`: "14 Nov 2026, 7:30 PM CST").
+- **Plain-English review labels.** The server writes the queue titles and now uses labels
+  (`review/labels.py`): 'Note abbreviation: "abmr" → Antibody-mediated rejection' instead of
+  `TXLENS_NOTE_ABBREV`, and "Best match scored too low" instead of `low_score`. The raw code
+  travels in a separate `code` field and shows on hover or keyboard focus. Statuses read
+  Waiting / Approved / Corrected / Rejected / Reverted, with a help tooltip.
+- **Interview question.** *Why not convert every date to local time?* Clinical dates have no
+  time of day. Converting midnight UTC to US time would move a transplant to the day before.
+  Only real moments in time (when something was created or decided) depend on the time zone.
