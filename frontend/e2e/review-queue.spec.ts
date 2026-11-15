@@ -52,8 +52,8 @@ test("a clinician approves an AI-curated mapping for every center", async ({ pag
   await page.goto(`/review/curated_mapping/${encodeURIComponent(review.curatedKey)}`);
   await expect(page.getByText("clinician-reviewed", { exact: true })).toBeVisible();
   const history = page.getByRole("table", { name: /Review history/ });
-  await expect(history).toContainText("approve");
-  await expect(history).toContainText("center_a");
+  await expect(history).toContainText("Approved");
+  await expect(history).toContainText("Center A");
 });
 
 test("a data steward sees redacted evidence only", async ({ page }) => {
