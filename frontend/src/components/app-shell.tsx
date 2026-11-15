@@ -6,14 +6,16 @@ import { usePathname } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
 
 import { SafetyBanner } from "@/components/banner";
+import { PatientSearch } from "@/components/patient-search";
 import { ErrorState } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLogout, useMe } from "@/lib/auth";
-import { asRole, navFor, ROLE_LABEL, type Role } from "@/lib/roles";
+import { asRole, can, navFor, ROLE_LABEL, type Role } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
-/** Header with role-aware navigation, the safety banner, and the page in a <main> landmark. */
+/** Header with role-aware navigation, patient search (not for admins), the safety banner, and
+ * the page in a <main> landmark. */
 export function AppShell({ children }: { children: ReactNode }) {
   const me = useMe();
   const logout = useLogout();
@@ -40,6 +42,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Suspense>
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm">
+            {can(role, "patients") && role && (
+              <div role="search" className="hidden w-64 md:block">
+                <PatientSearch role={role} />
+              </div>
+            )}
             {me.data ? (
               <span className="hidden text-right leading-tight sm:block">
                 <span className="block font-medium">{me.data.display_name}</span>

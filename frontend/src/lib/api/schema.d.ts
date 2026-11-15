@@ -435,6 +435,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/patients/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find patients as you type (top-bar search)
+         * @description Up to ten patients of your center. Researchers and data stewards match pseudonyms only:
+         *     names and MRNs are never searched or returned for them.
+         */
+        get: operations["search_patients_patients_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/patients/{patient_id}/flags": {
         parameters: {
             query?: never;
@@ -2094,6 +2115,14 @@ export interface components {
             /** @default medium */
             severity: components["schemas"]["Severity"];
         };
+        /**
+         * SearchResults
+         * @description At most ten patients matching a search, shaped like the patient list for this role.
+         */
+        SearchResults: {
+            /** Items */
+            items: components["schemas"]["IdentifiedPatient"][] | components["schemas"]["DeidentifiedPatient"][];
+        };
         /** SentencePane */
         SentencePane: {
             /** Highlight End */
@@ -3131,6 +3160,45 @@ export interface operations {
             };
         };
     };
+    search_patients_patients_search_get: {
+        parameters: {
+            query: {
+                /** @description Clinicians: part of a name or the start of an MRN. Others: the start of a pseudonym (R-...). */
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchResults"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too many searches; try again shortly */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     get_patient_flags_patients__patient_id__flags_get: {
         parameters: {
             query?: never;
@@ -3685,6 +3753,8 @@ export interface operations {
                 severity?: components["schemas"]["Severity"][] | null;
                 /** @description Rows with an open flag in this status */
                 status?: components["schemas"]["Status"] | null;
+                /** @description Clinicians: part of a name or the start of an MRN. Data stewards: the start of a pseudonym. */
+                q?: string | null;
                 limit?: number;
                 offset?: number;
             };

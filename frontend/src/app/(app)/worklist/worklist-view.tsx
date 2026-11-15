@@ -3,7 +3,8 @@
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import type { Route } from "next";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { Search } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { FilterSelect } from "@/components/filter-select";
 import { RefreshButton } from "@/components/refresh-button";
@@ -12,9 +13,10 @@ import { Button } from "@/components/ui/button";
 import { WorklistTable } from "@/components/worklist-table";
 import { useRole } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
-import { keys, PAGE_SIZE, useWorklist, type WorklistFilters } from "@/lib/queries";
+import { keys, PAGE_SIZE, SEARCH_MIN, useWorklist, type WorklistFilters } from "@/lib/queries";
 import { can, seesIdentifiers } from "@/lib/roles";
 import type { FlagStatus, Organ, Severity } from "@/lib/types";
+import { useDebounced } from "@/lib/use-debounced";
 
 const ORGANS = [{ value: "kidney", label: "Kidney" }, { value: "heart", label: "Heart" }] as const;
 // Rows are filtered by the patient's highest open severity. The default leaves low-only
@@ -58,6 +60,40 @@ function Pager({ offset, total, onChange }: { offset: number; total: number; onC
   );
 }
 
+/** A search term the API accepts (at least two characters), or undefined for none. */
+function searchTerm(value: string | null): string | undefined {
+  const term = value?.trim() ?? "";
+  return term.length >= SEARCH_MIN ? term : undefined;
+}
+
+/** Filters the worklist as you type: the URL follows 300 ms after the last keystroke. */
+function SearchBox({ initial, placeholder, onSearch }: { initial: string; placeholder: string; onSearch: (q: string | undefined) => void }) {
+  const [text, setText] = useState(initial);
+  const debounced = useDebounced(text, 300);
+  // Only the user's typing changes the URL, so leaving the page or going back is not undone.
+  const sent = useRef(debounced);
+  useEffect(() => {
+    if (debounced === sent.current) return;
+    sent.current = debounced;
+    onSearch(searchTerm(debounced));
+  }, [debounced, onSearch]);
+  return (
+    <div className="relative max-w-sm">
+      <Search aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+      <input
+        type="search"
+        aria-label="Search the worklist"
+        placeholder={placeholder}
+        autoComplete="off"
+        spellCheck={false}
+        className="h-9 w-full rounded-md border bg-background pr-2 pl-8 text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+      />
+    </div>
+  );
+}
+
 /** Patients whose open flags are all low severity, collapsed under the main list. */
 function LowPriority({ filters, canReview }: { filters: WorklistFilters; canReview: boolean }) {
   const [offset, setOffset] = useState(0);
@@ -94,6 +130,7 @@ export function WorklistView() {
     organ: pick<Organ>(params.get("organ"), ORGANS),
     severity: SEVERITIES[priority],
     status: pick<FlagStatus>(params.get("status"), STATUSES),
+    q: searchTerm(params.get("q")),
   };
   const offset = Math.max(0, Number(params.get("offset")) || 0);
   const worklist = useWorklist(filters, offset);
@@ -151,10 +188,20 @@ export function WorklistView() {
         </div>
       </div>
 
+      <SearchBox
+        initial={filters.q ?? ""}
+        placeholder={seesIdentifiers(role) ? "Search by name or MRN" : "Search by pseudonym (R-…)"}
+        onSearch={(q) => update({ q })}
+      />
+
       {worklist.isPending ? (
         <PageSkeleton />
       ) : worklist.isError ? (
         <ErrorState error={worklist.error} onRetry={() => worklist.refetch()} />
+      ) : worklist.data.items.length === 0 && filters.q ? (
+        <EmptyState title="No patients match">
+          No patient with open flags matches “{filters.q}” and these filters.
+        </EmptyState>
       ) : worklist.data.items.length === 0 ? (
         <EmptyState title="No patients to review">
           No open flags match these filters. Flags appear here after the nightly surveillance run.

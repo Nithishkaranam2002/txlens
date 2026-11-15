@@ -24,6 +24,7 @@ MATRIX: dict[str, dict[Role | str, int]] = {
     "GET /demo":                   {C: 200, R: 200, S: 200, A: 200, ANON: 200},
     "GET /patients":               {C: 200, R: 200, S: 200, A: 403, ANON: 401},
     "GET /patients/{pid}/timeline": {C: 200, R: 200, S: 200, A: 403, ANON: 401},
+    "GET /patients/search?q=R-":   {C: 200, R: 200, S: 200, A: 403, ANON: 401},
     "POST /cohorts/preview":       {C: 200, R: 200, S: 403, A: 403, ANON: 401},
     "POST /cohorts":               {C: 201, R: 201, S: 403, A: 403, ANON: 401},
     "GET /cohorts":                {C: 200, R: 200, S: 403, A: 403, ANON: 401},
@@ -60,7 +61,7 @@ MATRIX: dict[str, dict[Role | str, int]] = {
 # metadata, previews and review metrics (aggregates only), and conversation reads (the
 # caller's own text).
 AUDITED = {
-    "GET /patients", "GET /patients/{pid}/timeline", "POST /cohorts",
+    "GET /patients", "GET /patients/{pid}/timeline", "GET /patients/search?q=R-", "POST /cohorts",
     "GET /cohorts/{cid}/members", "GET /worklist", "GET /patients/{pid}/flags",
     "GET /patients/{pid}/risk", "POST /patients/{pid}/risk/score",
     "POST /flags/{fid}/acknowledge", "POST /flags/{fid}/resolve",

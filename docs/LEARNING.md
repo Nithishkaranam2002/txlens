@@ -2094,3 +2094,43 @@ experiencer flags).
 - **Interview question.** *Why not convert every date to local time?* Clinical dates have no
   time of day. Converting midnight UTC to US time would move a transplant to the day before.
   Only real moments in time (when something was created or decided) depend on the time zone.
+
+### Patient search: top bar and worklist
+- **What it does.** A search box sits in the top bar of every page (not for admins). Type two
+  or more characters and up to ten patients of your own center appear; arrow keys move,
+  Enter or a click opens the patient, Esc closes, and "/" jumps into the box from anywhere.
+  The worklist has its own box ("Search by name or MRN"). It waits 300 ms after the last
+  key, then puts `q` in the URL next to the other filters, so Refresh, sharing the link and
+  the low-priority section all keep it. Nothing found shows "No patients match".
+- **Who matches what.** Clinicians: part of a name or the start of an MRN. Researchers and
+  data stewards: the start of a pseudonym (`R-...`) only. Their SQL never joins the identity
+  table, so a name cannot match, not even by "0 results versus 1 result". Admins get 403.
+  The top bar and the worklist use the same SQL (`services/patients.search_query`).
+- **Limits.** Own center only (Row-Level Security), 2 to 100 characters, at most 10 results,
+  `%` and `_` typed by the user are searched literally, and 120 searches a minute per user.
+- **Audit without names (ADR 0022).** Every search writes an audit row with the patients
+  returned, the length of the text and a *fingerprint*: an HMAC of the lower-cased text
+  using the de-identification key. Not the text: it is often a name. Not a plain hash:
+  there are few names, so anyone could hash a list of names and see which were searched.
+  The key is never in the database, so the fingerprint cannot be reversed from the log, but
+  the same search gives the same fingerprint, so an investigator can still link repeats.
+- **Why tools.** No new libraries: the box is a small ARIA combobox (`role="combobox"`,
+  `listbox`, `aria-activedescendant`), so screen readers announce the moving selection and
+  the axe checks in the e2e tests pass. The debounce is one shared hook (`use-debounced.ts`).
+- **Trade-offs.** Name search uses `ILIKE '%text%'`, which scans the center's identity rows.
+  That is fine for thousands of patients; for millions a trigram index (`pg_trgm`) would be
+  the next step. Pseudonyms are computed in SQL for every patient on each search, again fine
+  at this size.
+- **Guest accounts.** The public demo's guest clinician has the normal clinician role, so it
+  can acknowledge and resolve flags and those changes stay. Nothing resets them on a timer:
+  `make cloud-reset` (by hand) puts the demo data back, keeping users and the audit trail.
+- **Likely interview questions.**
+  - *Why can't a researcher search by name if the results are de-identified anyway?* Because
+    the search itself leaks: "Jane Doe → 1 result" tells them Jane Doe is a patient here.
+  - *Why HMAC and not SHA-256 for the audit?* A hash of a small set (names) is reversible by
+    guessing; a keyed hash is not without the key.
+  - *Why debounce?* Each keystroke would be an API call, an audit row and a rate-limit hit;
+    300 ms after the last key feels instant and sends one request per word.
+  - *How is another center's patient kept out?* The query runs inside a tenant transaction,
+    so Postgres RLS removes other centers' rows before the WHERE clause even matters; a test
+    searches for a center B patient as center A and gets nothing.

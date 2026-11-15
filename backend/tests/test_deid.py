@@ -4,7 +4,14 @@ from datetime import date
 
 import pytest
 
-from txlens_backend.deid import age_band, date_shift_days, pseudonym, shift, suppress
+from txlens_backend.deid import (
+    age_band,
+    date_shift_days,
+    pseudonym,
+    search_fingerprint,
+    shift,
+    suppress,
+)
 
 KEY = "k" * 40
 
@@ -21,6 +28,15 @@ def test_pseudonym_is_stable_keyed_and_tenant_specific() -> None:
 def test_pseudonyms_do_not_collide_within_a_center() -> None:
     ids = {pseudonym(KEY, "center_a", 100_000_000 + n) for n in range(5000)}
     assert len(ids) == 5000
+
+
+def test_search_fingerprint_is_keyed_case_blind_and_hides_the_text() -> None:
+    fingerprint = search_fingerprint("k1", "center_a", "Jane Doe")
+    assert fingerprint == search_fingerprint("k1", "center_a", " jane doe ")
+    assert len(fingerprint) == 16 and "jane" not in fingerprint
+    assert fingerprint != search_fingerprint("k2", "center_a", "Jane Doe")
+    assert fingerprint != search_fingerprint("k1", "center_b", "Jane Doe")
+    assert fingerprint != search_fingerprint("k1", "center_a", "Jane Do")
 
 
 def test_date_shift_is_per_patient_nonzero_and_bounded() -> None:

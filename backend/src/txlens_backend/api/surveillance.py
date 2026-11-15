@@ -26,7 +26,7 @@ from txlens_backend.api.deps import (
     require_csrf_header,
     require_roles,
 )
-from txlens_backend.api.patients import viewer
+from txlens_backend.api.patients import search_details, viewer
 from txlens_backend.services import patients
 from txlens_backend.services import surveillance as svc
 from txlens_backend.surveillance.config import Severity, SurveillanceConfig, load_configs
@@ -77,20 +77,31 @@ def get_worklist(
     status_: Annotated[
         Status | None, Query(alias="status", description="Rows with an open flag in this status")
     ] = None,
+    q: Annotated[
+        str | None,
+        Query(
+            min_length=patients.SEARCH_MIN,
+            max_length=100,
+            description="Clinicians: part of a name or the start of an MRN. "
+            "Data stewards: the start of a pseudonym.",
+        ),
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> WorklistPage:
     """Open flags (not resolved, still firing) grouped by patient and ranked by priority score."""
     view = viewer(principal, ctx)
     severities = frozenset(severity) if severity else None
-    filters = svc.WorklistFilters(organ=organ, severities=severities, status=status_)
+    people = patients.matching_people(conn, view, q) if q and q.strip() else None
+    filters = svc.WorklistFilters(organ=organ, severities=severities, status=status_, people=people)
     rows = svc.worklist(conn, view, principal.tenant_id, filters)
     page = rows[offset : offset + limit]
     audit.record(
         conn, info, principal.user_id, "phi_view" if view.identified else "deid_view",
         "worklist", None, {"patients": [r.patient.patient_id for r in page],
-                           "organ": organ, "severity": severity, "status": status_,
-                           "limit": limit, "offset": offset},
+                           **search_details(principal, ctx, q), "organ": organ,
+                           "severity": severity, "status": status_, "limit": limit,
+                           "offset": offset},
     )  # fmt: skip
     as_of = svc.data_as_of(conn) if view.identified else None
     return WorklistPage(items=page, total=len(rows), limit=limit, offset=offset, data_as_of=as_of)

@@ -21,6 +21,7 @@ class Bucket(StrEnum):
 
     COPILOT = "copilot"  # paid LLM calls
     ANALYSIS = "analysis"  # survival statistics, PDF reports, on-demand risk scoring
+    SEARCH = "search"  # patient search as you type (no bulk lookups of names)
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,8 @@ def limit_for(bucket: Bucket, settings: Settings) -> Limit:
     """The configured allowance of a bucket."""
     if bucket is Bucket.COPILOT:
         return Limit(settings.rate_limit_copilot_per_hour, 3600)
+    if bucket is Bucket.SEARCH:
+        return Limit(settings.rate_limit_search_per_minute, 60)
     return Limit(settings.rate_limit_analysis_per_minute, 60)
 
 

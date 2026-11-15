@@ -30,7 +30,7 @@ const ACTIONS: Record<string, keyof ShortcutHandlers> = {
 };
 
 /** True while the user is typing: shortcuts must not steal letters from a field. */
-function typing(target: EventTarget | null): boolean {
+export function typing(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.getAttribute("role") === "combobox";
 }

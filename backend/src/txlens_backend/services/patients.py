@@ -165,6 +165,20 @@ IDENTIFIED_SEARCH = (
 )
 
 
+# Patient search (top bar, worklist): clinicians by name (anywhere in it) or MRN (its start);
+# everyone else by pseudonym (its start) only, so a name can never match. LIKE wildcards in
+# the typed text are escaped (Postgres' default escape character is the backslash).
+SEARCH_MIN = 2
+SEARCH_LIMIT = 10
+IDENTIFIED_MATCH = (
+    "(i.mrn ILIKE :prefix OR i.given_name ILIKE :contains OR i.family_name ILIKE :contains "
+    "OR (i.given_name || ' ' || i.family_name) ILIKE :contains "
+    "OR (i.family_name || ', ' || i.given_name) ILIKE :contains)"
+)
+DEIDENTIFIED_MATCH = "f.pseudonym ILIKE :prefix"
+LIKE_ESCAPE = str.maketrans({"\\": "\\\\", "%": "\\%", "_": "\\_"})
+
+
 def identified_query(select: str, tail: str = "") -> str:
     """facts + identity, filtered by the list filters and the name/MRN search."""
     return (
@@ -211,6 +225,40 @@ def list_patients(
         text(build("f.*", "ORDER BY f.pseudonym LIMIT :limit OFFSET :offset")), params
     ).all()
     return [deidentified(r, viewer) for r in rows], total
+
+
+def search_query(viewer: Viewer, select: str, tail: str = "") -> str:
+    """Patients of the caller's center matching the search, by the viewer's rules."""
+    if viewer.identified:
+        return identified_query(select, f"AND {IDENTIFIED_MATCH} {tail}")
+    return deidentified_query(select, f"AND {DEIDENTIFIED_MATCH} {tail}")
+
+
+def search_params(viewer: Viewer, q: str) -> dict[str, object]:
+    """Bind parameters of a search for `q` (stripped, wildcards escaped)."""
+    term = q.strip().translate(LIKE_ESCAPE)
+    return query_params(viewer, Filters()) | {"prefix": f"{term}%", "contains": f"%{term}%"}
+
+
+def search(
+    conn: Connection, viewer: Viewer, q: str, limit: int = SEARCH_LIMIT
+) -> list[IdentifiedPatient] | list[DeidentifiedPatient]:
+    """At most `limit` matching patients: by name for clinicians, by pseudonym for others."""
+    params = search_params(viewer, q) | {"limit": limit}
+    if viewer.identified:
+        select = "f.*, i.mrn, i.given_name, i.family_name, i.birth_date"
+        order = "ORDER BY i.family_name, i.given_name, f.person_id LIMIT :limit"
+        rows = conn.execute(text(search_query(viewer, select, order)), params).all()
+        return [identified(r) for r in rows]
+    order = "ORDER BY f.pseudonym LIMIT :limit"
+    rows = conn.execute(text(search_query(viewer, "f.*", order)), params).all()
+    return [deidentified(r, viewer) for r in rows]
+
+
+def matching_people(conn: Connection, viewer: Viewer, q: str) -> frozenset[int]:
+    """The person ids of every patient matching the search (to filter the worklist)."""
+    rows = conn.execute(text(search_query(viewer, "f.person_id")), search_params(viewer, q))
+    return frozenset(int(p) for p in rows.scalars())
 
 
 def identified(row: Row[tuple[object, ...]]) -> IdentifiedPatient:

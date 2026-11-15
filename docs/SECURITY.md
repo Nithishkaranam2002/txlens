@@ -46,6 +46,10 @@ service beyond per-user limits (that belongs to the platform in front of the app
 - **Audit:** every write and every patient-level read leaves a row in `app.audit_log` in the
   same transaction. The app role may only insert. The permission matrix checks that each
   audited endpoint really wrote a row for its request id.
+- **Patient search** (top bar, worklist) matches names and MRNs for clinicians only; other
+  roles match pseudonyms and their query never touches the identity table. It is limited to
+  10 results and 120 searches a minute per user. The audit log keeps the length and a keyed
+  HMAC of the search text, never the text itself (it may be a name): ADR 0022.
 
 ### Browser
 - **CSRF:** SameSite=Strict cookies, plus a required `X-Requested-With` header on every POST.

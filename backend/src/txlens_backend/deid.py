@@ -43,6 +43,15 @@ def pseudonym_sql(tenant_column: str, person_column: str) -> str:
     return PSEUDONYM_SQL.format(tenant=tenant_column, person=person_column)
 
 
+def search_fingerprint(key: str, tenant_id: str, query: str) -> str:
+    """What the audit log keeps of a patient search instead of its text, which may be a name:
+    a keyed HMAC of the lower-cased text. A plain hash of a name is reversed by hashing a list
+    of names; without the key (never stored in the database) this one cannot be. The same
+    search always gives the same fingerprint, so repeated searches can still be linked."""
+    message = f"search:{tenant_id}:{query.strip().lower()}".encode()
+    return hmac.new(key.encode(), message, hashlib.sha256).hexdigest()[:PSEUDONYM_HEX]
+
+
 def date_shift_days(key: str, tenant_id: str, person_id: int) -> int:
     """This patient's shift in days: in -182..-1 or 1..182, the same on every call."""
     n = int.from_bytes(_digest(key, "shift", tenant_id, person_id)[:4], "big") % (

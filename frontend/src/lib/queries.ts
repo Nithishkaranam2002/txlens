@@ -8,8 +8,11 @@ import { isApiError } from "@/lib/api/errors";
 import { cleanRequest } from "@/lib/survival";
 import type { CohortRules, Flag, FlagStatus, Organ, Severity, SurvivalRequest, WorklistPage } from "@/lib/types";
 
-/** `severity`: rows whose highest open severity is one of these. */
-export type WorklistFilters = { organ?: Organ; severity?: Severity[]; status?: FlagStatus };
+/** `severity`: rows whose highest open severity is one of these. `q`: a patient search. */
+export type WorklistFilters = { organ?: Organ; severity?: Severity[]; status?: FlagStatus; q?: string };
+
+/** The API's minimum search length. */
+export const SEARCH_MIN = 2;
 
 export const keys = {
   worklist: ["worklist"] as const,
@@ -23,6 +26,7 @@ export const keys = {
   cohort: (id: string) => ["cohorts", id] as const,
   members: (id: string, offset: number) => ["cohorts", id, "members", offset] as const,
   concepts: (q: string) => ["concepts", q] as const,
+  patientSearch: (q: string) => ["patient-search", q] as const,
   survivalOptions: ["survival", "options"] as const,
   survival: (request: SurvivalRequest) => ["survival", request] as const,
   conversations: ["copilot", "conversations"] as const,
@@ -191,6 +195,18 @@ export function useSurveillanceConfig(program: string | null | undefined) {
       unwrap(await api.GET("/surveillance/configs/{program}", { params: { path: { program: program! } } })),
     enabled: Boolean(program),
     staleTime: Infinity,
+  });
+}
+
+/** Up to ten patients matching `q` (names/MRNs for clinicians, pseudonyms for others). */
+export function usePatientSearch(q: string) {
+  const term = q.trim();
+  return useQuery({
+    queryKey: keys.patientSearch(term),
+    queryFn: async () => unwrap(await api.GET("/patients/search", { params: { query: { q: term } } })).items,
+    enabled: term.length >= SEARCH_MIN,
+    staleTime: 30_000,
+    placeholderData: (previous) => previous,
   });
 }
 

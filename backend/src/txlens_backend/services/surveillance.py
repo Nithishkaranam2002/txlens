@@ -130,12 +130,13 @@ SEVERITY_ORDER = {Severity.HIGH: 0, Severity.MEDIUM: 1, Severity.LOW: 2}
 
 @dataclass(frozen=True)
 class WorklistFilters:
-    """Keep rows of this organ whose highest open severity is one of `severities` and that
-    have at least one open flag in this status."""
+    """Keep rows of this organ whose highest open severity is one of `severities`, that have
+    at least one open flag in this status and (searching) whose person id is in `people`."""
 
     organ: pts.Organ | None = None
     severities: frozenset[Severity] | None = None
     status: Status | None = None
+    people: frozenset[int] | None = None
 
     def keep(self, row: WorklistRow) -> bool:
         """True if the row passes every filter that is set."""
@@ -175,9 +176,11 @@ def worklist(
         f"SELECT {FLAG_COLUMNS} FROM app.surveillance_flag WHERE {OPEN} "
         "ORDER BY person_id, created_at DESC, rule_id"
     )).all()  # fmt: skip
+    filters = filters or WorklistFilters()
     by_person: dict[int, list[Row[tuple[object, ...]]]] = defaultdict(list)
     for row in rows:
-        by_person[row.person_id].append(row)
+        if filters.people is None or row.person_id in filters.people:
+            by_person[row.person_id].append(row)
     configs = load_configs()
     people = patients_by_id(conn, viewer, list(by_person))
     ranked = []
@@ -192,8 +195,7 @@ def worklist(
         patient = people[person_id]
         ranked.append(((-score, -newest.toordinal(), str(patient.patient_id)),
                        WorklistRow(patient=patient, score=score, flags=views)))  # fmt: skip
-    keep = (filters or WorklistFilters()).keep
-    return [row for _, row in sorted(ranked, key=lambda r: r[0]) if keep(row)]
+    return [row for _, row in sorted(ranked, key=lambda r: r[0]) if filters.keep(row)]
 
 
 def history(

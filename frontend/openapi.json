@@ -3876,6 +3876,33 @@
         "title": "ScheduleAdherence",
         "type": "object"
       },
+      "SearchResults": {
+        "description": "At most ten patients matching a search, shaped like the patient list for this role.",
+        "properties": {
+          "items": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/IdentifiedPatient"
+                },
+                "type": "array"
+              },
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DeidentifiedPatient"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Items"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SearchResults",
+        "type": "object"
+      },
       "SentencePane": {
         "properties": {
           "highlight_end": {
@@ -5781,6 +5808,56 @@
         ]
       }
     },
+    "/patients/search": {
+      "get": {
+        "description": "Up to ten patients of your center. Researchers and data stewards match pseudonyms only:\nnames and MRNs are never searched or returned for them.",
+        "operationId": "search_patients_patients_search_get",
+        "parameters": [
+          {
+            "description": "Clinicians: part of a name or the start of an MRN. Others: the start of a pseudonym (R-...).",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "description": "Clinicians: part of a name or the start of an MRN. Others: the start of a pseudonym (R-...).",
+              "maxLength": 100,
+              "minLength": 2,
+              "title": "Q",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many searches; try again shortly"
+          }
+        },
+        "summary": "Find patients as you type (top-bar search)",
+        "tags": [
+          "patients"
+        ]
+      }
+    },
     "/patients/{patient_id}/flags": {
       "get": {
         "description": "`patient_id` is the person id for clinicians and the pseudonym (`R-...`) for others.",
@@ -6629,6 +6706,26 @@
               ],
               "description": "Rows with an open flag in this status",
               "title": "Status"
+            }
+          },
+          {
+            "description": "Clinicians: part of a name or the start of an MRN. Data stewards: the start of a pseudonym.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 2,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Clinicians: part of a name or the start of an MRN. Data stewards: the start of a pseudonym.",
+              "title": "Q"
             }
           },
           {

@@ -8,14 +8,16 @@ import { jsonResponse, renderWithQuery } from "@/test/render";
 import { WorklistView } from "./worklist-view";
 
 let search = "";
+const router = vi.hoisted(() => ({ replace: vi.fn() }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: vi.fn() }),
+  useRouter: () => router,
   usePathname: () => "/worklist",
   useSearchParams: () => new URLSearchParams(search),
 }));
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  router.replace.mockClear();
   search = "";
 });
 
@@ -36,12 +38,14 @@ function row(id: number, severity: "high" | "low"): WorklistRow {
 const page = (items: WorklistRow[]): WorklistPage =>
   ({ items, total: items.length, limit: 50, offset: 0, data_as_of: "2026-09-30" });
 
-/** The API answers by the requested severities: low-only rows for ["low"], one high row otherwise. */
+/** The API answers by the requested severities: low-only rows for ["low"], one high row
+ * otherwise; nothing matches a search for "zz". */
 function stubApi() {
   const requests: URL[] = [];
   vi.stubGlobal("fetch", vi.fn(async (request: Request) => {
     const url = new URL(request.url);
     requests.push(url);
+    if (url.searchParams.get("q") === "zz") return jsonResponse(200, page([]));
     const severities = url.searchParams.getAll("severity");
     return jsonResponse(200, page(severities.join() === "low" ? [row(2, "low"), row(3, "low")] : [row(1, "high")]));
   }));
@@ -91,5 +95,45 @@ describe("WorklistView", () => {
     expect(await screen.findByText("high flag of 1")).toBeVisible();
     expect(screen.queryByText(/Low priority/)).toBeNull();
     expect(requests.every((url) => url.searchParams.getAll("severity").length === 0)).toBe(true);
+  });
+
+  it("searches as you type, after a pause, keeping the other filters in the URL", async () => {
+    search = "organ=heart&offset=50";
+    stubApi();
+    renderWithQuery(<WorklistView />, "clinician");
+    const box = await screen.findByRole("searchbox", { name: "Search the worklist" });
+    expect(box).toHaveAttribute("placeholder", "Search by name or MRN");
+    await userEvent.type(box, "Pat P1");
+    expect(router.replace).not.toHaveBeenCalled(); // debounced, not on every keystroke
+    await waitFor(() => expect(router.replace).toHaveBeenCalledTimes(1));
+    expect(router.replace).toHaveBeenCalledWith("/worklist?organ=heart&q=Pat+P1", { scroll: false });
+  });
+
+  it("sends the search with the filters, says when nothing matches and keeps it on refresh", async () => {
+    search = "q=zz&status=new";
+    const requests = stubApi();
+    renderWithQuery(<WorklistView />, "clinician");
+    expect(await screen.findByText("No patients match")).toBeVisible();
+    expect(screen.getByRole("searchbox", { name: "Search the worklist" })).toHaveValue("zz");
+    const main = requests.find((url) => url.searchParams.getAll("severity").join() === "high,medium")!;
+    expect(main.searchParams.get("q")).toBe("zz");
+    expect(main.searchParams.get("status")).toBe("new");
+
+    const before = requests.length;
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(requests.length).toBeGreaterThan(before));
+    expect(requests.slice(before).every((url) => url.searchParams.get("q") === "zz")).toBe(true);
+  });
+
+  it("ignores a one-letter search and offers pseudonym search to data stewards", async () => {
+    search = "q=a";
+    const requests = stubApi();
+    renderWithQuery(<WorklistView />, "data_steward");
+    expect(await screen.findByText("high flag of 1")).toBeVisible();
+    expect(requests.every((url) => !url.searchParams.has("q"))).toBe(true);
+    expect(screen.getByRole("searchbox", { name: "Search the worklist" })).toHaveAttribute(
+      "placeholder",
+      "Search by pseudonym (R-…)",
+    );
   });
 });
