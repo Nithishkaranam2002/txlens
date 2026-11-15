@@ -77,7 +77,7 @@ def truncated(record: PatientRecord, visit: date) -> PatientRecord:
 
 
 def test_features_on_loaded_records_ignore_everything_after_the_visit(
-    api_app_engine: Engine,
+    api_data: Dataset, api_app_engine: Engine
 ) -> None:
     with tenant_transaction(api_app_engine, "center_b") as conn:
         records = load_records(conn, "center_b", transplant_configs(), AS_OF)
