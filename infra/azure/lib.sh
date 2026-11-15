@@ -72,3 +72,16 @@ power_state() {
 keychain_password() {
   security find-generic-password -s "$KEYCHAIN" -a "$1" -w 2>/dev/null
 }
+
+# The VM's "sharing-until" tag (set by share-on), or nothing.
+sharing_until() {
+  az vm show -g "$RG" -n "$VM" --query "tags.\"sharing-until\"" -o tsv 2>/dev/null || true
+}
+
+# What the VM's nightly reset should be set to: the tag's day while it is today or later
+# (US Central), else "none".
+expected_reset_until() {
+  local until
+  until=$(sharing_until)
+  if [[ -n "$until" && ! "$until" < "$(TZ=America/Chicago date +%F)" ]]; then echo "$until"; else echo none; fi
+}

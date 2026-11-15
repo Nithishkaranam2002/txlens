@@ -116,8 +116,9 @@ It does this, in order:
 | `make cloud-passwords` | Copy the demo and guest passwords into the Keychain again |
 | `make cloud-guest-rotate DAYS=30` | New guest password, open for DAYS days; Keychain updated, guest sessions end |
 | `make cloud-reset` | Demo data back to the snapshot (users, guest accounts and audit trail kept; ~10 min) |
-| `make cloud-share-on DAYS=21` | Keep the site up while a link is out: nightly shutdown off, VM running, cost estimate |
-| `make cloud-share-off` | Nightly shutdown on again |
+| `make cloud-reset-status` | The nightly demo reset: on or off, last and next run (US Central), recent log lines |
+| `make cloud-share-on DAYS=21` | Keep the site up while a link is out: nightly shutdown off, nightly demo reset on, VM running, cost estimate |
+| `make cloud-share-off` | Nightly shutdown on again, nightly demo reset off |
 | `make cloud-screenshots` | README screenshots from the live demo (`MODE=copilot` for the copilot ones) |
 | `make cloud-destroy` | Delete everything (type the resource group name to confirm) |
 
@@ -145,6 +146,28 @@ checksum, so it is uploaded and restored again.
   - Guests can acknowledge, resolve and approve, which changes the demo data.
   - `make cloud-reset` brings the data back and keeps the users and the audit trail. The
     snapshot stays on the VM for this, about 0.7 GB.
+  - While sharing is on, this also happens by itself every night (below). Guests read
+    "Demo account – changes you make reset every night." under the banner and in the demo
+    guide.
+- **Nightly demo reset (only while sharing):** a systemd timer on the VM
+  (`txlens-reset.timer`) runs the same reset as `make cloud-reset` at 03:00 US Central
+  (daylight saving included). The site is down for about 10 minutes then.
+  - Installed by every deploy and update (`infra/azure/remote/reset-timer.sh install`, from
+    `install.sh`); the unit files are `infra/azure/remote/txlens-reset.{service,timer}`.
+  - On and off follow sharing mode: `make cloud-share-on` writes the last sharing day to
+    `/var/lib/txlens/sharing-until` and enables the timer; `make cloud-share-off` removes it
+    and disables the timer. `make cloud-start`, `cloud-update` and `cloud-deploy` copy the
+    VM's `sharing-until` tag to the server again, so the two cannot drift.
+  - After the last sharing day the next run only logs "skipped" and turns the timer off,
+    even if nobody ran `make cloud-share-off`.
+  - A night missed while the VM was stopped is not made up at boot (`Persistent=false`).
+  - Each run adds one line to `/var/log/txlens/nightly-reset.log` (started, done in N min
+    and the HTTP status of `/login` afterwards, or FAILED with the exit code). The full
+    output is in `journalctl -u txlens-reset` on the VM.
+  - `make cloud-reset-status` shows whether it is on, the next and last run in US Central
+    time, and the last log lines. A dry run on the VM (changes nothing):
+    `bash /opt/txlens/infra/azure/remote/reset-timer.sh run <domain> --dry-run`.
+  - The smoke test checks that the timer is on exactly while sharing is.
 - **Per-session copilot history:** all visitors share the two guest accounts, so a guest sees
   only the copilot conversations started in its own browser session (each guest login gets
   its own session id in the token; other accounts keep their full history).
@@ -186,6 +209,8 @@ checksum, so it is uploaded and restored again.
 8. The demo guide is on, guest access is open, both guest accounts log in with their roles,
    and their expiry in the database matches `.env`.
 9. The copilot's 6 suggested questions are answered from the cache, without an API key.
+10. The nightly demo reset is on (until the sharing day) exactly while sharing mode is on,
+    and off otherwise.
 
 ## Troubleshooting
 

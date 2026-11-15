@@ -5,13 +5,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
 
-import { SafetyBanner } from "@/components/banner";
+import { GuestNotice, SafetyBanner } from "@/components/banner";
 import { PatientSearch } from "@/components/patient-search";
 import { ErrorState } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLogout, useMe } from "@/lib/auth";
-import { asRole, can, navFor, ROLE_LABEL, type Role } from "@/lib/roles";
+import { asRole, can, isGuest, navFor, ROLE_LABEL, type Role } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
 /** Header with role-aware navigation, patient search (not for admins), the safety banner, and
@@ -30,6 +30,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         Skip to content
       </a>
       <SafetyBanner />
+      {isGuest(me.data) && <GuestNotice />}
       <header className="border-b bg-card">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-4">
           <Link href="/" className="flex items-center gap-2 font-semibold text-primary">

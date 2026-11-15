@@ -29,3 +29,4 @@ echo "guest_expiry_matches_env $(sql "SELECT (count(*) = 2)::int FROM app.app_us
 CACHED=$(tools txlens-demo copilot-cache --offline 2>/dev/null | grep -cE '^ +(answered|refused) ' || true)
 echo "copilot_suggestions_cached $CACHED"
 echo "reboot_required $([[ -f /var/run/reboot-required ]] && echo 1 || echo 0)"
+bash infra/azure/remote/reset-timer.sh facts

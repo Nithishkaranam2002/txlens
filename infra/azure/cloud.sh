@@ -11,8 +11,10 @@
 #   passwords  copy the demo and guest passwords from the VM into the macOS Keychain
 #   guest-rotate  new guest password, open for DAYS days (default 30); Keychain updated
 #   reset      demo data back to the snapshot, keeping users and the audit trail
-#   share-on   keep the site up for DAYS days (default 21): no nightly shutdown, VM running
-#   share-off  nightly shutdown on again
+#   reset-status  the nightly reset (on while sharing): last and next run, recent log lines
+#   share-on   keep the site up for DAYS days (default 21): no nightly shutdown, VM running,
+#              demo data reset every night at 03:00 US Central
+#   share-off  nightly shutdown on again, nightly reset off
 #   update     upload the current commit, rebuild and restart (data untouched)
 #   smoke      the smoke test (infra/azure/smoke.sh)
 #   screenshots  README screenshots from the live demo (MODE=pages or copilot)
@@ -56,6 +58,7 @@ deploy() {
   push_snapshot
   step "Install on the VM"
   ssh_vm "bash $REMOTE/infra/azure/remote/install.sh $VM_HOST"
+  sync_reset_timer
 
   passwords
   bash infra/azure/smoke.sh --fresh
@@ -128,6 +131,7 @@ start() {
   for _ in $(seq 1 60); do
     if [[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "https://$VM_HOST/login")" == 200 ]]; then
       echo "    up: https://$VM_HOST  (make cloud-stop afterwards)"
+      sync_reset_timer
       return
     fi
     sleep 5
@@ -207,6 +211,24 @@ guest_rotate() {
   echo "    guest: new password stored in the Keychain; open until $(guest_until)"
 }
 
+# The nightly reset follows sharing mode: on until the tag's day, off without it.
+sync_reset_timer() {
+  local until
+  until=$(sharing_until)
+  if [[ -n "$until" ]]; then
+    ssh_vm "bash $REMOTE/infra/azure/remote/reset-timer.sh on $until"
+  else
+    ssh_vm "bash $REMOTE/infra/azure/remote/reset-timer.sh off"
+  fi
+}
+
+reset_status() {
+  need_az
+  resolve_host
+  [[ "$(power_state)" == "VM running" ]] || fail "the VM is not running (make cloud-start)"
+  ssh_vm "bash $REMOTE/infra/azure/remote/reset-timer.sh status"
+}
+
 reset() {
   need_az
   need_key
@@ -225,6 +247,7 @@ update() {
   push_code
   step "Rebuild and restart on the VM"
   ssh_vm "bash $REMOTE/infra/azure/remote/install.sh $VM_HOST"
+  sync_reset_timer
   passwords
   bash infra/azure/smoke.sh
 }
@@ -247,7 +270,7 @@ shutdown_status() {
 
 sharing_note() {
   local until
-  until=$(az vm show -g "$RG" -n "$VM" --query "tags.\"sharing-until\"" -o tsv 2>/dev/null)
+  until=$(sharing_until)
   [[ -n "$until" ]] && printf ' (sharing until %s)' "$until"
   return 0
 }
@@ -282,6 +305,7 @@ print(d.date.today() + d.timedelta(days=int(sys.argv[1])))' "$days")
     resolve_host
     echo "    already running: https://$VM_HOST"
   fi
+  sync_reset_timer
   share_cost "$days"
   echo "    nightly shutdown: $(shutdown_status). When you are done: make cloud-share-off"
 }
@@ -291,6 +315,12 @@ share_off() {
   step "Sharing over: nightly shutdown on again (23:00 Central)"
   set_shutdown Enabled
   az vm update -g "$RG" -n "$VM" --remove tags.sharing-until -o none
+  if [[ "$(power_state)" == "VM running" ]]; then
+    resolve_host
+    sync_reset_timer
+  else
+    echo "    the VM is stopped; make cloud-start turns its nightly reset off"
+  fi
   echo "    nightly shutdown: $(shutdown_status). The VM runs until then (or make cloud-stop)."
 }
 
@@ -328,11 +358,12 @@ destroy() {
 
 case "${1:-}" in
   deploy | start | stop | status | tunnel | passwords | update | budget | destroy | reset) "$1" ;;
+  reset-status) reset_status ;;
   guest-rotate) guest_rotate "${2:-30}" ;;
   share-on) share_on "${2:-21}" ;;
   share-off) share_off ;;
   ssh) ssh_vm ;;
   smoke) bash infra/azure/smoke.sh ;;
   screenshots) screenshots "${2:-pages}" ;;
-  *) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

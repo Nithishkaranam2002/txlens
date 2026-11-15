@@ -7,7 +7,8 @@
 # that cloud-reset saved before the restore (audit trail, guest accounts) are put back.
 # Otherwise it rebuilds the images and migrates the schema. Surveillance is pinned to the data
 # cut-off (DATA_CUTOFF, the extract date): runs dated after it are removed and the worklist is
-# rebuilt as of the cut-off. Then it starts the stack behind Caddy. Never prints a secret.
+# rebuilt as of the cut-off. Then it starts the stack behind Caddy and installs the nightly
+# reset timer (reset-timer.sh; its on/off state is kept). Never prints a secret.
 set -euo pipefail
 DOMAIN="$1"
 cd "$(dirname "$0")/../../.."
@@ -110,6 +111,9 @@ if [[ "$LATE" != 0 ]]; then
   step "Rebuilding the worklist as of $CUTOFF"
   api txlens-surveillance run
 fi
+
+step "Nightly demo reset (systemd timer, on only while sharing)"
+bash infra/azure/remote/reset-timer.sh install "$DOMAIN"
 
 step "Memory and disk"
 free -m 2>/dev/null | sed -n 1,3p || true

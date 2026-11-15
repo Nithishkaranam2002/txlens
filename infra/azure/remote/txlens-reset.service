@@ -1,0 +1,14 @@
+# The nightly demo reset (installed by reset-timer.sh; @ADMIN@ and @DOMAIN@ are filled in).
+[Unit]
+Description=TxLens nightly demo reset (demo data back to the snapshot; users and audit kept)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@ADMIN@
+Environment=HOME=/home/@ADMIN@
+WorkingDirectory=/opt/txlens
+ExecStart=/bin/bash /opt/txlens/infra/azure/remote/reset-timer.sh run @DOMAIN@
+TimeoutStartSec=45min

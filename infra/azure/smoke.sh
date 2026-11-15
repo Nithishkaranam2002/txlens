@@ -9,6 +9,7 @@
 #   7. surveillance is pinned to the data cut-off: no run after it, the latest run is on it
 #   8. the demo guide is on, guest access is open, and both guest accounts log in
 #   9. the copilot's 6 suggested questions are answered from the cache (no API key)
+#  10. the nightly demo reset is on exactly while sharing mode is (until the same day)
 # --fresh (right after a deploy): also no login attempt or refresh token carried over.
 # The clinician password is read from the Keychain into a variable, never printed.
 set -euo pipefail
@@ -71,6 +72,14 @@ check "latest surveillance run is as of the cut-off" fact latest_run_is_cutoff 1
 check "both guest accounts exist and are active" fact guest_accounts 2
 check "guest expiry in the database matches .env" fact guest_expiry_matches_env 1
 check "copilot: all 6 suggested questions answered from the cache" fact copilot_suggestions_cached 6
+RESET_UNTIL=$(expected_reset_until)
+if [[ "$RESET_UNTIL" == none ]]; then
+  check "nightly demo reset off (sharing mode is off)" fact reset_until none
+  check "nightly reset timer disabled" fact reset_timer_enabled 0
+else
+  check "nightly demo reset on until $RESET_UNTIL (sharing mode)" fact reset_until "$RESET_UNTIL"
+  check "nightly reset timer enabled" fact reset_timer_enabled 1
+fi
 if [[ "$FRESH" == 1 ]]; then
   check "no login attempts carried over" fact login_attempts 0
   check "no refresh tokens carried over" fact refresh_tokens 0

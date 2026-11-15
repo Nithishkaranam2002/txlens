@@ -2134,3 +2134,24 @@ experiencer flags).
   - *How is another center's patient kept out?* The query runs inside a tenant transaction,
     so Postgres RLS removes other centers' rows before the WHERE clause even matters; a test
     searches for a center B patient as center A and gets nothing.
+
+### Nightly demo reset while sharing
+- **What it does.** Guests may acknowledge, resolve and approve: the demo should be
+  interactive. So that the next visitor still sees the full worklist, the VM puts the demo
+  data back every night at 03:00 US Central, the same reset as `make cloud-reset` (users and
+  the audit trail kept). Guests see "Demo account – changes you make reset every night."
+- **How.** A systemd timer (`txlens-reset.timer`) starts a one-shot service that runs
+  `reset-timer.sh run`. The timer is on only while sharing mode is on: `cloud-share-on`
+  writes the last sharing day to the VM and enables it, `cloud-share-off` disables it, and
+  after the last day a run just logs "skipped" and switches the timer off. Each run writes
+  one line to `/var/log/txlens/nightly-reset.log`; `make cloud-reset-status` shows the last
+  and next run.
+- **Why systemd and not cron.** systemd timers understand time zones
+  (`03:00:00 America/Chicago`, daylight saving handled), never start a second copy while one
+  runs, put the full output in the journal, and `systemctl list-timers` already knows the
+  next run. Cron would need a UTC time that moves twice a year, plus a lock and log handling.
+- **Trade-offs.** The site is down for about 10 minutes at night. A night missed while the VM
+  was off is skipped, not run at boot, so starting the VM never takes the site down.
+- **Interview question.** *Why not make guests read-only instead?* A read-only demo shows
+  less: the review workflow (acknowledge, approve, the audit trail) is the interesting part.
+  Resetting nightly keeps it interactive and still clean for the next visitor.

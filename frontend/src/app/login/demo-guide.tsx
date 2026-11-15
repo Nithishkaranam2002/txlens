@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Compass } from "lucide-react";
 
+import { GUEST_NOTICE } from "@/components/banner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, unwrap } from "@/lib/api/client";
 import { formatDateTime } from "@/lib/format";
@@ -37,6 +38,7 @@ export function DemoGuide() {
           Password: shared by the author on request.
           {until && <> Guest access is open until <time dateTime={until}>{formatDateTime(until)}</time>.</>}
         </p>
+        <p className="font-medium">{GUEST_NOTICE}</p>
         <div>
           <p className="font-medium">Three things to try</p>
           <ol className="mt-1 list-decimal space-y-1 pl-5">

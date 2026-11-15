@@ -18,6 +18,7 @@ describe("DemoGuide", () => {
     expect(card).toHaveTextContent(/open until 13 Dec 2026/);
     expect(screen.getAllByRole("listitem")).toHaveLength(5);
     expect(card).toHaveTextContent("Password: shared by the author on request.");
+    expect(card).toHaveTextContent("Demo account – changes you make reset every night.");
   });
 
   it("shows nothing outside the public demo", async () => {

@@ -1,0 +1,14 @@
+# Starts txlens-reset.service at 03:00 US Central (daylight saving included). Enabled only
+# while sharing mode is on (reset-timer.sh on/off). A night missed while the VM was off is
+# not made up at boot: that would take the site down just as someone starts it.
+[Unit]
+Description=TxLens nightly demo reset at 03:00 US Central
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 America/Chicago
+Persistent=false
+AccuracySec=1min
+Unit=txlens-reset.service
+
+[Install]
+WantedBy=timers.target

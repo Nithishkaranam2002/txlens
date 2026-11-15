@@ -68,6 +68,11 @@ export function can(role: Role | null, area: Area): boolean {
   return role !== null && ACCESS[role].includes(area);
 }
 
+/** The public demo's shared guest accounts (guest.clinician, guest.researcher). */
+export function isGuest(me: Me | undefined): boolean {
+  return me?.username.startsWith("guest.") ?? false;
+}
+
 /** Only clinicians see names, MRNs, birth dates and real dates. */
 export function seesIdentifiers(role: Role | null): boolean {
   return role === "clinician";
