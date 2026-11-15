@@ -33,7 +33,7 @@ export type Citation = { pmid: number; title: string; journal: string; year: num
 export type DoneEvent = {
   type: "done";
   message_id: string;
-  outcome: "answered" | "refused" | "error";
+  outcome: "answered" | "refused" | "error" | "demo";
   answer: string;
   cost_usd: number;
   latency_ms: number;
@@ -46,6 +46,7 @@ export type CopilotEvent =
   | { type: "token"; text: string }
   | { type: "citations"; citations: Citation[] }
   | { type: "refusal"; reason: string; text: string }
+  | { type: "notice"; text: string }
   | { type: "error"; message: string }
   | DoneEvent;
 
@@ -57,6 +58,8 @@ export type Turn = {
   text: string;
   citations: Citation[];
   refusal: string | null;
+  /** The public demo's note (no live AI there), shown with the suggested questions. */
+  notice: string | null;
   error: string | null;
   done: boolean;
   costUsd: number | null;
@@ -64,7 +67,7 @@ export type Turn = {
 };
 
 export function newTurn(question: string): Turn {
-  return { question, stage: "screening", tools: [], text: "", citations: [], refusal: null, error: null, done: false, costUsd: null, latencyMs: null };
+  return { question, stage: "screening", tools: [], text: "", citations: [], refusal: null, notice: null, error: null, done: false, costUsd: null, latencyMs: null };
 }
 
 /** The turn after one more event (pure, so the stream is easy to test). */
@@ -80,6 +83,8 @@ export function applyEvent(turn: Turn, event: CopilotEvent): Turn {
       return { ...turn, citations: event.citations };
     case "refusal":
       return { ...turn, refusal: event.text, text: event.text };
+    case "notice":
+      return { ...turn, notice: event.text };
     case "error":
       return { ...turn, error: event.message };
     case "done":
@@ -136,12 +141,15 @@ export function turnsOf(conversation: Conversation): Turn[] {
     }
     const turn = turns.at(-1);
     if (!turn) continue;
+    // An error or a demo note is shown on its own, not also as the answer text.
+    const shownAs = message.outcome === "error" || message.outcome === "demo" ? message.outcome : "text";
     Object.assign(turn, {
-      text: message.content,
+      text: shownAs === "text" ? message.content : "",
       tools: message.trace as ToolEvent[],
       citations: message.citations as Citation[],
       refusal: message.outcome === "refused" ? message.content : null,
-      error: message.outcome === "error" ? message.content : null,
+      notice: shownAs === "demo" ? message.content : null,
+      error: shownAs === "error" ? message.content : null,
       done: true,
       costUsd: message.cost_usd,
       latencyMs: message.latency_ms,

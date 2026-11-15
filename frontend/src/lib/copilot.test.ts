@@ -35,6 +35,11 @@ describe("applyEvent", () => {
     const turn = applyEvent(newTurn("MRNs?"), { type: "refusal", reason: "identifiers", text: "I can't share identifiers." });
     expect([turn.refusal, turn.text]).toEqual(["I can't share identifiers.", "I can't share identifiers."]);
   });
+
+  it("keeps the demo note apart from the answer and from errors", () => {
+    const turn = applyEvent(newTurn("Anything?"), { type: "notice", text: "Try one of these:" });
+    expect([turn.notice, turn.text, turn.error]).toEqual(["Try one of these:", "", null]);
+  });
 });
 
 describe("pieces", () => {
@@ -61,5 +66,16 @@ describe("turnsOf", () => {
     const turns = turnsOf(conversation);
     expect(turns.map((t) => [t.question, t.text, t.refusal])).toEqual([["Q1", "A1", null], ["Q2", "No.", "No."]]);
     expect(turns.every((t) => t.done && t.stage === null)).toBe(true);
+  });
+
+  it("shows a stored error or demo note once, not also as the answer text", () => {
+    const message = (role: string, content: string, outcome: string | null = null) => ({
+      message_id: content, role, content, trace: [], citations: [], outcome, cost_usd: 0, latency_ms: 5, created_at: "2026-11-15T10:00:00Z",
+    });
+    const conversation = {
+      conversation_id: "c", title: "t", created_at: "2026-11-15T10:00:00Z",
+      messages: [message("user", "Q1"), message("assistant", "Failed.", "error"), message("user", "Q2"), message("assistant", "Try one of these:", "demo")],
+    } as Conversation;
+    expect(turnsOf(conversation).map((t) => [t.text, t.error, t.notice])).toEqual([["", "Failed.", null], ["", null, "Try one of these:"]]);
   });
 });

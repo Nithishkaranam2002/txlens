@@ -1,8 +1,9 @@
-import { AlertTriangle, ExternalLink, ShieldAlert } from "lucide-react";
+import { AlertTriangle, ExternalLink, Info, ShieldAlert } from "lucide-react";
 import { Fragment } from "react";
 
 import { AttritionChart, SuppressedCount } from "@/components/charts/attrition-chart";
 import { Count, KmChart } from "@/components/charts/survival-charts";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { pieces, type Citation, type ToolDisplay, type ToolEvent, type Turn } from "@/lib/copilot";
 
@@ -159,12 +160,33 @@ export function Citations({ citations }: { citations: Citation[] }) {
   );
 }
 
-/** One answer as a whole: trace, tool details, the text (or refusal / error), sources. */
-export function AnswerBody({ turn }: { turn: Turn }) {
+/** The public demo's note, with the suggested questions (their answers are saved) as buttons. */
+export function DemoNotice({ text, suggestions, onAsk, disabled }: { text: string; suggestions: string[]; onAsk: (question: string) => void; disabled: boolean }) {
+  return (
+    <div role="note" className="space-y-2 rounded-md border bg-muted/50 p-3 text-sm">
+      <p className="flex items-start gap-2"><Info aria-hidden className="mt-0.5 size-4 shrink-0 text-primary" />{text}</p>
+      {suggestions.length > 0 && (
+        <div className="flex flex-wrap gap-2 pl-6">
+          {suggestions.map((s) => (
+            <Button key={s} type="button" variant="outline" size="sm" className="h-auto whitespace-normal text-left" onClick={() => onAsk(s)} disabled={disabled}>
+              {s}
+            </Button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type AnswerBodyProps = { turn: Turn; suggestions?: string[]; onAsk?: (question: string) => void; busy?: boolean };
+
+/** One answer as a whole: trace, tool details, the text (or refusal / demo note / error), sources. */
+export function AnswerBody({ turn, suggestions = [], onAsk = () => {}, busy = false }: AnswerBodyProps) {
   return (
     <div className="space-y-3">
       <ToolTrace tools={turn.tools} />
       <ToolDetails tools={turn.tools} />
+      {turn.notice && <DemoNotice text={turn.notice} suggestions={suggestions} onAsk={onAsk} disabled={busy} />}
       {turn.refusal ? (
         <p className="flex items-start gap-2 text-sm"><ShieldAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />{turn.refusal}</p>
       ) : (

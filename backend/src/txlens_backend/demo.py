@@ -189,8 +189,7 @@ def copilot_cache(settings: Settings, *, offline: bool) -> list[tuple[str, str]]
         assert conversation is not None
         done = [e for e in service.ask(deps, user_id, "center_a", info, conversation, question)
                 if e["type"] == "done"][-1]  # fmt: skip
-        missing = done["answer"] == service.LIVE_AI_DISABLED
-        results.append((question, "not cached" if missing else done["outcome"]))
+        results.append((question, "not cached" if done["outcome"] == "demo" else done["outcome"]))
     engine.dispose()
     owner = create_engine(settings.database_url.get_secret_value())
     with owner.begin() as conn:  # the app role cannot delete conversations; messages cascade

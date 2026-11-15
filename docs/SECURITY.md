@@ -129,7 +129,7 @@ a reason, or **future** (worth doing before real use, not needed for a demo).
 | 15 | Info | No multi-factor authentication, no account lockout notification, no password rotation | **Future**: use the organization's identity provider (OIDC) before real use |
 | 16 | Info | The demo ran over plain HTTP on localhost | **Fixed for the cloud demo** (Step 4.2, ADR 0021): Caddy terminates TLS with a Let's Encrypt certificate and redirects HTTP to HTTPS; `TXLENS_HSTS=1`, Secure cookies and `X-Robots-Tag: noindex`; `make cloud-smoke` checks each one. The local demo stays on HTTP, on 127.0.0.1 only |
 | 17 | Info | The public demo has two guest accounts whose password is shared with visitors | **Accepted**: center A only, normal role permissions and rate limits, every action audited; the accounts expire (`expires_at`, refresh refused too), the password is made on the server and never stored in the repo, and `make cloud-guest-rotate` changes it and ends their sessions. Each guest login sees only its own copilot conversations, and `make cloud-reset` deletes guest conversations and saved cohorts |
-| 18 | Info | A public copilot could let strangers spend money on LLM calls | **Fixed for the cloud demo**: no API key on the server (forced empty in every container, checked by the smoke test); answers come only from the LLM cache, and other questions get a fixed "live AI is disabled" message |
+| 18 | Info | A public copilot could let strangers spend money on LLM calls | **Fixed for the cloud demo**: no API key on the server (forced empty in every container, checked by the smoke test); answers come only from the LLM cache, and other questions get a fixed note pointing to the suggested questions |
 
 ## Reporting a problem
 

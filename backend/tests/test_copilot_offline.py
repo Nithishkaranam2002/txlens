@@ -1,6 +1,7 @@
-"""The copilot without an API key (the public demo): cached answers replay exactly, anything
-else gets a friendly "live AI is disabled" message without calling a model. Question
-embeddings are cached too, and the suggested questions come from the API."""
+"""The copilot without an API key (the public demo): cached answers replay exactly, also for a
+suggested question typed a little differently or asked after other questions; anything else
+gets a friendly demo note (or, for "help", what the copilot does) without calling a model.
+Question embeddings are cached too, and the suggested questions come from the API."""
 
 from collections.abc import Iterator
 
@@ -17,12 +18,14 @@ from txlens_backend.api.deps import Role
 from txlens_backend.config import Settings
 from txlens_backend.copilot import service
 from txlens_backend.copilot.embeddings import CachedEmbedder
-from txlens_backend.copilot.suggested import SUGGESTED
+from txlens_backend.copilot.suggested import DEMO_NO_LIVE_AI, HELP, SUGGESTED
 from txlens_backend.documents.llm import LlmOfflineError
 
 pytestmark = pytest.mark.db
 
 QUESTION = "How many heart recipients are there?"
+SAVED = SUGGESTED[0]
+Events = list[dict[str, object]]
 
 
 @pytest.fixture
@@ -34,13 +37,20 @@ def use_deps(api_app: FastAPI, api_owner: Engine) -> Iterator[None]:
     api_app.dependency_overrides.pop(copilot_deps, None)
 
 
-def ask(api_app: FastAPI, client: TestClient, deps: service.CopilotDeps) -> list[dict[str, object]]:
-    """Ask QUESTION in a new conversation with these deps; the stream's events."""
+def ask_in(api_app: FastAPI, client: TestClient, deps: service.CopilotDeps, conversation: str,
+           question: str) -> Events:  # fmt: skip
+    """Ask `question` in `conversation` with these deps; the stream's events."""
     api_app.dependency_overrides[copilot_deps] = lambda: deps
-    conversation = new_conversation(client)
     response = client.post(f"/copilot/conversations/{conversation}/messages",
-                           json={"question": QUESTION})  # fmt: skip
+                           json={"question": question})  # fmt: skip
+    assert response.status_code == 200, response.text
     return events(response.text)
+
+
+def ask(api_app: FastAPI, client: TestClient, deps: service.CopilotDeps,
+        question: str = QUESTION) -> Events:  # fmt: skip
+    """Ask `question` in a new conversation."""
+    return ask_in(api_app, client, deps, new_conversation(client), question)
 
 
 def scripted() -> ScriptedModel:
@@ -48,18 +58,103 @@ def scripted() -> ScriptedModel:
                          answer="Here is the count.")  # fmt: skip
 
 
-def test_offline_without_a_cached_answer_says_live_ai_is_off_and_calls_nothing(
-    api_app: FastAPI, client: TestClient, use_deps: None, api_settings: Settings,
-    api_app_engine: Engine,
+@pytest.fixture
+def demo(api_settings: Settings, api_app_engine: Engine) -> tuple[service.CopilotDeps,
+                                                                  ScriptedModel]:  # fmt: skip
+    """Offline deps (the public demo) and their model, which must never be called."""
+    model = scripted()
+    return service.CopilotDeps(api_settings, api_app_engine, FakeEmbedder(), model,
+                               offline=True), model  # fmt: skip
+
+
+def cache_saved_answer(api_app: FastAPI, client: TestClient, api_settings: Settings,
+                       api_app_engine: Engine) -> dict[str, object]:  # fmt: skip
+    """Fill the cache like `txlens-demo copilot-cache`: SAVED, alone, with a model."""
+    online = service.CopilotDeps(api_settings, api_app_engine, FakeEmbedder(), scripted())
+    return ask(api_app, client, online, SAVED)[-1]
+
+
+def replays(found: Events, first: dict[str, object]) -> None:
+    """The saved answer, with its tool, from the cache only, and its timing."""
+    done = found[-1]
+    assert done["outcome"] == "answered" and done["answer"] == first["answer"]
+    assert done["cached_calls"] == done["llm_calls"] and isinstance(done["latency_ms"], int)
+    assert [e["label"] for e in found if e["type"] == "tool"] == ["built cohort"]
+    assert not any(e["type"] in ("error", "notice") for e in found)
+
+
+def test_an_unknown_question_gets_the_demo_note_once_and_calls_nothing(
+    api_app: FastAPI, client: TestClient, use_deps: None,
+    demo: tuple[service.CopilotDeps, ScriptedModel],
 ) -> None:  # fmt: skip
     login(client, Role.RESEARCHER)
-    model = scripted()
-    deps = service.CopilotDeps(api_settings, api_app_engine, FakeEmbedder(), model, offline=True)
-    found = ask(api_app, client, deps)
-    assert {"type": "error", "message": service.LIVE_AI_DISABLED} in found
-    done = found[-1]
-    assert done["type"] == "done" and done["outcome"] == "error"
+    deps, model = demo
+    conversation = new_conversation(client)
+    found = ask_in(api_app, client, deps, conversation, QUESTION)
+    assert [e["type"] for e in found if e["type"] != "status"] == ["notice", "done"]
+    assert {"type": "notice", "text": DEMO_NO_LIVE_AI} in found
+    assert DEMO_NO_LIVE_AI.endswith("Try one of these:")
+    assert found[-1]["outcome"] == "demo" and found[-1]["llm_calls"] == 0
     assert model.calls == []
+    stored = client.get(f"/copilot/conversations/{conversation}").json()["messages"]
+    assert [(m["role"], m["outcome"]) for m in stored] == [("user", None), ("assistant", "demo")]
+
+
+def test_a_help_question_explains_the_copilot(
+    api_app: FastAPI, client: TestClient, use_deps: None,
+    demo: tuple[service.CopilotDeps, ScriptedModel],
+) -> None:  # fmt: skip
+    login(client, Role.RESEARCHER)
+    deps, model = demo
+    found = ask(api_app, client, deps, "What is this about?")
+    assert found[0] == {"type": "notice", "text": HELP}
+    for part in ("data tools", "PMID", "de-identified", "1 to 10 are hidden"):
+        assert part in HELP
+    assert model.calls == []
+
+
+@pytest.mark.parametrize("typed", [
+    "median DD-CFDNA in the first year after transplant by organ?",
+    "  Median dd-cfDNA  in the first year after transplant, by organ  ",
+    "Median dd-cfDNA in the frist year after transplant, by organ",
+])  # fmt: skip
+def test_a_saved_question_typed_differently_replays_its_answer(
+    api_app: FastAPI, client: TestClient, use_deps: None, api_settings: Settings,
+    api_app_engine: Engine, demo: tuple[service.CopilotDeps, ScriptedModel], typed: str,
+) -> None:  # fmt: skip
+    login(client, Role.RESEARCHER)
+    first = cache_saved_answer(api_app, client, api_settings, api_app_engine)
+    deps, model = demo
+    replays(ask(api_app, client, deps, typed), first)
+    assert model.calls == []
+
+
+def test_a_suggestion_clicked_after_other_questions_replays_its_answer(
+    api_app: FastAPI, client: TestClient, use_deps: None, api_settings: Settings,
+    api_app_engine: Engine, demo: tuple[service.CopilotDeps, ScriptedModel],
+) -> None:  # fmt: skip
+    """A chip sends the suggestion's text; earlier turns must not change the cache key."""
+    login(client, Role.RESEARCHER)
+    first = cache_saved_answer(api_app, client, api_settings, api_app_engine)
+    deps, model = demo
+    conversation = new_conversation(client)
+    ask_in(api_app, client, deps, conversation, QUESTION)
+    ask_in(api_app, client, deps, conversation, "help")
+    replays(ask_in(api_app, client, deps, conversation, SAVED), first)
+    replays(ask_in(api_app, client, deps, conversation, SAVED), first)
+    assert model.calls == []
+
+
+def test_a_suggested_question_not_cached_yet_gets_the_demo_note_not_an_error(
+    api_app: FastAPI, client: TestClient, use_deps: None,
+    demo: tuple[service.CopilotDeps, ScriptedModel],
+) -> None:  # fmt: skip
+    login(client, Role.RESEARCHER)
+    deps, model = demo
+    found = ask(api_app, client, deps, SAVED)
+    assert {"type": "notice", "text": DEMO_NO_LIVE_AI} in found
+    assert not any(e["type"] == "error" for e in found)
+    assert found[-1]["outcome"] == "demo" and model.calls == []
 
 
 def test_an_answer_cached_online_replays_offline_without_a_model_call(

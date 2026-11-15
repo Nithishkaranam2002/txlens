@@ -2038,7 +2038,8 @@ experiencer flags).
    Postgres with pgvector and a hosted Temporal first.
 2. **How do you stop strangers from running up your OpenAI bill?** There is no key on the
    server; the smoke test checks the `.env` and every container. The copilot replays cached
-   answers to the suggested questions and refuses anything else with a fixed message.
+   answers to the suggested questions and answers anything else with a fixed note that
+   points to them.
 3. **How are secrets handled?** They're generated on the server and are different from the
    laptop's. They're never printed or committed. Passwords go straight from the VM into the
    Keychain over SSH. GitHub secret scanning and push protection are on as a backstop.
@@ -2049,3 +2050,27 @@ experiencer flags).
 5. **What happens if you forget to turn it off?** It shuts down every night at 23:00 Central.
    A $20 budget sends alerts at 50, 80 and 100% and on forecast. A student subscription is
    disabled when the credit runs out; it never charges a card.
+
+### Fix: suggested questions in the public demo
+- **The bug.** On the live demo a guest asked a suggested question and got "Live AI is
+  disabled" (shown twice, once in red) instead of the saved answer.
+- **Why it happened.** The LLM cache key is a hash of the exact prompt. The prompt holds the
+  question text and the conversation's earlier turns. The cache was filled with each
+  suggested question asked alone, in a new conversation. So the same question asked after
+  another one, or typed with different case, spaces or a "?", missed the cache. The red copy
+  came from the stored error being shown both as the answer text and as the error line.
+- **The fix.**
+  - A typed question is matched to a suggested one first (`copilot/suggested.py`): the same
+    words after ignoring case, spaces and punctuation, or at most two typos and one extra or
+    missing filler word. Numbers must match exactly, and words like "second" for "first" or
+    "without" for "with" do not count as typos.
+  - A matched question is asked as the saved text and on its own, without the earlier
+    turns, so its cached answer (tools, citations, timing) is always found. Chip clicks go
+    the same way.
+  - Without a key, a question with no cached answer gets one friendly note (outcome `demo`,
+    migration 0024) with the suggested questions as buttons. "Help" or "what is this
+    about?" gets a short explanation of the copilot. No model is called.
+- **Trade-off.** The fuzzy match is kept strict on purpose: giving the saved answer to a
+  question that only looks similar would be wrong, so a near miss gets the note instead.
+- **Interview question.** *Why match questions in code instead of letting the model decide?*
+  There is no model in the demo, and matching in code is free, testable and predictable.

@@ -131,7 +131,7 @@ export function CopilotView() {
                 <article key={i} className="space-y-3">
                   <p className="ml-auto w-fit max-w-[85%] rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground">{turn.question}</p>
                   <div className="space-y-2 rounded-lg border p-3">
-                    <AnswerBody turn={turn} />
+                    <AnswerBody turn={turn} suggestions={suggestions.data ?? []} onAsk={(q) => void ask(q)} busy={busy} />
                     {turn.stage && (
                       <p className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Loader2 aria-hidden className="size-3.5 animate-spin" />{STAGE_LABEL[turn.stage] ?? "Working…"}

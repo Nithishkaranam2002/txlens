@@ -1,9 +1,14 @@
 """Copilot conversations and questions: persistence, audit, budget, and the event stream.
 
-`ask` yields the events the browser receives: status, tool, token, citations, refusal, then
-one `done` (or `error`). Every question is audited (`copilot_question`) before any model
-sees it, every tool call by the tool itself. The budget is per center and calendar month
-(LLM_BUDGET_USD). A conversation belongs to the user who started it.
+`ask` yields the events the browser receives: status, tool, token, citations, refusal or
+notice, then one `done` (or `error`). Every question is audited (`copilot_question`) before
+any model sees it, every tool call by the tool itself. The budget is per center and calendar
+month (LLM_BUDGET_USD). A conversation belongs to the user who started it.
+
+A suggested question (also typed, see `suggested.match`) is always asked as itself and on its
+own, without the conversation's earlier turns, so its cached answer is found. Without an API
+key (the public demo) a question whose answer is not cached gets a `notice` pointing to the
+suggestions (outcome "demo"), and "help" a notice on what the copilot does; no model is called.
 """
 
 import logging
@@ -22,9 +27,10 @@ from sqlalchemy.sql.expression import bindparam
 from txlens_backend import audit
 from txlens_backend.audit import RequestInfo
 from txlens_backend.config import Settings
+from txlens_backend.copilot import suggested
 from txlens_backend.copilot.agent import Agent, State
 from txlens_backend.copilot.embeddings import CachedEmbedder, Embedder
-from txlens_backend.copilot.llm import CopilotLlm
+from txlens_backend.copilot.llm import CopilotLlm, Spend
 from txlens_backend.copilot.tools import ToolContext
 from txlens_backend.copilot.tracing import start_trace
 from txlens_backend.db import tenant_transaction
@@ -35,9 +41,6 @@ log = logging.getLogger(__name__)
 BUDGET_USED_UP = ("The copilot's budget for this month is used up; ask your administrator "
                   "to raise LLM_BUDGET_USD.")  # fmt: skip
 FAILED = "Something went wrong while answering; nothing was changed. Please try again."
-# No API key (the public demo): only answers already in the cache can be given.
-LIVE_AI_DISABLED = ("Live AI is disabled in this public demo; try one of the suggested "
-                    "questions.")  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -175,17 +178,46 @@ def budget_for(deps: CopilotDeps, tenant_id: str) -> Budget:
     return budget
 
 
+def done_event(answer_id: str, outcome: str, answer: str, final: dict[str, Any], spend: Spend,
+               latency_ms: int) -> dict[str, Any]:  # fmt: skip
+    """The last event of every answer."""
+    return {
+        "type": "done", "message_id": answer_id, "outcome": outcome, "answer": answer,
+        "refusal": final.get("refusal"), "filter": final.get("filter"),
+        "cost_usd": spend.cost_usd, "cost_without_cache_usd": spend.cost_without_cache_usd,
+        "llm_calls": spend.calls, "cached_calls": spend.cached, "latency_ms": latency_ms,
+    }  # fmt: skip
+
+
+def help_reply(deps: CopilotDeps, tenant_id: str, conversation: Conversation, answer_id: str,
+               started: float) -> Iterator[dict[str, Any]]:  # fmt: skip
+    """No API key and "what is this about?": what the copilot does, without a model."""
+    reply = suggested.HELP
+    yield {"type": "notice", "text": reply}
+    latency = round((time.monotonic() - started) * 1000)
+    with tenant_transaction(deps.engine, tenant_id) as conn:
+        save_message(conn, conversation.conversation_id, "assistant", reply,
+                     message_id=answer_id, outcome="demo", latency_ms=latency)  # fmt: skip
+    yield done_event(answer_id, "demo", reply, {}, Spend(), latency)
+
+
 def ask(deps: CopilotDeps, user_id: str, tenant_id: str, info: RequestInfo,
         conversation: Conversation, question: str) -> Iterator[dict[str, Any]]:  # fmt: skip
     """Answer one question; yields the events of the answer as they happen."""
     started = time.monotonic()
+    saved = suggested.match(question)
     with tenant_transaction(deps.engine, tenant_id) as conn:
         question_id = save_message(conn, conversation.conversation_id, "user", question)
-        details = {"conversation_id": conversation.conversation_id, "question": question}
+        details = {"conversation_id": conversation.conversation_id, "question": question,
+                   "suggested": saved}  # fmt: skip
         audit.record(conn, info, user_id, "copilot_question", "copilot_message", question_id,
                      details)  # fmt: skip
     answer_id = str(uuid.uuid4())
-    trace = start_trace(deps.settings, question, {
+    if deps.offline and saved is None and suggested.asks_for_help(question):
+        yield from help_reply(deps, tenant_id, conversation, answer_id, started)
+        return
+    asked = saved or question
+    trace = start_trace(deps.settings, asked, {
         "tenant": tenant_id, "conversation_id": conversation.conversation_id,
         "message_id": answer_id})  # fmt: skip
     budget = budget_for(deps, tenant_id)
@@ -199,7 +231,7 @@ def ask(deps: CopilotDeps, user_id: str, tenant_id: str, info: RequestInfo,
     embedder = CachedEmbedder(deps.embedder, deps.engine, tenant_id, offline=deps.offline)
     ctx = ToolContext(deps.engine, tenant_id, user_id, deps.settings, info, answer_id,
                       embedder, budget)  # fmt: skip
-    state: State = {"question": question, "history": history(conversation)}
+    state: State = {"question": asked, "history": [] if saved else history(conversation)}
     final: dict[str, Any] = {}
     steps: list[dict[str, Any]] = []
     citations: list[dict[str, Any]] = []
@@ -218,8 +250,8 @@ def ask(deps: CopilotDeps, user_id: str, tenant_id: str, info: RequestInfo,
         outcome, answer = "error", BUDGET_USED_UP
         yield {"type": "error", "message": answer}
     except LlmOfflineError:
-        outcome, answer = "error", LIVE_AI_DISABLED
-        yield {"type": "error", "message": answer}
+        outcome, answer, steps, citations = "demo", suggested.DEMO_NO_LIVE_AI, [], []
+        yield {"type": "notice", "text": answer}
     except Exception:
         log.exception("copilot question failed")
         outcome, answer = "error", FAILED
@@ -230,9 +262,4 @@ def ask(deps: CopilotDeps, user_id: str, tenant_id: str, info: RequestInfo,
                      message_id=answer_id, trace=steps, citations=citations, outcome=outcome,
                      cost=llm.spend.cost_usd, latency_ms=latency)  # fmt: skip
     trace.end({"outcome": outcome, "answer": answer, "filter": final.get("filter")})
-    yield {
-        "type": "done", "message_id": answer_id, "outcome": outcome, "answer": answer,
-        "refusal": final.get("refusal"), "filter": final.get("filter"),
-        "cost_usd": llm.spend.cost_usd, "cost_without_cache_usd": llm.spend.cost_without_cache_usd,
-        "llm_calls": llm.spend.calls, "cached_calls": llm.spend.cached, "latency_ms": latency,
-    }  # fmt: skip
+    yield done_event(answer_id, outcome, answer, final, llm.spend, latency)

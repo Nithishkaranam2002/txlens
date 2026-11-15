@@ -154,9 +154,11 @@ checksum, so it is uploaded and restored again.
 - **Demo guide:** the login page shows which guest account opens which view, when guest access
   ends, and three things to try. It appears only when `DEMO_GUIDE=1` (set on the VM).
 - **Copilot without a key:** the six suggested questions (`backend/src/txlens_backend/copilot/suggested.py`)
-  are answered from the LLM cache.
-  - Any other question gets "Live AI is disabled in this public demo; try one of the
-    suggested questions."
+  are answered from the LLM cache, clicked or typed (case, spaces, punctuation and a couple
+  of typos do not matter), also after earlier questions in the conversation.
+  - Any other question gets a friendly note that the demo runs without live AI, with the
+    suggested questions as buttons; "help" or "what is this about?" gets a short
+    explanation of what the copilot does. No model is called.
   - To change them, edit the list, then fill the cache locally with your key
     (`uv run txlens-demo copilot-cache`, a fraction of a cent).
   - Check offline (`uv run txlens-demo copilot-cache --offline`), then run

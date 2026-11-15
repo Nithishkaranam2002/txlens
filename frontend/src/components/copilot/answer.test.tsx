@@ -63,4 +63,17 @@ describe("AnswerBody", () => {
     renderWithQuery(<AnswerBody turn={{ ...newTurn("q"), refusal: "I can only read data.", text: "I can only read data." }} />);
     expect(screen.getAllByText("I can only read data.")).toHaveLength(1);
   });
+
+  it("shows the demo note once, not as an error, with the suggestions as buttons", async () => {
+    const note = "This public demo runs without live AI to keep it free and safe. Try one of these:";
+    const asked: string[] = [];
+    renderWithQuery(
+      <AnswerBody turn={{ ...newTurn("q"), notice: note }} suggestions={["Median dd-cfDNA by organ", "Graft survival"]} onAsk={(q) => asked.push(q)} />,
+    );
+    expect(screen.getByRole("note")).toHaveTextContent(note);
+    expect(screen.getAllByText(note)).toHaveLength(1);
+    expect(screen.queryByRole("alert")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Graft survival" }));
+    expect(asked).toEqual(["Graft survival"]);
+  });
 });
